@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { Pencil, Star, StarOff, FolderInput, Trash2 } from 'lucide-react';
+import { Pencil, Pin, PinOff, Star, StarOff, FolderInput, Trash2 } from 'lucide-react';
 import { type Folder as FolderItem } from '@/lib/api';
+import { useDismiss } from '@neutrino/commands';
+import { usePreference } from '@neutrino/preferences';
+import { MAX_PINS, pinFolder, readLayout, unpinFolder } from '@/lib/sidebarLayout';
 import styles from './FileContextMenu.module.css';
 
 interface Props {
@@ -23,16 +26,19 @@ export function FolderContextMenu({ folder, x, y, onClose, onRename, onStarToggl
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
+
+  // Pinned to the sidebar (U8): read live, so the label is right if another tab just pinned it.
+  const [sidebarPref] = usePreference('shell.sidebar');
+  const layout = readLayout(sidebarPref);
+  const pinned = layout.pinned.some((p) => p.id === folder.id);
+  const canPin = pinned || layout.pinned.length < MAX_PINS;
 
   const adjustedX = Math.min(x, window.innerWidth - 200);
   const adjustedY = Math.min(y, window.innerHeight - 200);
@@ -45,6 +51,13 @@ export function FolderContextMenu({ folder, x, y, onClose, onRename, onStarToggl
       action: onStarToggle,
     },
     { icon: <FolderInput size={14} />, label: 'Move to', action: onMove },
+    ...(canPin
+      ? [{
+          icon: pinned ? <PinOff size={14} /> : <Pin size={14} />,
+          label: pinned ? 'Unpin from sidebar' : 'Pin to sidebar',
+          action: () => (pinned ? unpinFolder(folder.id) : void pinFolder({ id: folder.id, name: folder.name })),
+        }]
+      : []),
     null,
     { icon: <Trash2 size={14} />, label: 'Delete', action: onDelete, danger: true },
   ] as const;

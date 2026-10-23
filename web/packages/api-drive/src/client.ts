@@ -88,6 +88,36 @@ function normalizeResolvedShareLink(link: ResolvedShareLink): ResolvedShareLink 
 // Storage API
 // ---------------------------------------------------------------------------
 
+
+// ── Sealing file bytes ───────────────────────────────────────────────────────
+
+/** Seals `bytes` under `dek` as `encryptFile` does; somewhere other than the main thread, ideally. */
+export type BytesSealer = (bytes: Uint8Array, dek: Uint8Array) => Promise<Uint8Array>;
+
+let bytesSealer: BytesSealer | null = null;
+
+/**
+ * Hands every encrypted upload and autosave in this client to `sealer` — the web app registers its
+ * worker (UI roadmap P6), which keeps a 16 MB upload from holding the page while it is sealed.
+ * Same cipher, same output; a sealer that fails falls back to sealing here.
+ */
+export function setBytesSealer(sealer: BytesSealer | null): void {
+  bytesSealer = sealer;
+}
+
+async function sealBytes(bytes: Uint8Array, dek: Uint8Array): Promise<Uint8Array> {
+  if (bytesSealer) {
+    try {
+      return await bytesSealer(bytes, dek);
+    } catch {
+      // fall through to the main thread
+    }
+  }
+  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+  await initSodium();
+  return encryptFile(bytes, dek);
+}
+
 export const storageApi = {
   // There is deliberately no `uploadFile` here. It wrote the user's bytes to
   // Drive in the clear, and a file that lands unencrypted stays that way
@@ -707,13 +737,12 @@ export async function uploadEncryptedFile(
   keyVersion?: number,
 ): Promise<FileItem> {
   // Encrypt the file bytes.
-  const { encryptFile } = await import('@neutrino/e2e-crypto');
   const plainBytes = new Uint8Array(await file.arrayBuffer());
   // The measure covers `encryptFile` alone, not the read before it: this is
   // the main-thread block a large upload costs, and the number that decides
   // whether the work belongs in a worker.
   const cipherBytes = await measurePhase('crypto:encrypt', async () =>
-    encryptFile(plainBytes, dek),
+    sealBytes(plainBytes, dek),
   );
   // Cast to ArrayBuffer for Blob compatibility across TS targets.
   const cipherBlob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
@@ -804,14 +833,12 @@ export async function driveAutosaveEncryptedContent(
   versionCheck?: ContentVersionCheck,
   transport?: AutosaveTransport,
 ): Promise<FileItem> {
-  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
-  await initSodium();
   const plainBytes = new TextEncoder().encode(content);
   // Split from the upload below: an autosave that gets slower as a document
   // grows is either re-encrypting more bytes or sending more of them, and
   // those have different fixes.
   const cipherBytes = await measurePhase('crypto:encrypt', async () =>
-    encryptFile(plainBytes, dek),
+    sealBytes(plainBytes, dek),
   );
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
@@ -834,10 +861,8 @@ export async function driveCreateEncryptedVersion(
   dek: Uint8Array,
   label?: string,
 ): Promise<FileVersionItem> {
-  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
-  await initSodium();
   const plainBytes = new TextEncoder().encode(content);
-  const cipherBytes = encryptFile(plainBytes, dek);
+  const cipherBytes = await sealBytes(plainBytes, dek);
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);
@@ -866,11 +891,9 @@ export async function driveAutosaveEncryptedBytes(
   versionCheck?: ContentVersionCheck,
   transport?: AutosaveTransport,
 ): Promise<FileItem> {
-  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
-  await initSodium();
   const plainBytes = toUint8Array(bytes);
   const cipherBytes = await measurePhase('crypto:encrypt', async () =>
-    encryptFile(plainBytes, dek),
+    sealBytes(plainBytes, dek),
   );
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
@@ -894,10 +917,8 @@ export async function driveCreateEncryptedVersionBytes(
   dek: Uint8Array,
   label?: string,
 ): Promise<FileVersionItem> {
-  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
-  await initSodium();
   const plainBytes = toUint8Array(bytes);
-  const cipherBytes = encryptFile(plainBytes, dek);
+  const cipherBytes = await sealBytes(plainBytes, dek);
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);

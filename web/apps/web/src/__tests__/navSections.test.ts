@@ -113,3 +113,32 @@ describe('the Team section and the teamSpaces flag', () => {
     expect(activeHref(sections, '/teams/space')).toBe('/teams');
   });
 });
+
+describe('the organisation and team parts of the sidebar (UI roadmap stage 3)', () => {
+  it('leaves out the apps an administrator has hidden, and keeps the rest in order', () => {
+    const apps = getNavSections(false, [], false, { enabledApps: ['calendar', 'docs'] }).find((s) => s.id === 'apps')!;
+    expect(apps.items.map((i) => i.label)).toEqual(['Docs', 'Calendar']);
+  });
+
+  it('lists the user\'s teams in the new shell, each in its own colour, and never an unsafe one', () => {
+    const team = (id: string, name: string, avatarColor: string | null, extra = {}) => ({
+      id, name, avatarColor, avatarEmoji: null, archived: false, ...extra,
+    }) as unknown as import('@/lib/api').Team;
+    const teams = getNavSections(false, [], true, {
+      teams: [
+        team('t1', 'Design', '#16a34a'),
+        team('t2', 'finance', 'url(https://example.com/x)'),
+        team('t3', 'Old', '#2563eb', { archived: true }),
+      ],
+    }).find((s) => s.id === 'team')!;
+    expect(teams.label).toBe('Teams');
+    expect(teams.items.map((i) => i.label)).toEqual(['Design', 'finance', 'All teams']);
+    expect(teams.items[0].swatch).toEqual({ color: '#16a34a', text: 'D' });
+    expect(teams.items[1].swatch?.color).toBe('var(--brand-accent)');
+  });
+
+  it('keeps the classic single Team entry when no team list is given', () => {
+    const team = getNavSections(false, [], true).find((s) => s.id === 'team')!;
+    expect(team.items.map((i) => i.label)).toEqual(['Shared Spaces']);
+  });
+});

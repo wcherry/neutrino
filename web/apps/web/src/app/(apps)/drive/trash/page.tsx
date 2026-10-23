@@ -22,6 +22,7 @@ import { filesystemApi } from '@/lib/api';
 import { sortEntries, trashFileToGridItem, trashFolderToGridItem } from '../gridItems';
 import { TrashContextMenu } from './TrashContextMenu';
 import styles from './page.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 interface PendingDelete {
   id: string;
@@ -40,8 +41,10 @@ export default function TrashPage() {
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [sortBy, setSortBy] = useState<SortField>('updatedAt');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('trash', { view: 'list', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['trash'],
@@ -165,10 +168,11 @@ export default function TrashPage() {
         // Trashed items cannot be opened — restore them first.
         onItemClick={() => {}}
         onItemMenuOpen={handleMenuOpen}
-        defaultViewMode="list"
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        onSortChange={listing.setSort}
         totalCount={isLoading ? undefined : total}
         emptyState={
           isError ? (

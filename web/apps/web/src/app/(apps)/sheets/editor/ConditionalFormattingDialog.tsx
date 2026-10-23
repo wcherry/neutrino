@@ -12,9 +12,8 @@ import type {
     CFThemeColorRule, CFVariable, CFTemplate, CFThemeToken, CFHeatMapPreset,
     CFStatusIndicatorTemplate,
 } from './types';
+import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
 
-const CF_TEMPLATES_KEY = 'neutrino:sheets:cf-templates';
-const CF_VARIABLES_KEY  = 'neutrino:sheets:cf-variables';
 
 // ── Item 21: column-type detection ────────────────────────────────────────────
 
@@ -233,17 +232,19 @@ Formulas start with = and evaluate to TRUE/FALSE. Use TODAY() for date math, col
     return { rule: ruleFields as CFRuleSpec, explanation };
 }
 
+// Templates and variables are the user's own library, sealed in their preference vault so they
+// follow them to every device (`library.sheets.cfTemplates`, `library.sheets.cfVariables`).
 function loadTemplates(): CFTemplate[] {
-    try { return JSON.parse(localStorage.getItem(CF_TEMPLATES_KEY) ?? '[]'); } catch { return []; }
+    return readVaultOrLegacy(preferences, 'library.sheets.cfTemplates') as CFTemplate[];
 }
 function saveTemplates(t: CFTemplate[]): void {
-    localStorage.setItem(CF_TEMPLATES_KEY, JSON.stringify(t));
+    preferences.set('library.sheets.cfTemplates', t);
 }
 function loadVariables(): CFVariable[] {
-    try { return JSON.parse(localStorage.getItem(CF_VARIABLES_KEY) ?? '[]'); } catch { return []; }
+    return readVaultOrLegacy(preferences, 'library.sheets.cfVariables') as CFVariable[];
 }
 function saveVariables(v: CFVariable[]): void {
-    localStorage.setItem(CF_VARIABLES_KEY, JSON.stringify(v));
+    preferences.set('library.sheets.cfVariables', v);
 }
 
 type Props = {

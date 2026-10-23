@@ -23,6 +23,7 @@
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { usePreference } from '@neutrino/preferences';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, Folder, FolderPlus, Trash2, Upload, X } from 'lucide-react';
@@ -66,6 +67,7 @@ import { routeForFile } from '../../drive/routeForFile';
 import { formatBytes } from '../../admin/bytes';
 import { roleCan, teamCan } from '../permissions';
 import menuStyles from '../../drive/FileContextMenu.module.css';
+import { useDismiss } from '@neutrino/commands';
 import styles from './space.module.css';
 
 const LOCKED_MESSAGE =
@@ -104,16 +106,13 @@ function RowMenu({
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   return (
     <div
@@ -158,9 +157,16 @@ export function FilesView({ team }: { team: Team }) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   // The library endpoint takes no sort parameters, so the order is decided here — as it is on
-  // Recent, Starred and Shared with me, which are in the same position.
-  const [sortBy, setSortBy] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Recent, Starred and Shared with me, which are in the same position. The view and the order
+  // start from the team's defaults (T2: `teamSpace.*`, set in the team's Settings); a member's own
+  // pick is remembered as theirs and wins from then on, in every team space.
+  const [preferredView, setPreferredView] = usePreference('teamSpace.view');
+  const [preferredSort, setPreferredSort] = usePreference('teamSpace.sort');
+  const [preferredDir, setPreferredDir] = usePreference('teamSpace.sortDirection');
+  const [sortBy, setSortByState] = useState<SortField>(preferredSort);
+  const [sortDir, setSortDirState] = useState<SortDir>(preferredDir);
+  const setSortBy = (field: SortField) => { setSortByState(field); setPreferredSort(field); };
+  const setSortDir = (dir: SortDir) => { setSortDirState(dir); setPreferredDir(dir); };
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['team-library', team.id, folderId ?? null],
@@ -370,6 +376,8 @@ export function FilesView({ team }: { team: Team }) {
         onItemClick={openLibraryItem}
         onItemMenuOpen={canDelete ? (item, e) => openMenu('library', item, e) : undefined}
         sortBy={sortBy}
+        defaultViewMode={preferredView}
+        onViewModeChange={setPreferredView}
         sortDir={sortDir}
         onSortChange={(field, dir) => {
           setSortBy(field);
@@ -410,6 +418,8 @@ export function FilesView({ team }: { team: Team }) {
             onItemMenuOpen={(item, e) => openMenu('shared', item, e)}
             showSizeColumn
             sortBy={sortBy}
+            defaultViewMode={preferredView}
+            onViewModeChange={setPreferredView}
             sortDir={sortDir}
             onSortChange={(field, dir) => {
               setSortBy(field);

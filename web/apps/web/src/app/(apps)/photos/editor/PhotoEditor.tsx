@@ -19,6 +19,7 @@ import { PhotoCanvas, type PhotoCanvasHandle } from './PhotoCanvas';
 import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection, DeblurKernel } from './types';
 import { DEFAULT_ADJUSTMENTS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
 import { scaleKernel } from './sharpening';
+import { useCommand, useDismiss } from '@neutrino/commands';
 import styles from './page.module.css';
 
 // ── AI image prep ────────────────────────────────────────────────────────────
@@ -919,20 +920,8 @@ export function PhotoEditor() {
   }, []);
 
   // Delete selected strokes
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setAreaSelection(null);
-        return;
-      }
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-      handleDeleteSelected();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleDeleteSelected]);
+  useCommand('photos.deleteSelected', () => handleDeleteSelected(), { preventDefault: false });
+  useDismiss(() => setAreaSelection(null), areaSelection !== null);
 
   // Clipboard paste
   useEffect(() => {

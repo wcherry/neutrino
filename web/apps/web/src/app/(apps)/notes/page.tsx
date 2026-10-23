@@ -9,9 +9,11 @@ import { createNote, listAllNotes, type NoteMeta } from '@/lib/noteFiles';
 import { filesystemApi, storageApi } from '@neutrino/api-drive';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
+import { useDismiss } from '@neutrino/commands';
 import { NoteCardPreview } from './NoteCardPreview';
 import styles from './page.module.css';
 import contextMenuStyles from '../drive/FileContextMenu.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -55,16 +57,13 @@ function NoteContextMenu({ id: _id, title: _title, x, y, onClose, onPreview, onR
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   const adjustedX = Math.min(x, window.innerWidth - 200);
   const adjustedY = Math.min(y, window.innerHeight - 200);
@@ -131,8 +130,10 @@ export default function NotesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [sortBy, setSortBy] = React.useState<SortField>('updatedAt');
-  const [sortDir, setSortDir] = React.useState<SortDir>('desc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('notes', { view: 'large', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
   const [renaming, setRenaming] = React.useState<{ id: string; title: string } | null>(null);
@@ -233,9 +234,11 @@ export default function NotesPage() {
         onItemMenuOpen={handleMenuOpen}
         showFilter={false}
         showSizeColumn={false}
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        onSortChange={listing.setSort}
         totalCount={isLoading ? undefined : notes.length}
       />
 

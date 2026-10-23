@@ -11,8 +11,8 @@
 }
 
 .dialog {
-  background: var(--color-bg, #ffffff);
-  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   width: 400px;
@@ -25,7 +25,7 @@
 .header {
   position: relative;
   padding: 20px 22px 14px;
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .closeBtn {
@@ -40,14 +40,14 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
 
 .closeBtn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
-  color: var(--color-text, #202124);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .closeBtn:disabled {
@@ -58,14 +58,14 @@
 .headerTitle {
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   margin: 0 0 4px;
 }
 
 .headerDesc {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 /* ── Body ── */
@@ -86,7 +86,7 @@
 .label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -94,11 +94,11 @@
 .input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #dadce0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 13px;
-  color: var(--color-text, #202124);
-  background: var(--color-bg, #ffffff);
+  color: var(--color-text);
+  background: var(--color-bg);
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.15s;
@@ -125,17 +125,17 @@
   align-items: center;
   gap: 6px;
   padding: 7px 14px;
-  border: 1px solid var(--color-border, #dadce0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   font-size: 13px;
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
 
 .locationTab:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .locationTab:disabled {
@@ -159,7 +159,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  border: 1px solid var(--color-border, #dadce0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -170,18 +170,18 @@
   flex-wrap: wrap;
   gap: 2px;
   padding: 7px 10px;
-  background: var(--color-bg-subtle, #f8f9fa);
-  border-bottom: 1px solid var(--color-border, #dadce0);
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border);
   font-size: 12px;
 }
 
 .driveBreadcrumbSep {
-  color: var(--color-text-muted, #9aa0a6);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
 .driveBreadcrumbCurrent {
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   font-weight: 500;
 }
 
@@ -215,7 +215,7 @@
 .driveFolderState {
   padding: 12px 10px;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -230,9 +230,9 @@
   padding: 7px 10px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--color-border, #f1f3f4);
+  border-bottom: 1px solid var(--color-border);
   font-size: 13px;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
@@ -243,7 +243,7 @@
 }
 
 .driveFolderItem:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .driveFolderItem:disabled {
@@ -263,7 +263,7 @@
 }
 
 .driveFolderItemChevron {
-  color: var(--color-text-muted, #9aa0a6);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -283,14 +283,14 @@
   background: none;
   border: none;
   font-size: 13px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   cursor: pointer;
   text-align: left;
   transition: color 0.1s;
 }
 
 .securityToggle:hover {
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .securityToggle:disabled {
@@ -316,7 +316,7 @@
 .permissionsLabel {
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -326,7 +326,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   cursor: pointer;
   user-select: none;
 }
@@ -351,7 +351,7 @@
 .permissionsHint {
   margin: 0;
   font-size: 11px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   font-style: italic;
 }
 
@@ -374,22 +374,22 @@
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 22px 18px;
-  border-top: 1px solid var(--color-border, #e0e0e0);
+  border-top: 1px solid var(--color-border);
 }
 
 .cancelBtn {
   padding: 7px 16px;
-  border: 1px solid var(--color-border, #dadce0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   font-size: 13px;
   cursor: pointer;
   transition: background 0.1s;
 }
 
 .cancelBtn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .cancelBtn:disabled {

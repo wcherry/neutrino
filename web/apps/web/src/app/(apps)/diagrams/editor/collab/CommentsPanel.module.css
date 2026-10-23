@@ -1,8 +1,8 @@
 .panel {
   width: 280px;
   flex-shrink: 0;
-  background: var(--color-surface, #fff);
-  border-left: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -17,13 +17,13 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #64748b);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
 .badge {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border-radius: 9px;
   padding: 1px 6px;
@@ -32,7 +32,7 @@
 
 .compose {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -45,11 +45,11 @@
 .empty {
   padding: 16px 12px;
   font-size: 12px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
 }
 
 .thread {
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  border-bottom: 1px solid var(--color-border);
   padding: 6px 0;
 }
 
@@ -72,7 +72,7 @@
   height: 26px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   font-size: 10px;
   font-weight: 600;
@@ -96,7 +96,7 @@
 .commentAuthor {
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -105,13 +105,13 @@
 
 .commentDate {
   font-size: 10px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .commentContent {
   font-size: 12px;
-  color: var(--color-text, #374151);
+  color: var(--color-text);
   line-height: 1.5;
   word-break: break-word;
 }
@@ -130,14 +130,14 @@
   background: none;
   cursor: pointer;
   font-size: 11px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   padding: 2px 4px;
   border-radius: 3px;
 }
 
 .actionBtn:hover {
-  color: var(--color-text, #374151);
-  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-text);
+  background: var(--color-bg-hover);
 }
 
 .replyCompose {
@@ -146,19 +146,19 @@
 
 .textarea {
   width: 100%;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 12px;
   font-family: inherit;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   resize: none;
   box-sizing: border-box;
 }
 
 .textarea:focus {
   outline: none;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .replyBtns {
@@ -171,7 +171,7 @@
 .submitBtn {
   height: 26px;
   padding: 0 12px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: 5px;
@@ -189,9 +189,9 @@
   height: 26px;
   padding: 0 10px;
   background: none;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
 }

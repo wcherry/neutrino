@@ -155,7 +155,7 @@ vi.mock('../../app/(apps)/notes/editor/blockEditorHelpers', () => ({
 
 // ── Import subject ────────────────────────────────────────────────────────────
 
-import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal/DocumentPreviewModal';
 import {
   createDocument as createDrawingDocument,
   createRect as createDrawingRect,

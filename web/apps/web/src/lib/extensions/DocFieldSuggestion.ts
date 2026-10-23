@@ -159,12 +159,16 @@ export function docFieldSuggestionPlugin(
         }
 
         const token = detectToken(next);
+        // A closed menu stays the same object while it stays closed: the menu component re-renders
+        // whenever this changes, and a React commit with the caret in a long document is not free.
         if (!token) {
           // The caret has left the token, so a later one at the same position
           // is a new token and deserves a menu.
+          if (prev.from === null && prev.dismissedFrom === null) return prev;
           return { ...CLOSED, dismissedFrom: null, decorations: DecorationSet.empty };
         }
         if (token.from === prev.dismissedFrom) {
+          if (prev.from === null) return prev;
           return { ...CLOSED, dismissedFrom: prev.dismissedFrom, decorations: DecorationSet.empty };
         }
 

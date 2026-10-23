@@ -1,6 +1,6 @@
 import type { CellProps } from '../types';
 import { alphaToNum, numToAlpha } from '../utils';
-import type { ChartDef, ChartSeries, AxisConfig } from './chartTypes';
+import type { ChartDef, ChartSeries, AxisConfig, ChartType } from './chartTypes';
 
 const MAX_CHART_ROWS = 1000;
 
@@ -302,4 +302,100 @@ export function buildTreemapData(labels: string[], datasets: ChartDataset[]): Tr
         value: Math.abs(firstDs.data[i] ?? 0),
         color: firstDs.color,
     }));
+}
+
+// ── Thinning for display ──────────────────────────────────────────────────────
+
+/**
+ * The most categories a cartesian chart draws. Past this many, each is a pixel or two wide, and
+ * every one is a set of SVG elements rendered through React — 500 rows of four series was 2,000
+ * bars and most of a second to draw (the perf suite's D7). The sheet keeps every value; only what
+ * is drawn is thinned.
+ */
+export const MAX_DRAWN_POINTS = 200;
+
+/** Bars are one mark per category per series, so their categories share a budget across series. */
+export const MAX_DRAWN_BARS = 400;
+
+/** Lines and areas: thinned by Largest-Triangle-Three-Buckets, which keeps the shape of the curve. */
+const SHAPE_TYPES = new Set<ChartType>(['line', 'area', 'combo']);
+/** Bars: thinned to the tallest bar of each run, so a spike is never averaged away. */
+const BAR_TYPES = new Set<ChartType>([
+    'column', 'bar', 'stacked-column', 'stacked-bar', 'stacked-column-100', 'stacked-bar-100',
+]);
+
+/** The indices LTTB keeps out of `y`, `threshold` of them, always including both ends. */
+export function lttbIndices(y: number[], threshold: number): number[] {
+    const n = y.length;
+    if (threshold >= n || threshold < 3) return Array.from({ length: n }, (_, i) => i);
+    const out = [0];
+    const every = (n - 2) / (threshold - 2);
+    let a = 0;
+    for (let i = 0; i < threshold - 2; i++) {
+        // The average of the next bucket is the third corner of the triangle.
+        const avgStart = Math.floor((i + 1) * every) + 1;
+        const avgEnd = Math.min(Math.floor((i + 2) * every) + 1, n);
+        let avgX = 0;
+        let avgY = 0;
+        for (let j = avgStart; j < avgEnd; j++) {
+            avgX += j;
+            avgY += y[j];
+        }
+        const len = Math.max(1, avgEnd - avgStart);
+        avgX /= len;
+        avgY /= len;
+        // Out of this bucket, the point making the largest triangle with the last one kept.
+        const start = Math.floor(i * every) + 1;
+        const end = Math.floor((i + 1) * every) + 1;
+        let best = start;
+        let bestArea = -1;
+        for (let j = start; j < end; j++) {
+            const area = Math.abs((a - avgX) * (y[j] - y[a]) - (a - j) * (avgY - y[a]));
+            if (area > bestArea) {
+                bestArea = area;
+                best = j;
+            }
+        }
+        out.push(best);
+        a = best;
+    }
+    out.push(n - 1);
+    return out;
+}
+
+/** `y` cut into `max` even runs, and from each the index whose value is furthest from zero. */
+export function peakIndices(y: number[], max: number): number[] {
+    const n = y.length;
+    if (n <= max) return Array.from({ length: n }, (_, i) => i);
+    const out: number[] = [];
+    for (let k = 0; k < max; k++) {
+        const start = Math.floor((k * n) / max);
+        const end = Math.floor(((k + 1) * n) / max);
+        let best = start;
+        for (let j = start + 1; j < end; j++) {
+            if (Math.abs(y[j]) > Math.abs(y[best])) best = j;
+        }
+        out.push(best);
+    }
+    return out;
+}
+
+/** `chart` as it is drawn: at most `max` categories for the chart types that draw one mark each. */
+export function thinForDisplay(type: ChartType, chart: ExtractedChartData, max?: number): ExtractedChartData {
+    const n = chart.labels.length;
+    const shape = SHAPE_TYPES.has(type);
+    max ??= shape
+        ? MAX_DRAWN_POINTS
+        : Math.min(MAX_DRAWN_POINTS, Math.max(50, Math.floor(MAX_DRAWN_BARS / Math.max(1, chart.datasets.length))));
+    if (n <= max || chart.datasets.length === 0 || (!shape && !BAR_TYPES.has(type))) return chart;
+    // One profile picks the rows for every series, so the categories stay aligned across them: the
+    // sum for a curve, the largest magnitude for bars.
+    const profile = chart.labels.map((_, i) => shape
+        ? chart.datasets.reduce((sum, ds) => sum + (ds.data[i] ?? 0), 0)
+        : chart.datasets.reduce((m, ds) => Math.max(m, Math.abs(ds.data[i] ?? 0)), 0));
+    const keep = shape ? lttbIndices(profile, max) : peakIndices(profile, max);
+    return {
+        labels: keep.map(i => chart.labels[i]),
+        datasets: chart.datasets.map(ds => ({ ...ds, data: keep.map(i => ds.data[i]) })),
+    };
 }

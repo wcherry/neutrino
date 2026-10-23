@@ -9,9 +9,15 @@
 //     a second SW-level cache of API responses would create an uncoordinated
 //     stale-data source and undermine that revision-based conflict
 //     detection. This is load-bearing, not an oversight.
-//   - Everything else (the static app shell: JS/CSS/HTML/manifest/icons)
-//     uses a cache-first strategy: serve from cache if present, otherwise
-//     fetch from the network and populate the cache for next time.
+//   - Pages (navigations) are network-first, falling back to the cached copy
+//     only when the network fails. The server writes the instance's brand and
+//     the organisation's preference defaults into every page it serves
+//     (src/branding/inject.rs); a page served from cache would show them as
+//     they were when it was cached, until the next deploy. Revalidating costs
+//     a 304 when nothing changed — the page's ETag covers the injected part.
+//   - Everything else (the static app shell: JS/CSS/manifest/icons) uses a
+//     cache-first strategy: serve from cache if present, otherwise fetch from
+//     the network and populate the cache for next time.
 //
 // __BUILD_ID__ is a placeholder replaced at build time (see
 // scripts/stamp-sw-build-id.mjs) with a short git SHA (or a timestamp
@@ -49,6 +55,26 @@ self.addEventListener('fetch', (event) => {
 
   // Only handle same-origin GET requests for the app shell.
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE_NAME);
+        try {
+          const response = await fetch(event.request);
+          if (response && response.status === 200) {
+            cache.put(event.request, response.clone());
+          }
+          return response;
+        } catch (err) {
+          const cached = await cache.match(event.request);
+          if (cached) return cached;
+          throw err;
+        }
+      })(),
+    );
     return;
   }
 

@@ -87,6 +87,7 @@ import {
   type VectorObject,
   type VectorStyle,
 } from './types';
+import { addKeyHandler } from '@neutrino/commands';
 
 export interface DrawingCanvasHandle {
   setTransform: (t: Transform) => void;
@@ -1417,8 +1418,8 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       window.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
       window.addEventListener('pointercancel', onPointerUp);
-      window.addEventListener('keydown', keyDown);
-      window.addEventListener('keyup', keyUp);
+      const offKeyDown = addKeyHandler('keydown', keyDown);
+      const offKeyUp = addKeyHandler('keyup', keyUp);
 
       return () => {
         observer.disconnect();
@@ -1428,8 +1429,8 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
         window.removeEventListener('pointermove', onPointerMove);
         window.removeEventListener('pointerup', onPointerUp);
         window.removeEventListener('pointercancel', onPointerUp);
-        window.removeEventListener('keydown', keyDown);
-        window.removeEventListener('keyup', keyUp);
+        offKeyDown();
+        offKeyUp();
       };
     }, [onDoubleClick, onPointerDown, onPointerMove, onPointerUp, onWheel, render]);
 

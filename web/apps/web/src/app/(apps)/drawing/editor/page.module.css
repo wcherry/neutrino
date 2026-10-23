@@ -1,8 +1,10 @@
+/* The chrome reads `--editor-…` tokens (tokens/looks.css): defined for the new looks only, so the
+   fallback in each is what the classic look draws. */
 .container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f9fafb;
+  background: var(--editor-ground, #f9fafb);
   overflow: hidden;
 }
 
@@ -12,8 +14,8 @@
   gap: 12px;
   padding: 0 16px;
   height: 52px;
-  background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--editor-bar-bg, #ffffff);
+  border-bottom: var(--editor-bar-rule, 1px solid #e5e7eb);
   flex-shrink: 0;
 }
 
@@ -36,10 +38,10 @@
   flex: 1;
   border: none;
   background: none;
-  font-size: 16px;
-  font-weight: 500;
+  font-size: var(--editor-title-size, 16px);
+  font-weight: var(--editor-title-weight, 500);
   outline: none;
-  color: #111827;
+  color: var(--editor-title-color, #111827);
 }
 
 .titleInput:focus {
@@ -59,7 +61,7 @@
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #f9fafb;
+  background: var(--editor-ground, #f9fafb);
 }
 
 .versionHistoryPanel {

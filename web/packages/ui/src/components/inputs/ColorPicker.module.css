@@ -1,8 +1,8 @@
 /* ── Picker container ─────────────────────────────────────────────────── */
 .picker {
   width: 220px;
-  background: var(--color-surface-raised, #fff);
-  border: 1px solid var(--color-border, #e0e0e6);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.14);
   overflow: hidden;
@@ -20,7 +20,7 @@
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
-  border-bottom: 1px solid var(--color-border, #e0e0e6);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .tab {
@@ -30,19 +30,19 @@
   background: none;
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: color 0.1s, background 0.1s;
   letter-spacing: 0.02em;
 }
 
 .tab:hover {
-  color: var(--color-text, #333);
+  color: var(--color-text);
   background: rgba(0,0,0,0.03);
 }
 
 .tabActive {
-  color: var(--color-text, #1a1a1a) !important;
+  color: var(--color-text) !important;
   background: rgba(0,100,255,0.06) !important;
   font-weight: 600;
 }
@@ -55,13 +55,13 @@
   flex-shrink: 0;
   border: none;
   background: none;
-  color: var(--color-text-muted, #aaa);
+  color: var(--color-text-muted);
   cursor: pointer;
   padding: 0;
 }
 
 .closeBtn:hover {
-  color: var(--color-text, #333);
+  color: var(--color-text);
 }
 
 /* ── Swatch grid (8×10 = 80 colors) ──────────────────────────────────── */
@@ -140,7 +140,7 @@
 .sliderLabel {
   font-size: 10px;
   font-weight: 600;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   width: 12px;
   text-align: center;
   flex-shrink: 0;
@@ -148,7 +148,7 @@
 
 .sliderValue {
   font-size: 10px;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   width: 24px;
   text-align: right;
   flex-shrink: 0;
@@ -230,7 +230,7 @@
 .valueGroupLabel {
   font-size: 10px;
   font-weight: 600;
-  color: var(--color-text-muted, #999);
+  color: var(--color-text-muted);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -251,7 +251,7 @@
 .valueLabel {
   font-size: 9px;
   font-weight: 600;
-  color: var(--color-text-muted, #aaa);
+  color: var(--color-text-muted);
   letter-spacing: 0.04em;
 }
 
@@ -259,10 +259,10 @@
   width: 100%;
   padding: 3px 4px;
   font-size: 11px;
-  border: 1px solid var(--color-border, #ddd);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface, #f8f8f8);
-  color: var(--color-text, #333);
+  background: var(--color-surface);
+  color: var(--color-text);
   text-align: center;
   outline: none;
   -moz-appearance: textfield;
@@ -274,7 +274,7 @@
 }
 
 .valueInput:focus {
-  border-color: var(--color-accent, #4f80ff);
+  border-color: var(--color-accent);
 }
 
 .hexInput {
@@ -282,17 +282,17 @@
   padding: 4px 8px;
   font-size: 12px;
   font-family: monospace;
-  border: 1px solid var(--color-border, #ddd);
+  border: 1px solid var(--color-border);
   border-radius: 5px;
-  background: var(--color-surface, #f8f8f8);
-  color: var(--color-text, #333);
+  background: var(--color-surface);
+  color: var(--color-text);
   outline: none;
   letter-spacing: 0.05em;
   box-sizing: border-box;
 }
 
 .hexInput:focus {
-  border-color: var(--color-accent, #4f80ff);
+  border-color: var(--color-accent);
 }
 
 /* ── Bottom bar ───────────────────────────────────────────────────────── */
@@ -301,7 +301,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border-top: 1px solid var(--color-border, #e0e0e6);
+  border-top: 1px solid var(--color-border);
   background: rgba(0,0,0,0.02);
 }
 
@@ -316,6 +316,6 @@
 .bottomHex {
   font-size: 11px;
   font-family: monospace;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   letter-spacing: 0.04em;
 }

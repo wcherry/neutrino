@@ -23,6 +23,7 @@ import {
   SearchX,
   X,
 } from 'lucide-react';
+import { getCurrentUserId } from '@neutrino/api-core';
 import { storageApi, filesystemApi, teamsApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
 import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
@@ -49,7 +50,11 @@ import {
   formatDate,
   formatFileSize,
 } from './gridItems';
+import { useDismiss } from '@neutrino/commands';
+import { usePreference } from '@neutrino/preferences';
+import { QuickAccess } from './QuickAccess';
 import styles from './page.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 /** Items fetched per request; more are pulled in as the grid is scrolled. */
 const CONTENTS_PAGE_SIZE = 200;
@@ -95,11 +100,19 @@ function DriveContent() {
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
+  // The root folder's id is the user's id, and the access token already names it. Reading it from
+  // there lets the listing start in parallel with `/auth/me` instead of after it — the first row
+  // of My Drive was waiting a full round trip for an answer it already had (A2 in the performance
+  // guide). The server still checks the token on the listing request itself.
+  const [tokenUserId] = useState(getCurrentUserId);
+  const ownerId = currentUser?.id ?? tokenUserId;
   const searchParams = useSearchParams();
   const searchTerm = (searchParams.get(DRIVE_SEARCH_PARAM) ?? '').trim();
 
-  const [sortBy, setSortBy] = useState<SortField>('updatedAt');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('drive', { view: 'large', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
   const [filter, setFilter] = useState<FilterType>('all');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
@@ -206,14 +219,7 @@ function DriveContent() {
     };
   }, []);
 
-  useEffect(() => {
-    if (selectedIds.size === 0) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setSelectedIds(new Set());
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedIds.size]);
+  useDismiss(() => setSelectedIds(new Set()), selectedIds.size > 0);
 
   // ── Search view (`/drive?q=…`) ───────────────────────────────────────────
   // Runs against the same client-side index the topbar drop-down uses, so the
@@ -287,6 +293,17 @@ function DriveContent() {
     queryFn: () => filesystemApi.getStarred(5),
   });
 
+  // The new looks lay Drive out as the boards do (look-and-feel roadmap §5): Quick access — the
+  // files last worked on — as its own region, then one region holding the folder's title, the
+  // controls and the list. Classic keeps today's page exactly.
+  const [look] = usePreference('appearance.look');
+  const flow = look !== 'classic';
+  const { data: recentData, isLoading: recentLoading } = useQuery({
+    queryKey: ['recent', 'quick-access'],
+    queryFn: () => filesystemApi.getRecent({ limit: 4 }),
+    enabled: flow && !searchTerm,
+  });
+
   const {
     data: contentsData,
     isLoading,
@@ -299,9 +316,9 @@ function DriveContent() {
     // through its own listing, rather than through the whole folder with the
     // misses dropped in the browser — which left a chip looking empty until
     // enough pages had been scrolled past to reach a file that matched.
-    queryKey: ['contents', currentFolderId, currentUser?.id, { orderBy: sortBy, direction: sortDir, type: fileTypeParam(filter) }],
+    queryKey: ['contents', currentFolderId, ownerId, { orderBy: sortBy, direction: sortDir, type: fileTypeParam(filter) }],
     queryFn: ({ pageParam }) =>
-      filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id, {
+      filesystemApi.getFolderContents(currentFolderId ?? ownerId!, {
         limit: CONTENTS_PAGE_SIZE,
         offset: pageParam,
         orderBy: sortBy,
@@ -316,7 +333,7 @@ function DriveContent() {
       lastPage.folders.length === CONTENTS_PAGE_SIZE || lastPage.files.length === CONTENTS_PAGE_SIZE
         ? lastOffset + CONTENTS_PAGE_SIZE
         : undefined,
-    enabled: !!currentFolderId || !!currentUser,
+    enabled: !!currentFolderId || !!ownerId,
     // Re-read the folder every time this page is mounted, rather than trusting
     // the global one-minute `staleTime` (see `QueryProvider`). The mutations on
     // this page invalidate the listing themselves, but the ones that change it
@@ -732,39 +749,51 @@ function DriveContent() {
     }
   }, []);
 
-  return (
-    <div className={styles.page}>
-      {/* Page header */}
-      <div className={styles.header}>
-        <div className={styles['header-left']}>
-          <Breadcrumbs
-            items={[
-              { label: 'My Drive', onClick: folderPath.length > 0 ? () => navigateTo(-1) : undefined },
-              ...folderPath.map((f, i) => ({
-                label: f.name,
-                onClick: i < folderPath.length - 1 ? () => navigateTo(i) : undefined,
-              })),
-            ]}
-          />
-          {searchTerm && (
-            <span className={styles['search-chip']} data-testid="drive-search-chip">
-              <Search size={12} aria-hidden="true" />
-              <span className={styles['search-chip-label']}>{searchTerm}</span>
-              <button
-                type="button"
-                className={styles['search-chip-clear']}
-                onClick={clearSearch}
-                aria-label={`Clear search filter ${searchTerm}`}
-              >
-                <X size={12} />
-              </button>
-            </span>
-          )}
-        </div>
+  // The folder trail, and the search term when there is one — above everything in classic, as
+  // part of the title of the Files region in the new looks.
+  const header = (
+    <div className={styles.header}>
+      <div className={styles['header-left']}>
+        <Breadcrumbs
+          items={[
+            { label: 'My Drive', onClick: folderPath.length > 0 ? () => navigateTo(-1) : undefined },
+            ...folderPath.map((f, i) => ({
+              label: f.name,
+              onClick: i < folderPath.length - 1 ? () => navigateTo(i) : undefined,
+            })),
+          ]}
+        />
+        {searchTerm && (
+          <span className={styles['search-chip']} data-testid="drive-search-chip">
+            <Search size={12} aria-hidden="true" />
+            <span className={styles['search-chip-label']}>{searchTerm}</span>
+            <button
+              type="button"
+              className={styles['search-chip-clear']}
+              onClick={clearSearch}
+              aria-label={`Clear search filter ${searchTerm}`}
+            >
+              <X size={12} />
+            </button>
+          </span>
+        )}
       </div>
+    </div>
+  );
+
+  return (
+    <div className={styles.page} data-own-regions={flow || undefined}>
+      {!flow && header}
 
       {/* Quick access — hidden while showing search results */}
-      {!searchTerm && (
+      {flow && !searchTerm && (
+        <QuickAccess
+          files={recentData?.files}
+          loading={recentLoading}
+          onOpen={(file) => routeForFile(file, router, { onPreviewFallback: () => setPreviewFile(file) })}
+        />
+      )}
+      {!flow && !searchTerm && (
       <section className={styles.section} aria-labelledby="quick-access-heading">
         <div className={styles['section-header']}>
           <Heading level={2} size="sm" id="quick-access-heading">Quick access</Heading>
@@ -801,7 +830,7 @@ function DriveContent() {
                 const starredFolders = starredData.folders.map((folder) => ({
                   key: folder.id,
                   icon: Folder,
-                  iconColor: folder.color ?? 'var(--color-amber, #d97706)',
+                  iconColor: folder.color ?? 'var(--folder-color)',
                   name: folder.name,
                   date: folder.updatedAt,
                   thumbnailUrl: null as string | null,
@@ -841,9 +870,18 @@ function DriveContent() {
 
       {/* Files — the same grid whether it is listing a folder or search hits */}
       <section className={`${styles.section} ${styles['section-files']}`} aria-labelledby="all-files-heading">
-        <Heading level={2} size="sm" id="all-files-heading">
-          {searchTerm ? 'Search results' : 'Files'}
-        </Heading>
+        {flow ? (
+          <div className={styles['files-title']}>
+            <h1 id="all-files-heading" className={styles['page-title']}>
+              {searchTerm ? 'Search results' : folderPath.length > 0 ? folderPath[folderPath.length - 1].name : 'My Drive'}
+            </h1>
+            {(folderPath.length > 0 || searchTerm) && header}
+          </div>
+        ) : (
+          <Heading level={2} size="sm" id="all-files-heading">
+            {searchTerm ? 'Search results' : 'Files'}
+          </Heading>
+        )}
         <FileGrid
           items={searchTerm ? searchGridItems : gridItems}
           isLoading={searchTerm ? searchHits === null : isLoading}
@@ -899,9 +937,11 @@ function DriveContent() {
           filter={filter}
           onFilterChange={setFilter}
           showSizeColumn={!searchTerm}
+          viewMode={listing.view}
+          onViewModeChange={listing.setView}
           sortBy={sortBy}
           sortDir={sortDir}
-          onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+          onSortChange={listing.setSort}
           totalCount={
             searchTerm
               ? searchHits?.length

@@ -1,5 +1,6 @@
 'use client';
 
+import type { CellSet } from './cellSet';
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -16,7 +17,7 @@ import { measurePhase } from '@neutrino/utils';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
-import type { CellProps, ClipboardCFRule, CFRule, SheetFile, TableRegion } from './types';
+import type { CellProps, ClipboardCFRule, CFRule, CFVariable, SheetFile, TableRegion } from './types';
 import type { SheetTemplate } from './templates/sheetTemplates';
 import { sheetFileToSheetsData } from './hooks/sheetFileUtils';
 import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, getCellBounds, type ArrowNavigationKey } from './utils';
@@ -37,7 +38,7 @@ import {
 import type { TableStyle } from './styles/tableStyles';
 import { ConditionalFormattingDialog } from './ConditionalFormattingDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
-import { useNspell } from '@/hooks/useNspell';
+import { firstMisspelledWord, spellSuggestionsFor, useNspell } from '@/hooks/useNspell';
 import { computeCell, propagateDeps, type SheetRef } from './formula';
 import type { CellStyle } from './types';
 
@@ -59,8 +60,14 @@ import { useCharts } from './charts/useCharts';
 import { ChartLayer } from './charts/ChartLayer';
 import { ChartCreationDialog } from './charts/ChartCreationDialog';
 import { ChartEditorPanel } from './charts/ChartEditorPanel';
+import { useCommand, useCommands, useKeyHandler } from '@neutrino/commands';
 import styles from './page.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
+import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
+import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { SelectionSummary } from './components/SelectionSummary';
+
+const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 type SheetKeyboardMode = 'movement' | 'formula';
 
@@ -235,9 +242,9 @@ export function SheetEditor() {
 
     // ── Conditional formatting state ───────────────────────
     const [showCFDialog, setShowCFDialog] = useState(false);
-    const [cfVariables, setCfVariables] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'); } catch { return []; }
-    });
+    const [cfVariables, setCfVariables] = useState<CFVariable[]>(
+        () => readVaultOrLegacy(preferences, 'library.sheets.cfVariables') as CFVariable[],
+    );
 
     // ── Chart state ────────────────────────────────────────
     const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -542,41 +549,19 @@ export function SheetEditor() {
     const selectedCellStyleRef = useRef(editing.selectedCellStyle);
     selectedCellStyleRef.current = editing.selectedCellStyle;
 
-    // Document-level Ctrl/Cmd+B and +I shortcuts for cell formatting.
-    // Using document.addEventListener (not onKeyDown on the wrapper div) ensures
-    // the handler fires regardless of which child element has focus.
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (isViewerRef.current) return;
-            if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
-            if ((document.activeElement as HTMLElement | null)?.isContentEditable) return;
-            if (e.key.toLowerCase() === 'b') {
-                e.preventDefault();
-                applyStyleRef.current({ fontWeight: selectedCellStyleRef.current?.fontWeight === 'bold' ? 'normal' : 'bold' });
-            } else if (e.key.toLowerCase() === 'i') {
-                e.preventDefault();
-                applyStyleRef.current({ fontStyle: selectedCellStyleRef.current?.fontStyle === 'italic' ? 'normal' : 'italic' });
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []); // empty deps — handler reads from refs, never stale
-
-    // Ctrl/Cmd+F = Find, Ctrl/Cmd+H = Find & Replace
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
-            if (e.key === 'f') {
-                e.preventDefault();
-                setFindReplaceMode('find');
-            } else if (e.key === 'h') {
-                e.preventDefault();
-                setFindReplaceMode('replace');
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []); // empty deps — setFindReplaceMode is a stable setter
+    // Cell formatting, from anywhere in the editor including the formula bar — but not from a
+    // contenteditable (the title, a text box), which formats its own text.
+    const cellFormat = (run: () => void) => () => {
+        if (isViewerRef.current) return false;
+        if ((document.activeElement as HTMLElement | null)?.isContentEditable) return false;
+        run();
+    };
+    useCommands({
+        'sheets.bold': cellFormat(() => applyStyleRef.current({ fontWeight: selectedCellStyleRef.current?.fontWeight === 'bold' ? 'normal' : 'bold' })),
+        'sheets.italic': cellFormat(() => applyStyleRef.current({ fontStyle: selectedCellStyleRef.current?.fontStyle === 'italic' ? 'normal' : 'italic' })),
+        'sheets.find': () => setFindReplaceMode('find'),
+        'sheets.replace': () => setFindReplaceMode('replace'),
+    });
 
     // Stable refs for arrow-key navigation; updated every render so the effect
     // with empty deps always reads the latest values without re-registering.
@@ -601,95 +586,87 @@ export function SheetEditor() {
     // Initialized with a no-op; updated after handleClearCells is defined below.
     const handleClearCellsNavRef = useRef<() => void>(() => {});
 
-    // Document-level arrow-key handler for cell navigation.
+    // Arrow-key cell navigation, from anywhere in the editor.
     // Only fires when a cell is selected and the user is NOT actively editing
     // (i.e. the formula bar input or another text input is not focused).
-    useEffect(() => {
-        const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-        const handler = (e: KeyboardEvent) => {
-            if (!ARROW_KEYS.has(e.key)) return;
-            if (keyboardModeNavRef.current !== 'movement') return;
-            if (e.metaKey || e.altKey) return;
-            const active = document.activeElement as HTMLElement | null;
-            const isFormulaInput = active === formulaInputNavRef.current.current;
-            // Skip other inputs, textareas, and contenteditables. When the
-            // formula input is focused while still in Movement Mode, arrows
-            // continue to navigate the grid.
-            if (active && !isFormulaInput && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-            const anchor = selectionAnchorNavRef.current;
-            if (!anchor) return;
-            const activeCell = selectionActiveNavRef.current ?? anchor;
+    useKeyHandler((e) => {
+        if (!ARROW_KEYS.has(e.key)) return;
+        if (keyboardModeNavRef.current !== 'movement') return;
+        if (e.metaKey || e.altKey) return;
+        const active = document.activeElement as HTMLElement | null;
+        const isFormulaInput = active === formulaInputNavRef.current.current;
+        // Skip other inputs, textareas, and contenteditables. When the
+        // formula input is focused while still in Movement Mode, arrows
+        // continue to navigate the grid.
+        if (active && !isFormulaInput && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+        const anchor = selectionAnchorNavRef.current;
+        if (!anchor) return;
+        const activeCell = selectionActiveNavRef.current ?? anchor;
 
+        e.preventDefault();
+        const nextId = navigateCell(activeCell, e.key as ArrowNavigationKey, {
+            ctrlKey: e.ctrlKey,
+            data: dataNavRef.current,
+        });
+        if (nextId === activeCell) return; // already at boundary or populated edge
+
+        clearHeaderSelectionNavRef.current();
+        if (e.shiftKey) {
+            stableOnSelectionExtendNavRef.current(nextId);
+        } else {
+            stableOnCellActivateNavRef.current(nextId);
+        }
+
+        // Scroll the newly selected cell into view if it's off-screen.
+        // The cell elements are plain divs with id={cellId} inside the
+        // scrollable bodyRef container in SheetGrid.
+        requestAnimationFrame(() => {
+            const el = document.getElementById(nextId);
+            if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        });
+    });
+
+    // Enter/Tab move, Delete clears, and any printable key starts typing into the formula bar.
+    useKeyHandler((e) => {
+        if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+        const active = document.activeElement as HTMLElement | null;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+        const anchor = selectionAnchorNavRef.current;
+        if (!anchor) return;
+
+        if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
-            const nextId = navigateCell(activeCell, e.key as ArrowNavigationKey, {
-                ctrlKey: e.ctrlKey,
-                data: dataNavRef.current,
-            });
-            if (nextId === activeCell) return; // already at boundary or populated edge
-
+            setKeyboardMode('movement');
+            const direction = e.key === 'Enter' ? 'ArrowDown' : 'ArrowRight';
+            const activeCell = selectionActiveNavRef.current ?? anchor;
+            const nextId = navigateCell(activeCell, direction);
             clearHeaderSelectionNavRef.current();
-            if (e.shiftKey) {
-                stableOnSelectionExtendNavRef.current(nextId);
-            } else {
-                stableOnCellActivateNavRef.current(nextId);
-            }
-
-            // Scroll the newly selected cell into view if it's off-screen.
-            // The cell elements are plain divs with id={cellId} inside the
-            // scrollable bodyRef container in SheetGrid.
+            stableOnCellActivateNavRef.current(nextId);
             requestAnimationFrame(() => {
                 const el = document.getElementById(nextId);
                 if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             });
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []); // empty deps — handler reads only from stable refs
+            return;
+        }
 
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (isViewerRef.current) return;
 
-            const active = document.activeElement as HTMLElement | null;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-
-            const anchor = selectionAnchorNavRef.current;
-            if (!anchor) return;
-
-            if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
-                setKeyboardMode('movement');
-                const direction = e.key === 'Enter' ? 'ArrowDown' : 'ArrowRight';
-                const activeCell = selectionActiveNavRef.current ?? anchor;
-                const nextId = navigateCell(activeCell, direction);
-                clearHeaderSelectionNavRef.current();
-                stableOnCellActivateNavRef.current(nextId);
-                requestAnimationFrame(() => {
-                    const el = document.getElementById(nextId);
-                    if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                });
-                return;
-            }
-
-            if (isViewerRef.current) return;
-
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                e.preventDefault();
-                clearHeaderSelectionNavRef.current();
-                handleClearCellsNavRef.current();
-                return;
-            }
-
-            if (e.key.length !== 1) return;
-
+        if (e.key === 'Delete' || e.key === 'Backspace') {
             e.preventDefault();
             clearHeaderSelectionNavRef.current();
-            suppressNextFormulaFocusModeRef.current = true;
-            beginTypingInFormulaBarNavRef.current(e.key);
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []);
+            handleClearCellsNavRef.current();
+            return;
+        }
+
+        if (e.key.length !== 1) return;
+
+        e.preventDefault();
+        clearHeaderSelectionNavRef.current();
+        suppressNextFormulaFocusModeRef.current = true;
+        beginTypingInFormulaBarNavRef.current(e.key);
+    });
 
     const clipboard = useClipboard({
         dataRef,
@@ -739,31 +716,31 @@ export function SheetEditor() {
     const [columnFilters, setColumnFilters] = useState<Map<number, Set<string>>>(new Map());
     const [filterDialogCol, setFilterDialogCol] = useState<number | null>(null);
 
-    // nspell only handles single words — extract the first misspelled word from
-    // a cell's raw value so multi-word cells work correctly.
-    function firstMisspelled(raw: string, spell: NonNullable<typeof nspell>): string | null {
-        const words = raw.match(/[a-zA-Z']+/g) ?? [];
-        return words.find(w => !spell.check(w)) ?? null;
-    }
-
-    // When nspell finishes loading while the context menu is open, find the first
-    // misspelled word in the stored raw value and compute suggestions for it.
-    useEffect(() => {
-        if (!nspell || !spellWord || spellSuggestions !== undefined) return;
-        const misspelled = firstMisspelled(spellWord, nspell);
+    // nspell only handles single words, so a multi-word cell is offered suggestions for its first
+    // misspelled word (`firstMisspelledWord`). The answers can come from the worker, so they land a
+    // moment after the menu opens.
+    const showCellSpelling = useCallback(async (raw: string, spell: NonNullable<typeof nspell>) => {
+        const misspelled = await firstMisspelledWord(spell, raw);
         if (misspelled) {
             setSpellWord(misspelled);
-            setSpellSuggestions(nspell.suggest(misspelled).slice(0, 5));
+            setSpellSuggestions(await spellSuggestionsFor(spell, misspelled, 5));
         } else {
             // No misspelled word found — close the spell section silently.
             setSpellWord(undefined);
         }
-    }, [nspell, spellWord, spellSuggestions]);
+    }, []);
 
+    // When nspell finishes loading while the context menu is open, look at the stored raw value.
+    useEffect(() => {
+        if (!nspell || !spellWord || spellSuggestions !== undefined) return;
+        void showCellSpelling(spellWord, nspell);
+    }, [nspell, spellWord, spellSuggestions, showCellSpelling]);
+
+    const activateCell = editing.stableOnCellActivate;
     const handleCellContextMenu = useCallback((cellId: string, x: number, y: number) => {
         if (isViewer) return;
         if (!isCellSelected(cellId)) {
-            editing.stableOnCellActivate(cellId);
+            activateCell(cellId);
         }
 
         setSpellWord(undefined);
@@ -774,11 +751,7 @@ export function SheetEditor() {
             const raw = cell?.raw ?? '';
             if (raw.length > 0 && !raw.startsWith('=')) {
                 if (nspell) {
-                    const misspelled = firstMisspelled(raw, nspell);
-                    if (misspelled) {
-                        setSpellWord(misspelled);
-                        setSpellSuggestions(nspell.suggest(misspelled).slice(0, 5));
-                    }
+                    void showCellSpelling(raw, nspell);
                 } else {
                     // nspell still loading — store the raw so the useEffect can
                     // extract the misspelled word once the dictionary arrives.
@@ -788,7 +761,7 @@ export function SheetEditor() {
         }
 
         setContextMenu({ cellId, x, y });
-    }, [isCellSelected, editing.stableOnCellActivate, spellCheck, nspell, dataRef]);
+    }, [isViewer, isCellSelected, activateCell, spellCheck, nspell, dataRef, showCellSpelling]);
 
     const handleApplySuggestion = useCallback((word: string) => {
         if (!contextMenu || !spellWord) return;
@@ -1166,7 +1139,7 @@ export function SheetEditor() {
     // Records the applied region so structural inserts/deletes can recolor it
     // later (the actual bug fix — table styles are otherwise a one-time paint
     // with no memory of "this range is a table").
-    const handleRegisterTableStyle = useCallback((style: TableStyle, cells: Set<string>) => {
+    const handleRegisterTableStyle = useCallback((style: TableStyle, cells: CellSet) => {
         const bounds = getCellBounds(cells);
         tableRegions.registerRegion({
             id: `table-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -1181,7 +1154,7 @@ export function SheetEditor() {
     // Companion to handleRegisterTableStyle for the "Blank" table style: clears
     // table-region tracking for the current selection without registering a
     // new region in its place.
-    const handleClearTableRegionsForSelection = useCallback((cells: Set<string>) => {
+    const handleClearTableRegionsForSelection = useCallback((cells: CellSet) => {
         const bounds = getCellBounds(cells);
         tableRegions.removeOverlapping({
             minR: bounds.minRow,
@@ -1452,16 +1425,7 @@ export function SheetEditor() {
         persist.save();
     }, [sheets, persist]);
 
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                handleManualSave();
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, [handleManualSave]);
+    useCommand('sheets.save', () => { void handleManualSave(); });
 
 
     // ── Effects ──────────────────────────────────────────────────────────────
@@ -1703,6 +1667,7 @@ export function SheetEditor() {
                 <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />
                 </button>
+                <EditorDocIcon app="sheets" />
                 <div className={styles.titleArea}>
                     <div
                         ref={titleInputRef}
@@ -1715,7 +1680,8 @@ export function SheetEditor() {
                         onBlur={isViewer ? undefined : persist.updateTitle}
                     />
                 </div>
-                <div style={{ marginLeft: 'auto' }}>
+                <div className={styles.actions} style={{ marginLeft: 'auto' }}>
+                    <EditorSaveState store={persist.saveState} />
                     <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
                 </div>
             </div>
@@ -1915,6 +1881,7 @@ export function SheetEditor() {
                     onMoveSheet={sheets.moveSheet}
                     onCommitRename={sheets.commitRename}
                 />
+                <SelectionSummary data={data} selectedCells={selectedCells} />
                 <div className={styles.zoomArea}>
                     <ZoomSlider value={zoom} onChange={setZoom} min={50} max={200} step={25} />
                 </div>
@@ -2031,9 +1998,7 @@ export function SheetEditor() {
                     onUpdate={cf.updateConditionalFormats}
                     onClose={() => {
                         setShowCFDialog(false);
-                        try {
-                            setCfVariables(JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'));
-                        } catch { /* ignore */ }
+                        setCfVariables(readVaultOrLegacy(preferences, 'library.sheets.cfVariables') as CFVariable[]);
                     }}
                 />
             )}

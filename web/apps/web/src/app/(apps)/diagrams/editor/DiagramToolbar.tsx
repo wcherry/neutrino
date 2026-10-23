@@ -45,6 +45,8 @@ import type { LayoutAlgorithm } from './layout/layoutEngine';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { DiagramHamburgerMenu } from './DiagramHamburgerMenu';
 import type { DiagramFormat } from '@neutrino/api-diagrams';
+import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
+import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
 import styles from './DiagramToolbar.module.css';
 
 export interface TextDefaults {
@@ -139,209 +141,189 @@ export function DiagramToolbar({
 
   const isDrawing = mode === 'pen' || mode === 'pencil' || mode === 'highlighter' || mode === 'eraser';
 
-  return (
-    <div className={styles.toolbar}>
-      {/* Left: main menu + mode tools + history */}
-      <div className={styles.left}>
-        <button
-          className={styles.toolBtn}
-          onClick={onBack}
-          title="Back to Diagrams"
-          aria-label="Back to Diagrams"
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <DiagramHamburgerMenu
-          onNew={onNewDiagram}
-          onSave={onSave}
-          format={format}
-          onSaveAs={onSaveAs}
-          onDuplicate={onDuplicate}
-          onDeleteClick={onDeleteClick}
-        />
-
-        <div className={styles.divider} />
-
-        <button
-          className={`${styles.toolBtn} ${mode === 'select' ? styles.active : ''}`}
-          onClick={() => onModeChange('select')}
-          title="Select (V)"
-        >
-          <MousePointer2 size={16} />
-        </button>
-        <button
-          className={`${styles.toolBtn} ${mode === 'pan' ? styles.active : ''}`}
-          onClick={() => onModeChange('pan')}
-          title="Pan (H)"
-        >
-          <Hand size={16} />
-        </button>
-        <button
-          className={`${styles.toolBtn} ${mode === 'connector' ? styles.active : ''}`}
-          onClick={() => onModeChange('connector')}
-          title="Connector"
-        >
-          <Minus size={16} style={{ transform: 'rotate(-45deg)' }} />
-        </button>
-        <button
-          className={`${styles.toolBtn} ${mode === 'text' ? styles.active : ''}`}
-          onClick={() => onModeChange('text')}
-          title="Text (T)"
-        >
-          <Type size={16} />
-        </button>
-        {mode === 'text' && (
-          <div className={styles.layoutMenu}>
-            <button
-              className={`${styles.toolBtn} ${showTextMenu ? styles.active : ''}`}
-              onClick={() => setShowTextMenu((v) => !v)}
-              title="Text defaults"
-            >
-              <ChevronDown size={13} />
-            </button>
-            {showTextMenu && (
-              <div className={`${styles.dropdown} ${styles.textDefaultsDropdown}`}>
-                <div className={styles.textDefaultsRow}>
-                  <label>Font</label>
-                  <select
-                    value={textDefaults.fontFamily}
-                    onChange={(e) => onTextDefaultsChange({ fontFamily: e.target.value })}
-                    className={styles.textDefaultsSelect}
-                  >
-                    {fontFamilyNames.map((f) => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className={styles.textDefaultsRow}>
-                  <label>Size</label>
-                  <input
-                    type="number"
-                    min={8}
-                    max={72}
-                    value={textDefaults.fontSize}
-                    onChange={(e) => onTextDefaultsChange({ fontSize: Number(e.target.value) })}
-                    className={styles.textDefaultsNumber}
-                  />
-                </div>
-                <div className={styles.textDefaultsRow}>
-                  <label>Color</label>
-                  <ColorPickerPopover
-                    color={textDefaults.textColor}
-                    onChange={(hex) => onTextDefaultsChange({ textColor: hex })}
-                    title="Text color"
-                  >
-                    <span
-                      className={styles.colorSwatch}
-                      style={{ background: textDefaults.textColor }}
-                    />
-                  </ColorPickerPopover>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className={styles.divider} />
-
-        {/* Phase 4 — Whiteboard tools */}
-        <button
-          className={`${styles.toolBtn} ${mode === 'pen' ? styles.active : ''}`}
-          onClick={() => onModeChange('pen')}
-          title="Pen"
-        >
-          <Pen size={15} />
-        </button>
-        <button
-          className={`${styles.toolBtn} ${mode === 'highlighter' ? styles.active : ''}`}
-          onClick={() => onModeChange('highlighter')}
-          title="Highlighter"
-        >
-          <Highlighter size={15} />
-        </button>
-        <button
-          className={`${styles.toolBtn} ${mode === 'eraser' ? styles.active : ''}`}
-          onClick={() => onModeChange('eraser')}
-          title="Eraser"
-        >
-          <Eraser size={15} />
-        </button>
-
-        {isDrawing && (
-          <ColorPickerPopover
-            color={drawColor}
-            onChange={onDrawColorChange}
-            title="Drawing color"
+  // Tool groups either side of the title (U10, lib/editorToolbars.ts), with the dividers the
+  // toolbar always drew; Back, the menu, the title, Share and Save stay put.
+  const tools: ToolDef[] = [
+    {
+      id: 'modes',
+      render: () => (
+        <>
+          <button
+            className={`${styles.toolBtn} ${mode === 'select' ? styles.active : ''}`}
+            onClick={() => onModeChange('select')}
+            title="Select (V)"
           >
-            <span className={styles.colorSwatch} style={{ background: drawColor }} />
-          </ColorPickerPopover>
-        )}
+            <MousePointer2 size={16} />
+          </button>
+          <button
+            className={`${styles.toolBtn} ${mode === 'pan' ? styles.active : ''}`}
+            onClick={() => onModeChange('pan')}
+            title="Pan (H)"
+          >
+            <Hand size={16} />
+          </button>
+          <button
+            className={`${styles.toolBtn} ${mode === 'connector' ? styles.active : ''}`}
+            onClick={() => onModeChange('connector')}
+            title="Connector"
+          >
+            <Minus size={16} style={{ transform: 'rotate(-45deg)' }} />
+          </button>
+          <button
+            className={`${styles.toolBtn} ${mode === 'text' ? styles.active : ''}`}
+            onClick={() => onModeChange('text')}
+            title="Text (T)"
+          >
+            <Type size={16} />
+          </button>
+          {mode === 'text' && (
+            <div className={styles.layoutMenu}>
+              <button
+                className={`${styles.toolBtn} ${showTextMenu ? styles.active : ''}`}
+                onClick={() => setShowTextMenu((v) => !v)}
+                title="Text defaults"
+              >
+                <ChevronDown size={13} />
+              </button>
+              {showTextMenu && (
+                <div className={`${styles.dropdown} ${styles.textDefaultsDropdown}`}>
+                  <div className={styles.textDefaultsRow}>
+                    <label>Font</label>
+                    <select
+                      value={textDefaults.fontFamily}
+                      onChange={(e) => onTextDefaultsChange({ fontFamily: e.target.value })}
+                      className={styles.textDefaultsSelect}
+                    >
+                      {fontFamilyNames.map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.textDefaultsRow}>
+                    <label>Size</label>
+                    <input
+                      type="number"
+                      min={8}
+                      max={72}
+                      value={textDefaults.fontSize}
+                      onChange={(e) => onTextDefaultsChange({ fontSize: Number(e.target.value) })}
+                      className={styles.textDefaultsNumber}
+                    />
+                  </div>
+                  <div className={styles.textDefaultsRow}>
+                    <label>Color</label>
+                    <ColorPickerPopover
+                      color={textDefaults.textColor}
+                      onChange={(hex) => onTextDefaultsChange({ textColor: hex })}
+                      title="Text color"
+                    >
+                      <span
+                        className={styles.colorSwatch}
+                        style={{ background: textDefaults.textColor }}
+                      />
+                    </ColorPickerPopover>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      id: 'whiteboard',
+      render: () => (
+        <>
+          {/* Phase 4 — Whiteboard tools */}
+          <button
+            className={`${styles.toolBtn} ${mode === 'pen' ? styles.active : ''}`}
+            onClick={() => onModeChange('pen')}
+            title="Pen"
+          >
+            <Pen size={15} />
+          </button>
+          <button
+            className={`${styles.toolBtn} ${mode === 'highlighter' ? styles.active : ''}`}
+            onClick={() => onModeChange('highlighter')}
+            title="Highlighter"
+          >
+            <Highlighter size={15} />
+          </button>
+          <button
+            className={`${styles.toolBtn} ${mode === 'eraser' ? styles.active : ''}`}
+            onClick={() => onModeChange('eraser')}
+            title="Eraser"
+          >
+            <Eraser size={15} />
+          </button>
 
-        <div className={styles.divider} />
-
-        <button
-          className={styles.toolBtn}
-          onClick={onUndo}
-          disabled={!canUndo}
-          title="Undo (⌘Z)"
-        >
-          <Undo2 size={16} />
-        </button>
-        <button
-          className={styles.toolBtn}
-          onClick={onRedo}
-          disabled={!canRedo}
-          title="Redo (⌘⇧Z)"
-        >
-          <Redo2 size={16} />
-        </button>
-      </div>
-
-      {/* Center: title */}
-      <div className={styles.center}>
-        {titleEditing ? (
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            onBlur={onTitleBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') onTitleBlur(); }}
-            className={styles.titleInput}
-          />
-        ) : (
-          <span className={styles.title} onClick={onTitleClick} title="Click to rename">
-            {title}
-          </span>
-        )}
-      </div>
-
-      {/* Right: arrange, save, comments, presence */}
-      <div className={styles.right}>
-        {/* Alignment tools (visible when shapes selected) */}
-        {hasMultiSelection && (
-          <>
-            <button className={styles.toolBtn} onClick={() => onAlign('left')} title="Align left"><AlignLeft size={15} /></button>
-            <button className={styles.toolBtn} onClick={() => onAlign('center-h')} title="Align center"><AlignCenter size={15} /></button>
-            <button className={styles.toolBtn} onClick={() => onAlign('right')} title="Align right"><AlignRight size={15} /></button>
-            <button className={styles.toolBtn} onClick={() => onAlign('top')} title="Align top"><AlignStartVertical size={15} /></button>
-            <button className={styles.toolBtn} onClick={() => onAlign('center-v')} title="Align middle"><AlignCenterVertical size={15} /></button>
-            <button className={styles.toolBtn} onClick={() => onAlign('bottom')} title="Align bottom"><AlignEndVertical size={15} /></button>
-            <div className={styles.divider} />
-          </>
-        )}
-
-        {/* Layer order (visible when shapes selected) */}
-        {hasSelection && (
-          <>
-            <button className={styles.toolBtn} onClick={onBringToFront} title="Bring to front"><ArrowUpToLine size={15} /></button>
-            <button className={styles.toolBtn} onClick={onBringForward} title="Bring forward"><ChevronUp size={15} /></button>
-            <button className={styles.toolBtn} onClick={onSendBackward} title="Send backward"><ChevronDown size={15} /></button>
-            <button className={styles.toolBtn} onClick={onSendToBack} title="Send to back"><ArrowDownToLine size={15} /></button>
-            <div className={styles.divider} />
-          </>
-        )}
-
-        {/* Phase 5 — Layout */}
+          {isDrawing && (
+            <ColorPickerPopover
+              color={drawColor}
+              onChange={onDrawColorChange}
+              title="Drawing color"
+            >
+              <span className={styles.colorSwatch} style={{ background: drawColor }} />
+            </ColorPickerPopover>
+          )}
+        </>
+      ),
+    },
+    {
+      id: 'history',
+      render: () => (
+        <>
+          <button
+            className={styles.toolBtn}
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo (⌘Z)"
+          >
+            <Undo2 size={16} />
+          </button>
+          <button
+            className={styles.toolBtn}
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Redo (⌘⇧Z)"
+          >
+            <Redo2 size={16} />
+          </button>
+        </>
+      ),
+    },
+    {
+      id: 'align',
+      joined: true,
+      render: () => hasMultiSelection ? (
+        <>
+          <button className={styles.toolBtn} onClick={() => onAlign('left')} title="Align left"><AlignLeft size={15} /></button>
+          <button className={styles.toolBtn} onClick={() => onAlign('center-h')} title="Align center"><AlignCenter size={15} /></button>
+          <button className={styles.toolBtn} onClick={() => onAlign('right')} title="Align right"><AlignRight size={15} /></button>
+          <button className={styles.toolBtn} onClick={() => onAlign('top')} title="Align top"><AlignStartVertical size={15} /></button>
+          <button className={styles.toolBtn} onClick={() => onAlign('center-v')} title="Align middle"><AlignCenterVertical size={15} /></button>
+          <button className={styles.toolBtn} onClick={() => onAlign('bottom')} title="Align bottom"><AlignEndVertical size={15} /></button>
+          <div className={styles.divider} />
+        </>
+      ) : null,
+    },
+    {
+      id: 'arrange',
+      joined: true,
+      render: () => hasSelection ? (
+        <>
+          <button className={styles.toolBtn} onClick={onBringToFront} title="Bring to front"><ArrowUpToLine size={15} /></button>
+          <button className={styles.toolBtn} onClick={onBringForward} title="Bring forward"><ChevronUp size={15} /></button>
+          <button className={styles.toolBtn} onClick={onSendBackward} title="Send backward"><ChevronDown size={15} /></button>
+          <button className={styles.toolBtn} onClick={onSendToBack} title="Send to back"><ArrowDownToLine size={15} /></button>
+          <div className={styles.divider} />
+        </>
+      ) : null,
+    },
+    {
+      id: 'layout',
+      joined: true,
+      render: () => (
         <div className={styles.layoutMenu}>
           <button
             className={`${styles.toolBtn} ${showLayoutMenu ? styles.active : ''}`}
@@ -369,45 +351,53 @@ export function DiagramToolbar({
             </div>
           )}
         </div>
+      ),
+    },
+    {
+      id: 'panels',
+      render: () => (
+        <>
+          {/* Phase 6 — Data panel */}
+          <button
+            className={`${styles.toolBtn} ${showData ? styles.active : ''}`}
+            onClick={onToggleData}
+            title="Data panel"
+          >
+            <Database size={15} />
+          </button>
 
-        <div className={styles.divider} />
+          {/* Phase 8 — Developer panel */}
+          <button
+            className={`${styles.toolBtn} ${showDeveloper ? styles.active : ''}`}
+            onClick={onToggleDeveloper}
+            title="Developer panel"
+          >
+            <Code2 size={15} />
+          </button>
 
-        {/* Phase 6 — Data panel */}
-        <button
-          className={`${styles.toolBtn} ${showData ? styles.active : ''}`}
-          onClick={onToggleData}
-          title="Data panel"
-        >
-          <Database size={15} />
-        </button>
+          {/* Phase 10 — AI panel */}
+          <button
+            className={`${styles.toolBtn} ${showAi ? styles.active : ''}`}
+            onClick={onToggleAi}
+            title="AI Diagrams"
+          >
+            <Sparkles size={15} />
+          </button>
 
-        {/* Phase 8 — Developer panel */}
-        <button
-          className={`${styles.toolBtn} ${showDeveloper ? styles.active : ''}`}
-          onClick={onToggleDeveloper}
-          title="Developer panel"
-        >
-          <Code2 size={15} />
-        </button>
-
-        {/* Phase 10 — AI panel */}
-        <button
-          className={`${styles.toolBtn} ${showAi ? styles.active : ''}`}
-          onClick={onToggleAi}
-          title="AI Diagrams"
-        >
-          <Sparkles size={15} />
-        </button>
-
-        <button
-          className={`${styles.toolBtn} ${showComments ? styles.active : ''}`}
-          onClick={onToggleComments}
-          title="Comments"
-        >
-          <MessageSquare size={16} />
-        </button>
-
-        {/* Phase 4 — Presentation mode */}
+          <button
+            className={`${styles.toolBtn} ${showComments ? styles.active : ''}`}
+            onClick={onToggleComments}
+            title="Comments"
+          >
+            <MessageSquare size={16} />
+          </button>
+        </>
+      ),
+    },
+    {
+      id: 'present',
+      joined: true,
+      render: () => (
         <button
           className={styles.toolBtn}
           onClick={onPresentation}
@@ -415,15 +405,73 @@ export function DiagramToolbar({
         >
           <Presentation size={15} />
         </button>
+      ),
+    },
+    {
+      id: 'importExport',
+      joined: true,
+      render: () => (
+        <>
+          <button className={styles.toolBtn} onClick={onImport} title="Import diagram">
+            <Upload size={15} />
+          </button>
+          <button className={styles.toolBtn} onClick={onExport} title="Export diagram">
+            <Download size={15} />
+          </button>
+        </>
+      ),
+    },
+  ];
 
-        {/* Phase 7 — Import / Export */}
-        <button className={styles.toolBtn} onClick={onImport} title="Import diagram">
-          <Upload size={15} />
+  return (
+    <div className={styles.toolbar}>
+      {/* Left: main menu + mode tools + history */}
+      <div className={styles.left}>
+        <button
+          className={styles.toolBtn}
+          onClick={onBack}
+          title="Back to Diagrams"
+          aria-label="Back to Diagrams"
+        >
+          <ArrowLeft size={16} />
         </button>
-        <button className={styles.toolBtn} onClick={onExport} title="Export diagram">
-          <Download size={15} />
-        </button>
+        <DiagramHamburgerMenu
+          onNew={onNewDiagram}
+          onSave={onSave}
+          format={format}
+          onSaveAs={onSaveAs}
+          onDuplicate={onDuplicate}
+          onDeleteClick={onDeleteClick}
+        />
 
+        <div className={styles.divider} />
+        <ToolbarItems editor="diagrams" region="start" overflow={false} tools={tools} divider={<div className={styles.divider} />} />
+      </div>
+
+      {/* Center: title */}
+      <div className={styles.center}>
+        <EditorDocIcon app="diagrams" />
+        {titleEditing ? (
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            onBlur={onTitleBlur}
+            onKeyDown={(e) => { if (e.key === 'Enter') onTitleBlur(); }}
+            className={styles.titleInput}
+          />
+        ) : (
+          <span className={styles.title} onClick={onTitleClick} title="Click to rename">
+            {title}
+          </span>
+        )}
+      </div>
+
+      {/* Right: arrange, save, comments, presence */}
+      <div className={styles.right}>
+        <ToolbarItems editor="diagrams" region="end" tools={tools} divider={<div className={styles.divider} />} />
+
+        <EditorSaveState state={isSaving ? 'saving' : 'saved'} />
         <ShareButton users={remoteUsers} onShare={onShare} />
 
         <button

@@ -18,6 +18,8 @@ import type {
 // Auth API
 // ---------------------------------------------------------------------------
 
+let profileInFlight: Promise<UserProfile> | null = null;
+
 export const authApi = {
   async register(body: RegisterRequest): Promise<UserProfile> {
     return request<UserProfile>('/api/v1/auth/register', {
@@ -110,8 +112,18 @@ export const authApi = {
     }
   },
 
-  async getProfile(): Promise<UserProfile> {
-    return request<UserProfile>('/api/v1/auth/me');
+  /**
+   * The signed-in user. Concurrent calls share one request: the auth provider and the app shell
+   * both ask at startup, and a second `/auth/me` on the critical path of every page load was a
+   * round trip for an answer already on its way. Calls after it settles fetch afresh.
+   */
+  getProfile(): Promise<UserProfile> {
+    if (!profileInFlight) {
+      profileInFlight = request<UserProfile>('/api/v1/auth/me').finally(() => {
+        profileInFlight = null;
+      });
+    }
+    return profileInFlight;
   },
 
   async getProfileDetails(): Promise<UserProfileDetails> {

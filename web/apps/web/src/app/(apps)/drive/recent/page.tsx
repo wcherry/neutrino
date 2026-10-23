@@ -10,12 +10,15 @@ import { fileToGridItem, sortEntries } from '../gridItems';
 import { routeForFile } from '../routeForFile';
 import { PreviewModal } from '../PreviewModal';
 import styles from '../shared/page.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 export default function RecentPage() {
   const router = useRouter();
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
-  const [sortBy, setSortBy] = useState<SortField>('updatedAt');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('recent', { view: 'large', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['recent'],
@@ -47,9 +50,11 @@ export default function RecentPage() {
         isLoading={isLoading}
         isError={isError}
         onItemClick={openItem}
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        onSortChange={listing.setSort}
         totalCount={isLoading ? undefined : files.length}
         emptyState={
           isError ? (

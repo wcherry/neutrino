@@ -1,0 +1,814 @@
+/*
+ * Looks — the surface-style token groups behind the three looks in
+ * agent_docs/ui-look-and-feel-roadmap.md §3–4: Light Flow, Quiet Precision
+ * and Blended Flow, plus `classic`, which is today's UI.
+ *
+ * A look is a set of values over ONE structure, never a second copy of the
+ * CSS. It is selected by `data-look` on <html> (set before first paint by the
+ * anti-FOUC script in app/layout.tsx) and combines with `data-theme` (colour)
+ * and `data-density` (density.css) — three independent axes.
+ *
+ * The @neutrino/ui primitives read them (Stage 2); the shell follows in
+ * Stage 3. Until a look is selectable `classic` is the only one in use, and its
+ * values are what the components drew before they read tokens, so adopting a
+ * token never changes how classic looks.
+ *
+ * Groups (the table in the look-and-feel roadmap §4):
+ *   surface   --surface-ground, --surface-region, --region-*
+ *   rules     --rule, --row-rule               (separators; `none` in the flows)
+ *   buttons   --button-border-rest/-hover, --button-bg-hover
+ *   primary   --primary-bg/-fg/-border-hover   (filled only in Precision)
+ *   paper     --paper-bg/-shadow/-radius       (a document page)
+ *   glass     --glass-bg/-border/-shadow/-filter, --scrim, --scrim-filter
+ *
+ * and, below the four look blocks, the primitives' own groups (buttons by
+ * variant, fields, selection, chips, menus, dialogs, toasts) — each look's
+ * values for one component, so a component's CSS names a token and never a
+ * look.
+ */
+
+/* ── classic — the current UI ─────────────────────────────────────────────── */
+:root,
+[data-look="classic"] {
+  --surface-ground: var(--color-bg);
+  --surface-region: var(--color-surface);
+  --region-border: 1px solid var(--color-border);
+  --region-radius: var(--radius-lg);
+  --region-shadow: none;
+  --region-gap: 0px;
+
+  --rule: 1px solid var(--color-border);
+  --row-rule: 1px solid var(--color-border);
+
+  --button-border-rest: var(--color-border);
+  --button-border-hover: var(--color-border-strong);
+  --button-bg-hover: var(--color-neutral-100);
+
+  --primary-bg: var(--color-accent);
+  --primary-fg: var(--color-text-on-accent);
+  --primary-border-hover: var(--color-accent-hover);
+
+  --paper-bg: #ffffff;
+  --paper-shadow: var(--shadow-md);
+  --paper-radius: 0px;
+
+  --glass-bg: var(--color-surface-overlay);
+  --glass-border: var(--color-border);
+  --glass-shadow: var(--shadow-lg);
+  --glass-filter: none;
+  --scrim: rgb(0 0 0 / 0.5);
+  --scrim-filter: none;
+}
+
+/* ── Light Flow — one seamless surface ────────────────────────────────────── */
+[data-look="lightflow"] {
+  --surface-ground: #ffffff;
+  --surface-region: transparent;
+  --region-border: 0;
+  --region-radius: 0px;
+  --region-shadow: none;
+  --region-gap: 0px;
+
+  --rule: none;
+  --row-rule: none;
+
+  --button-border-rest: transparent;
+  --button-border-hover: rgb(22 24 29 / 0.12);
+  --button-bg-hover: rgb(22 24 29 / 0.035);
+
+  --primary-bg: transparent;
+  --primary-fg: var(--brand-accent);
+  --primary-border-hover: rgb(51 70 232 / 0.35);
+
+  --paper-bg: #ffffff;
+  --paper-shadow: none;
+  --paper-radius: 0px;
+
+  --glass-bg: rgb(255 255 255 / 0.74);
+  --glass-border: rgb(22 24 29 / 0.08);
+  --glass-shadow: 0 16px 48px rgb(22 24 29 / 0.14), 0 2px 6px rgb(22 24 29 / 0.06);
+  --glass-filter: blur(22px) saturate(1.5);
+  --scrim: rgb(22 24 29 / 0.16);
+  --scrim-filter: blur(2px);
+}
+
+/* ── Quiet Precision — every element floats ───────────────────────────────── */
+[data-look="precision"] {
+  --surface-ground: #eef0f3;
+  --surface-region: #ffffff;
+  --region-border: 1px solid #e3e6eb;
+  --region-radius: 14px;
+  --region-shadow: 0 1px 2px rgb(22 24 29 / 0.04), 0 6px 20px rgb(22 24 29 / 0.05);
+  --region-gap: 10px;
+
+  --rule: 1px solid #e3e6eb;
+  --row-rule: 1px solid #f0f2f5;
+
+  --button-border-rest: #e3e6eb;
+  --button-border-hover: #d4d8e0;
+  --button-bg-hover: #f6f7f9;
+
+  --primary-bg: var(--brand-accent);
+  --primary-fg: #ffffff;
+  --primary-border-hover: var(--brand-accent-hover);
+
+  --paper-bg: #ffffff;
+  --paper-shadow: 0 1px 2px rgb(22 24 29 / 0.05), 0 10px 30px rgb(22 24 29 / 0.07);
+  --paper-radius: 8px 8px 0 0;
+
+  --glass-bg: rgb(255 255 255 / 0.82);
+  --glass-border: rgb(22 24 29 / 0.08);
+  --glass-shadow: 0 16px 48px rgb(22 24 29 / 0.14), 0 2px 6px rgb(22 24 29 / 0.06);
+  --glass-filter: blur(22px) saturate(1.5);
+  --scrim: rgb(22 24 29 / 0.16);
+  --scrim-filter: blur(2px);
+}
+
+/* ── Blended Flow — seamless, washed in the app's colour ──────────────────── */
+[data-look="blended"] {
+  --surface-ground: linear-gradient(180deg, var(--app-wash-from) 0px, var(--app-wash-to) 700px);
+  --surface-region: transparent;
+  --region-border: 0;
+  --region-radius: 0px;
+  --region-shadow: none;
+  --region-gap: 0px;
+
+  --rule: none;
+  --row-rule: none;
+
+  --button-border-rest: transparent;
+  --button-border-hover: color-mix(in srgb, var(--app-color) 24%, transparent);
+  --button-bg-hover: rgb(255 255 255 / 0.55);
+
+  --primary-bg: transparent;
+  --primary-fg: var(--brand-accent);
+  --primary-border-hover: rgb(51 70 232 / 0.4);
+
+  --paper-bg: transparent;
+  --paper-shadow: none;
+  --paper-radius: 0px;
+
+  --glass-bg: rgb(246 247 255 / 0.7);
+  --glass-border: color-mix(in srgb, var(--app-color) 16%, transparent);
+  --glass-shadow: 0 18px 50px rgb(37 52 170 / 0.18), 0 2px 6px rgb(37 52 170 / 0.08);
+  --glass-filter: blur(22px) saturate(1.5);
+  --scrim: color-mix(in srgb, var(--app-color) 14%, transparent);
+  --scrim-filter: blur(2px);
+}
+
+/* ── Dark values for the three new looks ──────────────────────────────────── */
+[data-look="lightflow"][data-theme="dark"] {
+  --surface-ground: #0f1115;
+  --paper-bg: #0f1115;
+  --button-border-hover: rgb(255 255 255 / 0.14);
+  --button-bg-hover: rgb(255 255 255 / 0.045);
+  --primary-border-hover: rgb(124 138 255 / 0.45);
+  --glass-bg: rgb(30 33 41 / 0.72);
+  --glass-border: rgb(255 255 255 / 0.09);
+  --glass-shadow: 0 18px 50px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  --scrim: rgb(0 0 0 / 0.45);
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --surface-ground: #0a0c0f;
+  --surface-region: #15181e;
+  --region-border: 1px solid #242832;
+  --region-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.28);
+  --rule: 1px solid #242832;
+  --row-rule: 1px solid #1d2027;
+  --button-border-rest: #242832;
+  --button-border-hover: #343a45;
+  --button-bg-hover: #1c2027;
+  --primary-fg: #0f1115;
+  --paper-bg: #22262f;
+  --paper-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  --glass-bg: rgb(30 33 41 / 0.82);
+  --glass-border: rgb(255 255 255 / 0.09);
+  --glass-shadow: 0 18px 50px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  --scrim: rgb(0 0 0 / 0.45);
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --button-border-hover: color-mix(in srgb, var(--app-color) 30%, transparent);
+  --button-bg-hover: color-mix(in srgb, var(--app-color) 8%, transparent);
+  --glass-bg: rgb(27 31 58 / 0.7);
+  --glass-border: color-mix(in srgb, var(--app-color) 18%, transparent);
+  --glass-shadow: 0 18px 50px rgb(5 8 30 / 0.6), 0 2px 6px rgb(5 8 30 / 0.4);
+  --scrim: rgb(8 10 30 / 0.5);
+}
+
+
+/* ── Primitives ───────────────────────────────────────────────────────────────
+ * One block per look for the @neutrino/ui primitives. Classic's values are the
+ * literal ones each component drew before (Button, TextInput, Menu, Modal,
+ * Toast …); the flows follow the look-and-feel roadmap §2 "Interaction
+ * states" and §3: borderless until hover, no filled buttons, a pale accent
+ * tint for selection, frosted menus and dialogs, dark frosted toasts.
+ */
+:root,
+[data-look="classic"] {
+  --control-radius: var(--radius-md);
+  /* The accent as UI chrome uses it: the active tab, a focus edge */
+  --accent-ui: var(--color-accent);
+
+  /* Buttons — neutral ("secondary") */
+  --button-bg-rest: var(--color-surface-raised);
+  --button-fg: var(--color-text-primary);
+  /* Ghost */
+  --ghost-fg: var(--color-text-secondary);
+  --ghost-fg-hover: var(--color-text-primary);
+  --ghost-bg-hover: var(--color-bg-subtle);
+  --ghost-border-hover: transparent;
+  /* Primary (beside --primary-bg/-fg/-border-hover above) */
+  --primary-border-rest: var(--color-accent);
+  --primary-bg-hover: var(--color-accent-hover);
+  --primary-fg-hover: var(--color-text-on-accent);
+  /* Danger */
+  --danger-bg: var(--color-error);
+  --danger-fg: #ffffff;
+  --danger-border: var(--color-error);
+  --danger-bg-hover: #b91c1c;
+  --danger-fg-hover: #ffffff;
+  --danger-border-hover: #b91c1c;
+
+  /* Fields — text inputs, textareas, selects */
+  --field-bg: var(--color-surface);
+  --field-border: var(--color-border);
+  --field-border-hover: var(--color-border-strong);
+  --field-border-focus: var(--color-accent);
+  --field-ring: color-mix(in srgb, var(--color-accent) 15%, transparent);
+
+  /* Selection — the active menu item, tab, nav entry */
+  --selected-bg: var(--color-accent-subtle);
+  --selected-fg: var(--color-accent-text);
+
+  /* Chips — filters and toggles */
+  --chip-bg: var(--color-bg-subtle);
+  --chip-border: var(--color-border);
+  --chip-fg: var(--color-text-secondary);
+  --chip-bg-hover: var(--color-neutral-100);
+  --chip-border-hover: var(--color-border-strong);
+  --chip-bg-active: var(--color-accent-subtle);
+  --chip-border-active: var(--color-accent);
+  --chip-fg-active: var(--color-accent-text);
+  --chip-weight-active: var(--font-medium);
+
+  /* Menus and popovers (frosted in the new looks: --glass-*) */
+  --menu-radius: var(--radius-lg);
+  --menu-item-hover: var(--color-bg-subtle);
+  --menu-separator: var(--color-border);
+
+  /* Dialogs */
+  --dialog-radius: var(--radius-xl);
+  --dialog-shadow: var(--shadow-xl);
+  --dialog-rule: 1px solid var(--color-border);
+
+  /* Toasts */
+  --toast-bg: var(--color-surface-overlay);
+  --toast-bg-opaque: var(--color-surface-overlay);
+  --toast-border: var(--color-border);
+  --toast-shadow: var(--shadow-lg);
+  --toast-filter: none;
+  --toast-fg: var(--color-text-primary);
+  --toast-fg-2: var(--color-text-secondary);
+  --toast-close-hover: var(--color-bg-subtle);
+}
+
+/* The three new looks share the shape of every primitive; what differs between
+   them is in the look blocks above (button borders, primary fill, glass). */
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --control-radius: 10px;
+  --accent-ui: var(--brand-accent);
+  --menu-radius: 12px;
+  --dialog-radius: 16px;
+
+  --button-fg: var(--color-text-primary);
+  --ghost-fg: var(--color-text-secondary);
+  --ghost-fg-hover: var(--color-text-primary);
+  --ghost-bg-hover: var(--button-bg-hover);
+  --ghost-border-hover: var(--button-border-hover);
+
+  --field-border-focus: var(--brand-accent);
+  --field-ring: color-mix(in srgb, var(--brand-accent) 14%, transparent);
+
+  --selected-bg: color-mix(in srgb, var(--brand-accent) 9%, transparent);
+  --selected-fg: var(--brand-accent);
+
+  --chip-border: transparent;
+  --chip-border-hover: var(--button-border-hover);
+  --chip-fg: var(--color-text-secondary);
+  --chip-border-active: transparent;
+  --chip-fg-active: var(--color-text-primary);
+  --chip-weight-active: var(--font-semibold);
+
+  --menu-item-hover: var(--button-bg-hover);
+  --menu-separator: transparent;
+
+  --dialog-shadow: var(--glass-shadow);
+  --dialog-rule: var(--rule);
+
+  --toast-bg: rgb(22 24 29 / 0.84);
+  --toast-bg-opaque: #16181d;
+  --toast-border: rgb(255 255 255 / 0.08);
+  --toast-shadow: var(--glass-shadow);
+  --toast-filter: blur(22px) saturate(1.5);
+  --toast-fg: #ffffff;
+  --toast-fg-2: rgb(255 255 255 / 0.74);
+  --toast-close-hover: rgb(255 255 255 / 0.1);
+}
+
+/* Light Flow and Blended Flow: no filled buttons, fields bounded by a fill. */
+[data-look="lightflow"],
+[data-look="blended"] {
+  --button-bg-rest: transparent;
+  --primary-border-rest: transparent;
+  --primary-fg-hover: var(--brand-accent);
+  --danger-bg: transparent;
+  --danger-fg: var(--color-error);
+  --danger-border: transparent;
+  --danger-bg-hover: color-mix(in srgb, var(--color-error) 8%, transparent);
+  --danger-fg-hover: var(--color-error);
+  --danger-border-hover: color-mix(in srgb, var(--color-error) 35%, transparent);
+  --field-border: transparent;
+  --field-border-hover: var(--button-border-hover);
+  --chip-bg-hover: var(--button-bg-hover);
+}
+
+[data-look="lightflow"] {
+  --primary-bg-hover: color-mix(in srgb, var(--brand-accent) 6%, transparent);
+  --field-bg: #f4f5f7;
+  --chip-bg: #f4f5f7;
+  --chip-bg-active: rgb(22 24 29 / 0.08);
+}
+
+[data-look="blended"] {
+  --primary-bg-hover: rgb(255 255 255 / 0.55);
+  --field-bg: rgb(255 255 255 / 0.6);
+  --chip-bg: rgb(255 255 255 / 0.5);
+  --chip-bg-active: rgb(255 255 255 / 0.85);
+  --toast-bg: rgb(28 38 120 / 0.88);
+  --toast-bg-opaque: #1c2678;
+}
+
+/* Quiet Precision: the one look with filled primary and danger buttons. */
+[data-look="precision"] {
+  --button-bg-rest: #ffffff;
+  --primary-border-rest: var(--brand-accent);
+  --primary-bg-hover: var(--brand-accent-hover);
+  --primary-fg-hover: #ffffff;
+  --danger-bg: var(--color-error);
+  --danger-fg: #ffffff;
+  --danger-border: var(--color-error);
+  --danger-bg-hover: #b91c1c;
+  --danger-fg-hover: #ffffff;
+  --danger-border-hover: #b91c1c;
+  --field-bg: #ffffff;
+  --field-border: #e3e6eb;
+  --field-border-hover: #d4d8e0;
+  --chip-bg: #ffffff;
+  --chip-border: #e3e6eb;
+  --chip-bg-hover: #f6f7f9;
+  --chip-bg-active: #eceef2;
+}
+
+/* Dark values for the primitives in the new looks. */
+[data-look="lightflow"][data-theme="dark"] {
+  --primary-bg-hover: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  --field-bg: rgb(255 255 255 / 0.06);
+  --chip-bg: rgb(255 255 255 / 0.06);
+  --chip-bg-active: rgb(255 255 255 / 0.12);
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --button-bg-rest: #15181e;
+  --primary-fg-hover: #0f1115;
+  --field-bg: #15181e;
+  --field-border: #242832;
+  --field-border-hover: #343a45;
+  --chip-bg: #15181e;
+  --chip-border: #242832;
+  --chip-bg-hover: #1c2027;
+  --chip-bg-active: #242832;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --primary-bg-hover: color-mix(in srgb, var(--app-color) 12%, transparent);
+  --field-bg: rgb(255 255 255 / 0.06);
+  --chip-bg: rgb(255 255 255 / 0.05);
+  --chip-bg-active: rgb(255 255 255 / 0.12);
+  --toast-bg: rgb(30 38 96 / 0.9);
+  --toast-bg-opaque: #1e2660;
+}
+
+/* ── Shell — the top bar, sidebar and editor frame (Stage 3) ───────────────────
+ * The new shell (@neutrino/layout `ShellFrame`) only runs in the three new
+ * looks; classic keeps today's Sidebar and Topbar, so classic's values here are
+ * never drawn and only exist so a token always resolves.
+ *
+ * From the mockups (agent_docs/ui-look-and-feel-roadmap.md §3): the flows run
+ * the top bar edge to edge and pad the body; Precision floats the top bar as a
+ * card with a margin, and every region below it is a card with a gap.
+ */
+:root,
+[data-look="classic"] {
+  --shell-bar-margin: 0px;
+  --shell-body-pad: 0px;
+  --shell-editor-top: 0px;
+  --shell-gap: 0px;
+  --shell-sidebar-width: 244px;
+  --shell-rail-width: 60px;
+  --nav-active-bg: var(--selected-bg);
+  --nav-active-fg: var(--selected-fg);
+  --search-bg: var(--field-bg);
+  --search-border: var(--field-border);
+  --pill-bg: var(--color-bg-subtle);
+  --kbd-border: var(--color-border);
+  --meter-track: var(--color-bg-subtle);
+  --text-1: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-muted);
+}
+
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --text-1: #16181d;
+  --text-2: #4a5160;
+  --text-3: #656c7a;
+  --nav-active-fg: var(--text-1);
+  --kbd-border: #e3e6eb;
+  --pill-bg: #f4f5f7;
+  --nav-active-bg: #f3f4f7;
+  --meter-track: #eef0f3;
+}
+
+[data-look="lightflow"],
+[data-look="blended"] {
+  --shell-body-pad: 0 24px 24px 8px;
+  --shell-gap: 8px;
+  --search-bg: #f4f5f7;
+  --search-border: transparent;
+}
+
+[data-look="precision"] {
+  --shell-bar-margin: 8px 8px 0;
+  --shell-body-pad: 10px 8px 8px;
+  --shell-editor-top: 8px;
+  --shell-gap: 10px;
+  --search-bg: #f6f7f9;
+  --search-border: #e3e6eb;
+}
+
+/* Blended: neutrals and fills tinted toward the app's colour, translucent over the wash. */
+[data-look="blended"] {
+  --text-2: color-mix(in srgb, var(--app-color) 22%, #3a3f50);
+  --text-3: color-mix(in srgb, var(--app-color) 20%, #565b6e);
+  --search-bg: rgb(255 255 255 / 0.7);
+  --pill-bg: rgb(255 255 255 / 0.6);
+  --nav-active-bg: rgb(255 255 255 / 0.7);
+  --kbd-border: color-mix(in srgb, var(--app-color) 20%, transparent);
+  --meter-track: color-mix(in srgb, var(--app-color) 12%, transparent);
+}
+
+[data-look="lightflow"][data-theme="dark"],
+[data-look="precision"][data-theme="dark"],
+[data-look="blended"][data-theme="dark"] {
+  --text-1: #e8eaee;
+  --text-2: #a8aeba;
+  --text-3: #8a919e;
+  --search-bg: #1a1d23;
+  --pill-bg: #1a1d23;
+  --nav-active-bg: #1c2027;
+  --kbd-border: #2c313b;
+  --meter-track: #232730;
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --search-border: #242832;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --text-2: #aeb3cc;
+  --text-3: #8f95b0;
+  --search-bg: rgb(255 255 255 / 0.06);
+  --pill-bg: rgb(255 255 255 / 0.06);
+  --nav-active-bg: color-mix(in srgb, var(--app-color) 16%, transparent);
+  --kbd-border: color-mix(in srgb, var(--app-color) 28%, transparent);
+  --meter-track: color-mix(in srgb, var(--app-color) 18%, transparent);
+}
+
+/* ── Listings — FileGrid and the pages around it (Stage 4) ─────────────────────
+ * Classic's values are what FileGrid drew before it read them; the new looks
+ * follow the Drive boards (look-and-feel roadmap §5): rows `--row-height` tall,
+ * the app icon in its colour with no tile behind it, hairline row rules only in
+ * Precision, controls borderless until hover, the active view a neutral tint.
+ */
+:root,
+[data-look="classic"] {
+  --list-frame-border: 1px solid var(--color-border);
+  --list-frame-bg: var(--color-surface);
+  --list-frame-radius: var(--radius-lg);
+  --list-header-bg: var(--color-bg-subtle);
+  --list-header-rule: 1px solid var(--color-border);
+  --list-row-rule: 1px solid var(--color-border);
+  --list-row-pad: var(--space-3) var(--space-4);
+  --list-row-height: auto;
+  --list-row-radius: 0px;
+  --list-row-hover: var(--color-bg-subtle);
+  --list-row-selected: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  --file-tile-bg: var(--color-bg-subtle);
+  --file-tile-size: 2.25rem;
+  --card-frame-bg: var(--color-surface);
+  --card-frame-border: var(--color-border);
+  --card-frame-border-hover: var(--color-border-strong);
+  --card-frame-shadow-hover: var(--shadow-md);
+  --card-frame-lift: -1px;
+  --card-frame-radius: var(--radius-lg);
+  --card-frame-pad: 0px;
+  --card-preview-bg: var(--color-bg-subtle);
+  --card-preview-radius: var(--radius-md) var(--radius-md) 0 0;
+  --view-toggle-bg: var(--color-bg-subtle);
+  --view-toggle-border: 1px solid var(--color-border);
+  --view-btn-active-bg: var(--color-surface);
+  --view-btn-active-shadow: var(--shadow-sm);
+  --sort-active-bg: var(--color-bg-subtle);
+  --sort-active-border: var(--color-border);
+  --filter-chip-fg: var(--color-text-muted);
+  --filter-chip-bg: transparent;
+  --filter-chip-border: var(--color-border);
+  --filter-chip-fg-hover: var(--color-text-primary);
+  --filter-chip-bg-hover: transparent;
+  --filter-chip-border-hover: var(--color-text-muted);
+  --filter-chip-fg-active: var(--color-accent);
+  --filter-chip-bg-active: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --filter-chip-border-active: var(--color-accent);
+  --filter-chip-weight-active: var(--font-normal);
+  --page-title-size: var(--text-lg);
+  --page-title-weight: var(--font-semibold);
+  /* Neutrino's own file types in a listing — the values file-icons.ts used to inline. */
+  --file-color-doc: var(--color-blue, #2563eb);
+  --file-color-sheet: var(--color-green, #16a34a);
+  --file-color-slide: var(--color-orange, #ea580c);
+  --file-color-diagram: var(--color-cyan, #0891b2);
+  --file-color-drawing: var(--color-lime, #65a30d);
+  --file-color-note: var(--color-amber, #d97706);
+  /* A folder without a colour of its own. */
+  --folder-color: var(--color-amber, #d97706);
+  /* Drive's sections, and the page drawn on a preview card (new looks only). */
+  --drive-section-pad: 0px;
+  --paper-card-bg: #ffffff;
+  --paper-card-lift: 0 1px 3px rgb(22 24 29 / 0.08);
+  --paper-card-line: #e4e7ec;
+}
+
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --list-frame-border: 0;
+  --list-frame-bg: transparent;
+  --list-frame-radius: 0px;
+  --list-header-bg: transparent;
+  --list-header-rule: var(--rule);
+  --list-row-rule: var(--row-rule);
+  --list-row-pad: 0 10px;
+  --list-row-height: var(--row-height);
+  --list-row-radius: 8px;
+  --list-row-hover: var(--button-bg-hover);
+  --list-row-selected: var(--selected-bg);
+  --file-tile-bg: transparent;
+  --file-tile-size: 22px;
+  --card-frame-bg: transparent;
+  --card-frame-border: transparent;
+  --card-frame-border-hover: var(--button-border-hover);
+  --card-frame-shadow-hover: none;
+  --card-frame-lift: 0px;
+  --card-frame-radius: 12px;
+  --card-frame-pad: 6px;
+  --card-preview-bg: #f4f5f7;
+  --card-preview-radius: 8px;
+  --view-toggle-bg: transparent;
+  --view-toggle-border: 0;
+  --view-btn-active-bg: var(--chip-bg-active);
+  --view-btn-active-shadow: none;
+  --sort-active-bg: transparent;
+  --sort-active-border: transparent;
+  --filter-chip-fg: var(--chip-fg);
+  --filter-chip-bg: var(--chip-bg);
+  --filter-chip-border: var(--chip-border);
+  --filter-chip-fg-hover: var(--text-1);
+  --filter-chip-bg-hover: var(--chip-bg-hover);
+  --filter-chip-border-hover: var(--chip-border-hover);
+  --filter-chip-fg-active: var(--chip-fg-active);
+  --filter-chip-bg-active: var(--chip-bg-active);
+  --filter-chip-border-active: var(--chip-border-active);
+  --filter-chip-weight-active: var(--chip-weight-active);
+  --page-title-size: 22px;
+  --page-title-weight: 650;
+  --file-color-doc: var(--app-color-docs);
+  --file-color-sheet: var(--app-color-sheets);
+  --file-color-slide: var(--app-color-slides);
+  --file-color-diagram: var(--app-color-diagrams);
+  --file-color-drawing: var(--app-color-drawing);
+  --file-color-note: var(--app-color-notes);
+  --folder-color: var(--text-3);
+  --drive-section-pad: calc(6px * var(--density)) calc(12px * var(--density)) calc(10px * var(--density));
+  --paper-card-bg: #ffffff;
+  --paper-card-lift: 0 1px 3px rgb(22 24 29 / 0.08);
+  --paper-card-line: #e4e7ec;
+}
+
+[data-look="precision"] {
+  --drive-section-pad: calc(18px * var(--density)) calc(20px * var(--density));
+}
+
+[data-look="lightflow"][data-theme="dark"],
+[data-look="precision"][data-theme="dark"],
+[data-look="blended"][data-theme="dark"] {
+  --paper-card-bg: #22262f;
+  --paper-card-lift: 0 1px 3px rgb(0 0 0 / 0.5);
+  --paper-card-line: #363c48;
+}
+
+[data-look="precision"] {
+  --card-frame-bg: #ffffff;
+  --card-frame-border: #eef0f3;
+}
+
+[data-look="blended"] {
+  --card-preview-bg: color-mix(in srgb, var(--app-color) 7%, transparent);
+}
+
+[data-look="lightflow"][data-theme="dark"],
+[data-look="precision"][data-theme="dark"],
+[data-look="blended"][data-theme="dark"] {
+  --card-preview-bg: #1a1d23;
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --card-frame-bg: #15181e;
+  --card-frame-border: #262a33;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --card-preview-bg: color-mix(in srgb, var(--app-color) 8%, transparent);
+}
+
+/* ── Editor chrome (look-and-feel roadmap phase 5, LF5) ──────────────────────
+ * The editors' title bars, toolbars, status bars and the ground their page,
+ * grid or canvas sits on. Defined for the new looks only: every editor's CSS
+ * reads these as `var(--editor-…, <what it drew before>)`, so in the classic
+ * look each one falls back to exactly its old value.
+ */
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --editor-bar-bg: transparent;
+  --editor-bar-rule: none;
+  --editor-title-size: 15px;
+  --editor-title-weight: 600;
+  --editor-title-color: var(--text-1, #16181d);
+  --editor-toolbar-bg: rgb(22 24 29 / 0.035);
+  --editor-toolbar-border: 0;
+  --editor-toolbar-rule: none;
+  --editor-toolbar-radius: 10px;
+  --editor-toolbar-shadow: none;
+  --editor-toolbar-filter: none;
+  --editor-toolbar-margin: 2px 12px 6px;
+  --editor-toolbar-padding: 3px 6px;
+  --editor-tool-radius: 7px;
+  --editor-tool-fg: #4a5160;
+  --editor-tool-hover-bg: rgb(22 24 29 / 0.06);
+  --editor-tool-hover-fg: #16181d;
+  --editor-tool-active-bg: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  --editor-tool-active-fg: var(--brand-accent);
+  --editor-rail-active-bg: var(--editor-tool-active-bg);
+  --editor-rail-active-fg: var(--editor-tool-active-fg);
+  --editor-divider: rgb(22 24 29 / 0.09);
+  --editor-field-bg: transparent;
+  --editor-field-border: rgb(22 24 29 / 0.12);
+  --editor-field-radius: 7px;
+  --editor-ground: #f5f6f8;
+  --editor-status-bg: transparent;
+  --editor-status-rule: none;
+  --editor-status-fg: #656c7a;
+  --editor-panel-bg: transparent;
+  --editor-panel-rule: 1px solid rgb(22 24 29 / 0.06);
+  --editor-header-cell-bg: #f7f8fa;
+  --editor-header-cell-fg: #656c7a;
+  --editor-header-cell-active-bg: color-mix(in srgb, var(--brand-accent) 12%, #ffffff);
+  --editor-header-cell-active-fg: var(--brand-accent);
+  --editor-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* What only the classic look draws (its own document badge, say) reads this as its display. */
+  --editor-classic-display: none;
+  --editor-primary-bg: var(--primary-bg);
+  --editor-primary-fg: var(--primary-fg);
+  --editor-primary-border: 1px solid var(--button-border-rest);
+  --editor-primary-hover-bg: var(--button-bg-hover);
+  --editor-paper-shadow: 0 0 0 1px rgb(22 24 29 / 0.06), 0 2px 10px rgb(22 24 29 / 0.04);
+  --editor-paper-radius: 4px;
+  /* A secondary bar under the toolbar (Docs' editing mode): quiet, not a yellow band. */
+  --editor-subbar-bg: transparent;
+  --editor-subbar-rule: none;
+  --editor-subbar-padding: 0 18px 4px;
+  /* Sheets: toolbar above the formula bar, a field-like formula bar with a mono name box, quiet
+     grid lines and tabs. */
+  --editor-titlebar-order: -2;
+  --editor-toolbar-order: -1;
+  --editor-formula-bg: transparent;
+  --editor-formula-border: 1px solid rgb(22 24 29 / 0.1);
+  --editor-formula-rule: 1px solid rgb(22 24 29 / 0.1);
+  --editor-formula-radius: 8px;
+  --editor-formula-margin: 0 12px 8px;
+  --editor-formula-overflow: hidden;
+  --editor-name-box-weight: 600;
+  --editor-name-box-fg: var(--text-1, #16181d);
+  --editor-grid-line: #e8eaee;
+  --editor-tab-rule: 0;
+  --editor-tab-radius: 0 0 8px 8px;
+  --editor-tab-active-bg: #ffffff;
+  --editor-tab-active-fg: var(--brand-accent);
+  --editor-tab-active-weight: 600;
+  --editor-tab-active-rule: var(--brand-accent);
+}
+
+[data-look="precision"] {
+  --editor-paper-shadow: var(--paper-shadow);
+  --editor-paper-radius: 8px;
+  --editor-primary-border: 1px solid transparent;
+  --editor-primary-hover-bg: var(--brand-accent-hover);
+  --editor-toolbar-bg: #ffffff;
+  --editor-toolbar-border: 1px solid #e3e6eb;
+  --editor-toolbar-rule: 1px solid #e3e6eb;
+  --editor-toolbar-radius: 12px;
+  --editor-toolbar-shadow: 0 1px 2px rgb(22 24 29 / 0.04), 0 4px 14px rgb(22 24 29 / 0.04);
+  --editor-toolbar-margin: 2px 10px 8px;
+  --editor-ground: #eef0f3;
+  --editor-panel-bg: #ffffff;
+  --editor-panel-rule: 1px solid #e3e6eb;
+}
+
+[data-look="blended"] {
+  --editor-paper-shadow: 0 1px 2px rgb(37 52 170 / 0.06), 0 10px 30px rgb(37 52 170 / 0.08);
+  --editor-toolbar-bg: var(--glass-bg);
+  --editor-toolbar-border: 1px solid var(--glass-border);
+  --editor-toolbar-rule: 1px solid var(--glass-border);
+  --editor-toolbar-filter: var(--glass-filter);
+  --editor-ground: transparent;
+  --editor-tool-hover-bg: color-mix(in srgb, var(--app-color) 9%, transparent);
+  --editor-header-cell-bg: color-mix(in srgb, var(--app-color) 5%, #ffffff);
+}
+
+[data-look="lightflow"][data-theme="dark"],
+[data-look="precision"][data-theme="dark"],
+[data-look="blended"][data-theme="dark"] {
+  --editor-title-color: #e8eaef;
+  --editor-toolbar-bg: rgb(255 255 255 / 0.045);
+  --editor-tool-fg: #b8bfcc;
+  --editor-tool-hover-bg: rgb(255 255 255 / 0.07);
+  --editor-tool-hover-fg: #f2f4f8;
+  --editor-divider: rgb(255 255 255 / 0.1);
+  --editor-field-border: rgb(255 255 255 / 0.14);
+  --editor-ground: #0b0d10;
+  --editor-status-fg: #8a93a3;
+  --editor-panel-rule: 1px solid rgb(255 255 255 / 0.07);
+  --editor-formula-border: 1px solid rgb(255 255 255 / 0.12);
+  --editor-formula-rule: 1px solid rgb(255 255 255 / 0.12);
+  --editor-name-box-fg: #e8eaef;
+  --editor-tab-active-bg: rgb(255 255 255 / 0.06);
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --editor-toolbar-bg: #15181e;
+  --editor-toolbar-border: 1px solid #242832;
+  --editor-toolbar-rule: 1px solid #242832;
+  --editor-toolbar-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --editor-ground: #0a0c0f;
+  --editor-panel-bg: #15181e;
+  --editor-panel-rule: 1px solid #242832;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --editor-toolbar-bg: var(--glass-bg);
+  --editor-ground: transparent;
+}
+
+/* Translucency is a preference too: with it reduced, every frosted surface
+   is opaque (look-and-feel roadmap §2, "Menus, popups and translucency"). */
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-transparency="on"]) {
+    --glass-filter: none;
+    --glass-bg: var(--color-surface-overlay);
+    --scrim-filter: none;
+    --toast-filter: none;
+    --toast-bg: var(--toast-bg-opaque);
+  }
+}
+[data-transparency="off"] {
+  --glass-filter: none;
+  --glass-bg: var(--color-surface-overlay);
+  --scrim-filter: none;
+  --toast-filter: none;
+  --toast-bg: var(--toast-bg-opaque);
+}

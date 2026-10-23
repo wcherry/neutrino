@@ -1142,6 +1142,68 @@ diesel::table! {
     }
 }
 
+// ── Preferences ──────────────────────────────────────────────────────────────
+
+diesel::table! {
+    user_preferences (user_id, key) {
+        user_id -> Text,
+        key -> Text,
+        value -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    user_preference_vault (user_id) {
+        user_id -> Text,
+        blob -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    org_preferences (key) {
+        key -> Text,
+        value -> Text,
+        locked -> Bool,
+        updated_by -> Nullable<Text>,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    team_preferences (team_id, key) {
+        team_id -> Text,
+        key -> Text,
+        value -> Text,
+        updated_by -> Nullable<Text>,
+        updated_at -> Text,
+    }
+}
+
+// ── Branding ──────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    instance_branding (id) {
+        id -> Integer,
+        name -> Nullable<Text>,
+        accent -> Nullable<Text>,
+        sign_in_message -> Nullable<Text>,
+        version -> Text,
+        updated_by -> Nullable<Text>,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    instance_branding_assets (kind) {
+        kind -> Text,
+        mime_type -> Text,
+        bytes -> Binary,
+        updated_at -> Text,
+    }
+}
+
 // ── Joinable relationships ────────────────────────────────────────────────────
 
 // Auth
@@ -1151,6 +1213,11 @@ diesel::joinable!(user_key_unlocks -> users (user_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
+
+// Preferences
+diesel::joinable!(user_preferences -> users (user_id));
+diesel::joinable!(user_preference_vault -> users (user_id));
+diesel::joinable!(team_preferences -> teams (team_id));
 
 // Search
 diesel::joinable!(search_index_snapshots -> users (user_id));
@@ -1283,6 +1350,14 @@ diesel::allow_tables_to_appear_in_same_query!(
     custom_fonts,
     // Themes
     custom_themes,
+    // Preferences
+    user_preferences,
+    user_preference_vault,
+    org_preferences,
+    team_preferences,
+    // Branding
+    instance_branding,
+    instance_branding_assets,
     // Key vault
     user_key_vaults,
     user_key_unlocks,

@@ -1,8 +1,8 @@
 .panel {
   width: 200px;
   flex-shrink: 0;
-  background: var(--color-surface, #fff);
-  border-right: 1px solid var(--color-border, #e2e8f0);
+  background: var(--editor-panel-bg, var(--color-surface));
+  border-right: var(--editor-panel-rule, 1px solid var(--color-border));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -14,8 +14,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #64748b);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -26,7 +26,7 @@
 }
 
 .category {
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .categoryHeaderRow {
@@ -38,7 +38,7 @@
   display: flex;
   align-items: center;
   padding: 0 2px 0 8px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   cursor: grab;
   opacity: 0;
   transition: opacity 0.1s;
@@ -59,11 +59,11 @@
 }
 
 .dropBefore {
-  border-top: 2px solid var(--color-primary, #2563eb);
+  border-top: 2px solid var(--color-primary);
 }
 
 .dropAfter {
-  border-bottom: 2px solid var(--color-primary, #2563eb);
+  border-bottom: 2px solid var(--color-primary);
 }
 
 .categoryHeader {
@@ -78,18 +78,18 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   text-align: left;
 }
 
 .categoryHeader:hover {
-  background: var(--color-bg-hover, #f8fafc);
+  background: var(--color-bg-hover);
 }
 
 .count {
   margin-left: auto;
   font-size: 11px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
 }
 
 .grid {
@@ -113,13 +113,13 @@
 }
 
 .shapeItem:hover {
-  background: var(--color-bg-hover, #f1f5f9);
-  border-color: var(--color-border, #e2e8f0);
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
 }
 
 .shapeLabel {
   font-size: 10px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   text-align: center;
   line-height: 1.2;
   max-width: 70px;
@@ -132,7 +132,7 @@
   display: flex;
   align-items: center;
   padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -141,7 +141,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   flex: 1;
 }
 
@@ -149,7 +149,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   padding: 2px;
   border-radius: 4px;
   display: flex;
@@ -158,25 +158,25 @@
 }
 
 .gearBtn:hover {
-  background: var(--color-bg-hover, #f1f5f9);
-  color: var(--color-text, #1e293b);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .dropZone {
   margin: 4px 8px 8px;
-  border: 1.5px dashed var(--color-border, #cbd5e1);
+  border: 1.5px dashed var(--color-border);
   border-radius: 6px;
   padding: 8px;
   text-align: center;
   font-size: 11px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   transition: border-color 0.15s, background 0.15s;
 }
 
 .dropZoneActive {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
   background: rgba(37, 99, 235, 0.05);
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 .shapeItemWithRemove {
@@ -193,7 +193,7 @@
   cursor: pointer;
   padding: 1px 2px;
   font-size: 9px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   opacity: 0;
   transition: opacity 0.1s;
   line-height: 1;
@@ -209,7 +209,7 @@
 
 .tpSpinner {
   margin-left: auto;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   animation: spin 1s linear infinite;
   flex-shrink: 0;
 }

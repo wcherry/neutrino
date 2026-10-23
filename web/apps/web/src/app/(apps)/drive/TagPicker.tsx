@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus, Search, Tag as TagIcon } from 'lucide-react';
 import { Spinner, Text, useToast } from '@neutrino/ui';
 import { tagsApi, type Tag } from '@/lib/api';
+import { useDismiss } from '@neutrino/commands';
 import styles from './TagPicker.module.css';
 
 /**
@@ -57,17 +58,14 @@ export function TagPicker({ fileId, open, onOpenChange, appliedTags }: Props) {
         onOpenChange(false);
       }
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onOpenChange(false);
-    }
 
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [open, onOpenChange]);
+
+  useDismiss(() => onOpenChange(false), open);
 
   const { data: allTags, isLoading } = useQuery({
     queryKey: ['tags'],

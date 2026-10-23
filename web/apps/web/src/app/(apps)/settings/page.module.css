@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 .loading {
@@ -12,7 +12,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -32,19 +32,19 @@
   border: none;
   background: transparent;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s;
 }
 
 .backBtn:hover {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 .heading {
   font-size: 20px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0 0 16px;
 }
 
@@ -52,7 +52,7 @@
 .tabBar {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -63,7 +63,7 @@
   background: transparent;
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   margin-bottom: -1px;
@@ -71,12 +71,12 @@
 }
 
 .tabBtn:hover {
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .tabBtnActive {
-  color: var(--color-primary, #2563eb);
-  border-bottom-color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 
 /* ── Scrollable content ───────────────────────────────────────────────────── */
@@ -102,7 +102,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -116,16 +116,16 @@
 .formLabel {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .formInput {
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 14px;
-  color: var(--color-text, #111827);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
   transition: border-color 0.15s;
   width: 100%;
@@ -133,12 +133,12 @@
 }
 
 .formInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .formInput:disabled {
-  background: var(--color-surface-raised, #f3f4f6);
-  color: var(--color-text-secondary, #6b7280);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
   cursor: not-allowed;
 }
 
@@ -164,15 +164,15 @@
 
 .themeCard:hover {
   transform: translateY(-1px);
-  border-color: var(--color-border-strong, #d1d5db);
+  border-color: var(--color-border-strong);
 }
 
 .themeCardActive {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .themeCardActive:hover {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .themeSwatch {
@@ -198,7 +198,7 @@
 .themeCardLabel {
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
@@ -209,7 +209,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
@@ -222,17 +222,17 @@
 .settingName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .settingDesc {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .segmented {
   display: flex;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
@@ -241,12 +241,12 @@
 .segmentedBtn {
   padding: 6px 14px;
   border: none;
-  border-right: 1px solid var(--color-border, #e5e7eb);
+  border-right: 1px solid var(--color-border);
   background: transparent;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;
 }
@@ -256,21 +256,21 @@
 }
 
 .segmentedBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .segmentedBtnActive {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
 .segmentedBtnActive:hover {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
 }
 
 .sectionDesc {
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0 0 4px;
 }
 
@@ -278,7 +278,7 @@
 .connectionList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -289,8 +289,8 @@
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .connectionRow:last-child {
@@ -326,12 +326,12 @@
 .connectionName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .connectionDesc {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .connectionActions {
@@ -346,18 +346,18 @@
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--color-primary);
   border-radius: 6px;
   background: transparent;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .connectBtn:hover {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -367,17 +367,17 @@
   justify-content: center;
   width: 30px;
   height: 30px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
 }
 
 .iconBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
-  color: var(--color-text, #111827);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
 
 .iconBtn:disabled {
@@ -386,8 +386,8 @@
 }
 
 .iconBtnDanger:hover {
-  border-color: var(--color-error, #dc2626);
-  color: var(--color-error, #dc2626);
+  border-color: var(--color-error);
+  color: var(--color-error);
   background: transparent;
 }
 
@@ -397,7 +397,7 @@
 
 .modalNote {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0 0 4px;
   line-height: 1.5;
 }
@@ -412,7 +412,7 @@
 .checkList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -422,7 +422,7 @@
   align-items: flex-start;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -432,7 +432,7 @@
 }
 
 .checkRow:hover {
-  background: var(--color-surface-hover, #f9fafb);
+  background: var(--color-surface-hover);
 }
 
 .checkbox {
@@ -441,7 +441,7 @@
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: var(--color-primary, #2563eb);
+  accent-color: var(--color-primary);
 }
 
 .checkInfo {
@@ -453,12 +453,12 @@
 .checkLabel {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .checkDesc {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Save bar ─────────────────────────────────────────────────────────────── */
@@ -468,12 +468,12 @@
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 0 8px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
 }
 
 .saveError {
   font-size: 13px;
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .saveBtn {
@@ -483,7 +483,7 @@
   padding: 9px 20px;
   border: none;
   border-radius: 7px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -503,7 +503,7 @@
 /* ── Helper text ──────────────────────────────────────────────────────────── */
 .hint {
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   margin-top: 4px;
 }
 
@@ -522,7 +522,7 @@
   flex-direction: column;
   gap: 14px;
   padding: 16px;
-  border: 1px solid var(--color-error, #dc2626);
+  border: 1px solid var(--color-error);
   border-radius: 8px;
   background: #fff5f5;
 }
@@ -532,13 +532,13 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
   margin: 0;
 }
 
 .dangerDesc {
   font-size: 14px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -547,10 +547,10 @@
   align-items: center;
   gap: 6px;
   padding: 9px 20px;
-  border: 1px solid var(--color-error, #dc2626);
+  border: 1px solid var(--color-error);
   border-radius: 7px;
   background: transparent;
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -559,7 +559,7 @@
 }
 
 .dangerBtn:hover {
-  background: var(--color-error, #dc2626);
+  background: var(--color-error);
   color: #fff;
 }
 
@@ -575,7 +575,7 @@
 }
 
 .dialog {
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   border-radius: 10px;
   padding: 24px;
   max-width: 400px;
@@ -589,13 +589,13 @@
 .dialogTitle {
   font-size: 16px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0;
 }
 
 .dialogBody {
   font-size: 14px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -608,25 +608,25 @@
 
 .dialogCancelBtn {
   padding: 8px 16px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .dialogCancelBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .dialogConfirmBtn {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
-  background: var(--color-error, #dc2626);
+  background: var(--color-error);
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -650,19 +650,19 @@
   align-items: center;
   gap: 6px;
   padding: 7px 16px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 7px;
   background: transparent;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .outlineBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
-  border-color: var(--color-text-secondary, #6b7280);
+  background: var(--color-surface-hover);
+  border-color: var(--color-text-secondary);
 }
 
 /* Account's "Edit profile" is the one of these that is a link rather than a
@@ -682,12 +682,12 @@ a.outlineBtn {
 .keyExportBox {
   flex: 1;
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-family: monospace;
   font-size: 12px;
-  color: var(--color-text, #111827);
-  background: var(--color-surface-raised, #f9fafb);
+  color: var(--color-text);
+  background: var(--color-surface-raised);
   outline: none;
   resize: none;
   width: 100%;
@@ -697,8 +697,8 @@ a.outlineBtn {
 }
 
 .keyExportBox:focus {
-  border-color: var(--color-primary, #2563eb);
-  background: var(--color-surface, #fff);
+  border-color: var(--color-primary);
+  background: var(--color-surface);
 }
 
 /* ── Password section ─────────────────────────────────────────────────────── */
@@ -707,10 +707,10 @@ a.outlineBtn {
   align-items: center;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px dashed var(--color-border, #e5e7eb);
+  border: 1px dashed var(--color-border);
   border-radius: 8px;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 @keyframes spin {
@@ -731,7 +731,19 @@ a.outlineBtn {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 14px;
   letter-spacing: 0.08em;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
   word-break: keep-all;
   overflow-wrap: break-word;
+}
+
+/* A fieldset only to disable a group of controls together (an organisation's lock). */
+.lockable {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.lockable:disabled {
+  opacity: 0.6;
 }

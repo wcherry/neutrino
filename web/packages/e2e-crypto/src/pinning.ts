@@ -29,7 +29,7 @@
  * to match.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 
 /** One remembered key. Written the first time we seal anything to a user. */
 export interface PinnedKey {

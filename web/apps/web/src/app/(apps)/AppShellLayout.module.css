@@ -1,0 +1,40 @@
+/* What is prerendered: the page's ground, until the shell renders on hydration. */
+.boot {
+  height: 100vh;
+  background: var(--surface-ground);
+}
+
+/* The editor frame's sidebar footer: search, notifications and account, in a row — or a column
+   on the collapsed rail. */
+.editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.editor-foot[data-collapsed] {
+  flex-direction: column;
+}
+
+.foot-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--control-radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.foot-btn:hover {
+  border-color: var(--button-border-hover);
+  background: var(--button-bg-hover);
+}
+
+.foot-btn:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: 2px;
+}

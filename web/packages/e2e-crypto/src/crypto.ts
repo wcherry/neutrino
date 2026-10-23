@@ -15,7 +15,7 @@
  * API boundaries encode/decode as base64url strings.
  */
 
-import sodium from 'libsodium-wrappers';
+import { loadSodium, sodium } from './sodium';
 
 let _ready = false;
 
@@ -25,7 +25,7 @@ let _ready = false;
  */
 export async function initSodium(): Promise<void> {
   if (_ready) return;
-  await sodium.ready;
+  await loadSodium();
   _ready = true;
 }
 

@@ -3,8 +3,8 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, CheckCircle, AlertTriangle, Info, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { scaleIn, fadeIn } from '../../motion/variants';
+import { addKeyHandler, useDismiss } from '@neutrino/commands';
+import { usePresence } from '../../motion/presence';
 import { Button } from '../primitives/Button';
 import type { ButtonVariant } from '../primitives/Button';
 import styles from './AlertDialog.module.css';
@@ -66,11 +66,6 @@ export function AlertDialog({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!dialogRef.current) return;
 
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
-
       if (e.key === 'Tab') {
         const focusableEls = dialogRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -92,80 +87,82 @@ export function AlertDialog({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    const offKeys = addKeyHandler('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      offKeys();
       document.body.style.overflow = '';
       previouslyFocused?.focus();
     };
   }, [open, onClose]);
 
-  if (typeof window === 'undefined') return null;
+  useDismiss(onClose, open);
+  const { mounted, state } = usePresence(open);
+
+  if (typeof window === 'undefined' || !mounted) return null;
 
   return createPortal(
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className={styles.backdrop}
+    <div
+      className={styles.backdrop}
+      onClick={open ? onClose : undefined}
+      aria-modal="true"
+      role="alertdialog"
+      aria-labelledby="alert-dialog-title"
+      aria-describedby={description ? 'alert-dialog-description' : undefined}
+      aria-hidden={open ? undefined : true}
+      data-motion="fade"
+      data-state={state}
+    >
+      <div
+        ref={dialogRef}
+        className={[styles.dialog, className].filter(Boolean).join(' ')}
+        onClick={(e) => e.stopPropagation()}
+        data-motion="scale"
+        data-state={state}
+      >
+        <button
+          type="button"
+          className={styles['close-btn']}
           onClick={onClose}
-          aria-modal="true"
-          role="alertdialog"
-          aria-labelledby="alert-dialog-title"
-          aria-describedby={description ? 'alert-dialog-description' : undefined}
-          {...fadeIn}
+          aria-label="Close dialog"
         >
-          <motion.div
-            ref={dialogRef}
-            className={[styles.dialog, className].filter(Boolean).join(' ')}
-            onClick={(e) => e.stopPropagation()}
-            {...scaleIn}
-          >
-            <button
-              type="button"
-              className={styles['close-btn']}
-              onClick={onClose}
-              aria-label="Close dialog"
+          <X size={18} />
+        </button>
+
+        <div className={[styles['icon-wrapper'], styles[variant]].join(' ')} aria-hidden="true">
+          <AlertIcon size={28} className={styles.icon} />
+        </div>
+
+        <h2 id="alert-dialog-title" className={styles.title}>
+          {title}
+        </h2>
+
+        {description && (
+          <p id="alert-dialog-description" className={styles.description}>
+            {description}
+          </p>
+        )}
+
+        <div className={styles.footer}>
+          {cancelLabel && (
+            <Button variant="secondary" size="sm" onClick={onClose} disabled={loading}>
+              {cancelLabel}
+            </Button>
+          )}
+          {onConfirm && (
+            <Button
+              variant={CONFIRM_VARIANT[variant]}
+              size="sm"
+              onClick={onConfirm}
+              loading={loading}
             >
-              <X size={18} />
-            </button>
-
-            <div className={[styles['icon-wrapper'], styles[variant]].join(' ')} aria-hidden="true">
-              <AlertIcon size={28} className={styles.icon} />
-            </div>
-
-            <h2 id="alert-dialog-title" className={styles.title}>
-              {title}
-            </h2>
-
-            {description && (
-              <p id="alert-dialog-description" className={styles.description}>
-                {description}
-              </p>
-            )}
-
-            <div className={styles.footer}>
-              {cancelLabel && (
-                <Button variant="secondary" size="sm" onClick={onClose} disabled={loading}>
-                  {cancelLabel}
-                </Button>
-              )}
-              {onConfirm && (
-                <Button
-                  variant={CONFIRM_VARIANT[variant]}
-                  size="sm"
-                  onClick={onConfirm}
-                  loading={loading}
-                >
-                  {confirmLabel}
-                </Button>
-              )}
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>,
+              {confirmLabel}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>,
     document.body
   );
 }

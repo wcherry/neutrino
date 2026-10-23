@@ -1,0 +1,252 @@
+/* ── Toolbar items (U10) ──────────────────────────────────────────────────── */
+
+/* No box of their own: the tools stay flex items of the editor's toolbar, so an uncustomized
+   toolbar lays out exactly as it did before they were wrapped. */
+.toolItems,
+.tool {
+  display: contents;
+}
+
+.toolLabelled {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.toolBody {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.toolCaption {
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--editor-status-fg, var(--color-text-muted));
+  white-space: nowrap;
+  user-select: none;
+}
+
+.moreButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: var(--editor-tool-radius, 4px);
+  cursor: pointer;
+  color: var(--editor-tool-fg, var(--color-text-muted));
+}
+
+.moreButton:hover,
+.moreButton[aria-expanded='true'] {
+  background: var(--editor-tool-hover-bg, var(--color-surface-hover));
+  color: var(--editor-tool-hover-fg, var(--color-text));
+}
+
+.morePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  min-width: 220px;
+}
+
+.moreRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.moreCaption {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.moreTools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.moreCustomize,
+.contextItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.moreCustomize {
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 0 6px 6px;
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
+.moreCustomize:hover,
+.contextItem:hover,
+.contextItem:focus-visible {
+  background: var(--color-surface-hover);
+}
+
+.menuScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--glass-bg, var(--color-surface-overlay));
+  border: 1px solid var(--glass-border, var(--color-border));
+  border-radius: 8px;
+  box-shadow: var(--glass-shadow, var(--shadow-lg));
+  backdrop-filter: var(--glass-filter, none);
+}
+
+/* ── Customize dialog / Settings ──────────────────────────────────────────── */
+
+.customizer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.customizerHint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.customizerHeading {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.customizerList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.customizerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: var(--row-rule, 1px solid var(--color-border));
+}
+
+.customizerRow:last-child {
+  border-bottom: none;
+}
+
+.customizerMove {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.moveButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--button-border-rest, var(--color-border));
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.moveButton:hover:not(:disabled) {
+  background: var(--button-bg-hover, var(--color-surface-hover));
+  color: var(--color-text);
+}
+
+.moveButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.customizerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.resetButton {
+  padding: 6px 10px;
+  border: 1px solid var(--button-border-rest, var(--color-border));
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.resetButton:hover:not(:disabled) {
+  background: var(--button-bg-hover, var(--color-surface-hover));
+}
+
+.resetButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Title bar pieces (new looks only) ────────────────────────────────────── */
+
+.docIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--doc-icon-color);
+  background: color-mix(in srgb, var(--doc-icon-color) 12%, transparent);
+}
+
+.saveState {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--editor-status-fg, var(--color-text-muted));
+  white-space: nowrap;
+}
+
+.saveStateError {
+  color: var(--color-danger, #d93025);
+}

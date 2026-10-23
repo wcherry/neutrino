@@ -833,7 +833,9 @@ function report(result: ScenarioResult, attribution: ResolvedFrame[]): void {
     for (const frame of attribution.slice(0, 3)) {
       const where = frame.source
         ? `${frame.source.file}:${frame.source.line}`
-        : `${frame.chunk.split('/').pop()} @ ?`;
+        : frame.contents
+          ? `${frame.chunk.split('/').pop()} (${frame.contents.join(', ')})`
+          : `${frame.chunk.split('/').pop()} @ ?`;
       console.log(
         `     ${frame.duration.toFixed(0)} ms  ${frame.functionName}  ${where}`,
       );

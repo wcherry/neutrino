@@ -3,8 +3,8 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { scaleIn, fadeIn } from '../../motion/variants';
+import { addKeyHandler, useDismiss } from '@neutrino/commands';
+import { usePresence } from '../../motion/presence';
 import styles from './Modal.module.css';
 
 const ModalTitleIdContext = React.createContext<string | undefined>(undefined);
@@ -64,11 +64,6 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!modalRef.current) return;
 
-      if (e.key === 'Escape' && closeOnEscRef.current) {
-        onCloseRef.current();
-        return;
-      }
-
       if (e.key === 'Tab') {
         const focusableEls = modalRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -90,42 +85,45 @@ export function Modal({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    const offKeys = addKeyHandler('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      offKeys();
       document.body.style.overflow = '';
       previouslyFocused?.focus();
     };
   }, [open]);
 
-  if (typeof window === 'undefined') return null;
+  // A modal is a layer even when Escape does not close it, so the key never reaches what is under it.
+  useDismiss(() => { if (closeOnEscRef.current) onCloseRef.current(); }, open);
+  const { mounted, state } = usePresence(open);
+
+  if (typeof window === 'undefined' || !mounted) return null;
 
   return createPortal(
-    <AnimatePresence>
-      {open && (
-        <ModalTitleIdContext.Provider value={titleId}>
-          <motion.div
-            className={styles.backdrop}
-            onClick={closeOnBackdrop ? onClose : undefined}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            {...fadeIn}
-          >
-            <motion.div
-              ref={modalRef}
-              className={[styles.modal, styles[size], className].filter(Boolean).join(' ')}
-              onClick={(e) => e.stopPropagation()}
-              {...scaleIn}
-            >
-              {children}
-            </motion.div>
-          </motion.div>
-        </ModalTitleIdContext.Provider>
-      )}
-    </AnimatePresence>,
+    <ModalTitleIdContext.Provider value={titleId}>
+      <div
+        className={styles.backdrop}
+        onClick={closeOnBackdrop && open ? onClose : undefined}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-hidden={open ? undefined : true}
+        data-motion="fade"
+        data-state={state}
+      >
+        <div
+          ref={modalRef}
+          className={[styles.modal, styles[size], className].filter(Boolean).join(' ')}
+          onClick={(e) => e.stopPropagation()}
+          data-motion="scale"
+          data-state={state}
+        >
+          {children}
+        </div>
+      </div>
+    </ModalTitleIdContext.Provider>,
     document.body
   );
 }

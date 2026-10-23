@@ -30,3 +30,6 @@ export type {
   FontFormat,
   CustomFont,
 } from './types';
+
+export { organisationApi } from './organisation';
+export type { OrgLayer, OrgPreferenceChange, Branding, BrandingAsset, BrandingInput } from './organisation';

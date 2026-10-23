@@ -126,7 +126,7 @@
 }
 
 .docContent blockquote {
-  border-left: 3px solid var(--color-border-strong, #9ca3af);
+  border-left: 3px solid var(--color-border-strong);
   margin: var(--space-3) 0;
   padding: var(--space-2) var(--space-4);
   color: var(--color-text-muted);

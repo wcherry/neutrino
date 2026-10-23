@@ -15,9 +15,11 @@ import {
   Presentation,
   Paintbrush,
 } from 'lucide-react';
-import type { NavSection } from '@neutrino/layout';
-import type { Tag } from '@/lib/api';
+import type { NavItem, NavSection } from '@neutrino/layout';
+import type { AppKey } from '@neutrino/preferences';
+import type { Tag, Team } from '@/lib/api';
 import { tagNavSection } from '@/lib/tagNav';
+import { teamHref } from './teams/teamHref';
 
 /**
  * Drive views only. Every application has its own landing page and lives in the
@@ -34,21 +36,50 @@ const DRIVE_SECTION: NavSection = {
   ],
 };
 
-/** One entry per application, each pointing at that app's own page. */
-const APPS_SECTION: NavSection = {
-  id: 'apps',
-  label: 'Apps',
-  items: [
-    { id: 'docs', label: 'Docs', icon: FileText, href: '/docs' },
-    { id: 'sheets', label: 'Sheets', icon: Table2, href: '/sheets' },
-    { id: 'slides', label: 'Slides', icon: Presentation, href: '/slides' },
-    { id: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
-    { id: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams' },
-    { id: 'drawings', label: 'Drawings', icon: Paintbrush, href: '/drawing' },
-    { id: 'photos', label: 'Photos', icon: Image, href: '/photos' },
-    { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
-  ],
-};
+/**
+ * One entry per application, each pointing at that app's own page, in its identity colour (the
+ * new shell draws it; the classic sidebar ignores it). `app` is its key in `apps.enabled`.
+ */
+export const APP_ITEMS: (NavItem & { app: AppKey })[] = [
+  { id: 'docs', app: 'docs', label: 'Docs', icon: FileText, href: '/docs', color: 'var(--app-color-docs)' },
+  { id: 'sheets', app: 'sheets', label: 'Sheets', icon: Table2, href: '/sheets', color: 'var(--app-color-sheets)' },
+  { id: 'slides', app: 'slides', label: 'Slides', icon: Presentation, href: '/slides', color: 'var(--app-color-slides)' },
+  { id: 'notes', app: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes', color: 'var(--app-color-notes)' },
+  { id: 'diagrams', app: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams', color: 'var(--app-color-diagrams)' },
+  { id: 'drawings', app: 'drawing', label: 'Drawings', icon: Paintbrush, href: '/drawing', color: 'var(--app-color-drawing)' },
+  { id: 'photos', app: 'photos', label: 'Photos', icon: Image, href: '/photos', color: 'var(--app-color-photos)' },
+  { id: 'calendar', app: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar', color: 'var(--app-color-calendar)' },
+];
+
+/**
+ * The apps an administrator has left on (`apps.enabled`, customization roadmap §6.3). Hiding an
+ * app hides it here, in the New menu and in the command palette; it does not 404 its routes —
+ * that is the feature-flag system's job, and a bookmark into a hidden app still opens.
+ */
+function appsSection(enabled: readonly AppKey[]): NavSection {
+  return {
+    id: 'apps',
+    label: 'Apps',
+    items: APP_ITEMS.filter((item) => enabled.includes(item.app)).map(({ app: _app, ...item }) => item),
+  };
+}
+
+/** `#rrggbb` or nothing: a team's colour is drawn into a style, so it is checked again here. */
+export function safeTeamColor(color: string | null | undefined): string | undefined {
+  return color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : undefined;
+}
+
+/** A team in the new shell's sidebar: its own square, in its colour (T1), linking into its space. */
+function teamItem(team: Team): NavItem {
+  const mark = team.avatarEmoji || team.name.trim().charAt(0).toUpperCase() || '#';
+  return {
+    id: `team-${team.id}`,
+    label: team.name,
+    icon: Users,
+    href: teamHref(team.id),
+    swatch: { color: safeTeamColor(team.avatarColor) ?? 'var(--brand-accent)', text: mark },
+  };
+}
 
 /**
  * The Team section, in one of its two shapes.
@@ -62,14 +93,23 @@ const APPS_SECTION: NavSection = {
  * the old entry back, and the Shared Drives page and its endpoint were never removed — which is
  * what the six iOS apps and the macOS client still read.
  */
-function teamSection(teamSpacesEnabled: boolean): NavSection {
-  return {
-    id: 'team',
-    label: 'Team',
-    items: teamSpacesEnabled
-      ? [{ id: 'shared-spaces', label: 'Shared Spaces', icon: Users, href: '/teams' }]
-      : [{ id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' }],
-  };
+function teamSection(teamSpacesEnabled: boolean, teams?: readonly Team[]): NavSection {
+  if (!teamSpacesEnabled) {
+    return { id: 'team', label: 'Team', items: [{ id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' }] };
+  }
+  // The new shell lists the user's teams themselves, under Teams, as the mockups do; the
+  // classic sidebar keeps its one entry.
+  if (teams) {
+    return {
+      id: 'team',
+      label: 'Teams',
+      items: [
+        ...teams.filter((t) => !t.archived).map(teamItem),
+        { id: 'shared-spaces', label: teams.length ? 'All teams' : 'Shared Spaces', icon: Users, href: '/teams' },
+      ],
+    };
+  }
+  return { id: 'team', label: 'Team', items: [{ id: 'shared-spaces', label: 'Shared Spaces', icon: Users, href: '/teams' }] };
 }
 
 const ADMIN_SECTION: NavSection = {
@@ -87,15 +127,23 @@ const ADMIN_SECTION: NavSection = {
  * before the flag map has arrived — gets the pre-#185 sidebar. Failing closed here is what keeps a
  * slow flag fetch from flashing a Shared Spaces entry that then disappears.
  */
+export interface NavOptions {
+  /** `apps.enabled`; every app when omitted. */
+  enabledApps?: readonly AppKey[];
+  /** The user's teams, listed by name — the new shell's sidebar. Omitted, the Team section is one link. */
+  teams?: readonly Team[];
+}
+
 export function getNavSections(
   isAdmin: boolean,
   tags: Tag[],
-  teamSpacesEnabled = false
+  teamSpacesEnabled = false,
+  { enabledApps = APP_ITEMS.map((i) => i.app), teams }: NavOptions = {},
 ): NavSection[] {
   const sections = [
     DRIVE_SECTION,
-    APPS_SECTION,
-    teamSection(teamSpacesEnabled),
+    appsSection(enabledApps),
+    teamSection(teamSpacesEnabled, teams),
     tagNavSection(tags),
   ];
   return isAdmin ? [...sections, ADMIN_SECTION] : sections;

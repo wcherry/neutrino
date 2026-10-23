@@ -21,7 +21,7 @@
  * produce the PRF output that opens the blob.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 
 /** Serialised into `user_key_unlocks.params` for passkey methods. */
 export interface PasskeyParams {

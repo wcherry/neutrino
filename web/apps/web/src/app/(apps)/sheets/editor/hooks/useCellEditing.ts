@@ -4,6 +4,7 @@ import React, { useRef, useState, useCallback, useTransition, useMemo } from 're
 import type { CellProps, CellStyle } from '../types';
 import { getRangeCells } from '../utils';
 import { alphaToNum, numToAlpha, rangeAddress } from '../utils';
+import { rangeCellSet } from '../cellSet';
 
 // ── Formula reference highlighting ────────────────────────────────────────────
 
@@ -376,7 +377,7 @@ export function useCellEditing({
             input.focus();
             input.setSelectionRange(text.length, text.length);
         }, 0);
-    }, [dataRef, dirtyRef, selectionAnchor, setCurrentCell, setData, setSelectionAnchor, setSelectionActive, snapshotBeforeEditRef, startTransition]);
+    }, [dataRef, dirtyRef, formulaInputRef, selectionAnchor, setCurrentCell, setData, setSelectionAnchor, setSelectionActive, snapshotBeforeEditRef, startTransition]);
 
     // ── Formula bar handlers ─────────────────────────────────────────────────
     const handleTextChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -450,7 +451,7 @@ export function useCellEditing({
         if (formulaInputRef.current?.parentElement?.contains(related)) return;
         setFormulaPickMode(false);
         pickAnchorRef.current = null;
-    }, []);
+    }, [formulaInputRef]);
 
     // ── Pick-mode grid click handlers ────────────────────────────────────────
     // Called by SheetGrid (via SheetEditor) when formulaPickMode is active.
@@ -482,7 +483,7 @@ export function useCellEditing({
             const inp = formulaInputRef.current;
             if (inp) { inp.focus(); inp.setSelectionRange(cursorPos, cursorPos); }
         }, 0);
-    }, [currentCell, dataRef, dirtyRef, setCurrentCell, setData, setSelectionAnchor, setSelectionActive, startTransition]);
+    }, [currentCell, dataRef, dirtyRef, formulaInputRef, setCurrentCell, setData, setSelectionAnchor, setSelectionActive, startTransition]);
 
     const handleFormulaPickMouseMove = useCallback((cellId: string) => {
         if (!currentCell || !pickAnchorRef.current) return;
@@ -518,7 +519,7 @@ export function useCellEditing({
             const inp = formulaInputRef.current;
             if (inp) { inp.focus(); inp.setSelectionRange(cursorPos, cursorPos); }
         }, 0);
-    }, [currentCell, dataRef, dirtyRef, setCurrentCell, setData, setSelectionActive, startTransition]);
+    }, [currentCell, dataRef, dirtyRef, formulaInputRef, setCurrentCell, setData, setSelectionActive, startTransition]);
 
     const toggleAllFunctions = useCallback(() => {
         setShowAllFunctions(prev => !prev);
@@ -545,7 +546,7 @@ export function useCellEditing({
             const input = formulaInputRef.current;
             if (input) { input.focus(); input.setSelectionRange(newRaw.length, newRaw.length); }
         }, 0);
-    }, [currentCell, dataRef, dirtyRef, setCurrentCell, setData, startTransition]);
+    }, [currentCell, dataRef, dirtyRef, formulaInputRef, setCurrentCell, setData, startTransition]);
 
     // ── Style application ────────────────────────────────────────────────────
     const applyStyle = useCallback((style: Partial<CellStyle>) => {
@@ -672,7 +673,7 @@ export function useCellEditing({
     // ── Derived values ───────────────────────────────────────────────────────
     const selectedCells = useMemo(() => {
         if (!selectionAnchor) return new Set<string>();
-        return getRangeCells(selectionAnchor, selectionActive ?? selectionAnchor);
+        return rangeCellSet(selectionAnchor, selectionActive ?? selectionAnchor);
     }, [selectionAnchor, selectionActive]);
 
     const formulaRefHighlights = useMemo((): FormulaRefHighlight[] => {

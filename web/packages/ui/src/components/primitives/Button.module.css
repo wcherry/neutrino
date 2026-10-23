@@ -5,7 +5,7 @@
   gap: var(--space-2);
   font-family: var(--font-sans);
   font-weight: var(--font-medium);
-  border-radius: var(--radius-md);
+  border-radius: var(--control-radius);
   border: 1px solid transparent;
   cursor: pointer;
   transition:
@@ -53,48 +53,54 @@
 }
 
 /* Variants */
+/* Variants — every value is a look token (packages/tokens/src/looks.css,
+   "Primitives"): filled in classic and Quiet Precision, accent text that picks
+   up a border and a pale ground on hover in the two flows. */
 .primary {
-  background-color: var(--color-accent);
-  color: var(--color-text-on-accent);
-  border-color: var(--color-accent);
+  background-color: var(--primary-bg);
+  color: var(--primary-fg);
+  border-color: var(--primary-border-rest);
 }
 
 .primary:hover:not(:disabled) {
-  background-color: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+  background-color: var(--primary-bg-hover);
+  color: var(--primary-fg-hover);
+  border-color: var(--primary-border-hover);
 }
 
 .secondary {
-  background-color: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  border-color: var(--color-border);
+  background-color: var(--button-bg-rest);
+  color: var(--button-fg);
+  border-color: var(--button-border-rest);
 }
 
 .secondary:hover:not(:disabled) {
-  background-color: var(--color-neutral-100);
-  border-color: var(--color-border-strong);
+  background-color: var(--button-bg-hover);
+  border-color: var(--button-border-hover);
 }
 
 .ghost {
   background-color: transparent;
-  color: var(--color-text-secondary);
+  color: var(--ghost-fg);
   border-color: transparent;
 }
 
 .ghost:hover:not(:disabled) {
-  background-color: var(--color-bg-subtle);
-  color: var(--color-text-primary);
+  background-color: var(--ghost-bg-hover);
+  color: var(--ghost-fg-hover);
+  border-color: var(--ghost-border-hover);
 }
 
 .danger {
-  background-color: var(--color-error);
-  color: #ffffff;
-  border-color: var(--color-error);
+  background-color: var(--danger-bg);
+  color: var(--danger-fg);
+  border-color: var(--danger-border);
 }
 
 .danger:hover:not(:disabled) {
-  background-color: #b91c1c;
-  border-color: #b91c1c;
+  background-color: var(--danger-bg-hover);
+  color: var(--danger-fg-hover);
+  border-color: var(--danger-border-hover);
 }
 
 /* Loading state */

@@ -513,3 +513,36 @@
   min-height: 3rem;
   padding: var(--space-3);
 }
+
+/* ── The new looks (Stage 4) ──────────────────────────────────────────────────
+   The page draws its own regions — Quick access and Files — on the shell's ground (the shell
+   drops its main card for a page marked `data-own-regions`). Cards in Quiet Precision, one
+   seamless surface in the flows. */
+.page[data-own-regions] {
+  --page-max-width: none;
+  padding: 0;
+  gap: var(--shell-gap);
+}
+
+.page[data-own-regions] .section-files {
+  background: var(--surface-region);
+  border: var(--region-border);
+  border-radius: var(--region-radius);
+  box-shadow: var(--region-shadow);
+  padding: var(--drive-section-pad);
+}
+
+.files-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.page-title {
+  margin: 0;
+  font-size: var(--page-title-size);
+  font-weight: var(--page-title-weight);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-1);
+}

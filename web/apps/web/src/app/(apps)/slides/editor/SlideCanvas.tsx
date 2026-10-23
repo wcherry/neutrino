@@ -24,7 +24,7 @@ function DiagramSlideElement({ el }: { el: DiagramElement }) {
       .then((p) => { if (!cancelled) setPage(p); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [el.diagramId, el.pageIndex]);
+  }, [el.diagramId, el.pageIndex, setPage]);
 
   if (!page) return <div style={{ width: '100%', height: '100%', background: '#f8fafc', borderRadius: 4 }} />;
   return <EmbeddedDiagramView page={page} width="100%" height="100%" />;

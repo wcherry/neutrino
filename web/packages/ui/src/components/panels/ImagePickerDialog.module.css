@@ -31,8 +31,8 @@
 
   display: flex;
   flex-direction: column;
-  background: var(--color-bg, #ffffff);
-  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   width: 720px;
@@ -50,7 +50,7 @@
 .headerTitle {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .closeBtn {
@@ -65,14 +65,14 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
 
 .closeBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
-  color: var(--color-text, #202124);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 /* ── Tabs ── */
@@ -81,7 +81,7 @@
   display: flex;
   gap: 4px;
   padding: 0 22px;
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .tab {
@@ -94,18 +94,18 @@
   background: transparent;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: color 0.1s, border-color 0.1s;
 }
 
 .tab:hover {
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .tabActive {
-  color: var(--color-primary, #1a73e8);
-  border-bottom-color: var(--color-primary, #1a73e8);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 
 /* ── Body ── */
@@ -139,7 +139,7 @@
 .searchIcon {
   position: absolute;
   left: 9px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   pointer-events: none;
 }
 
@@ -148,10 +148,10 @@
   width: 100%;
   height: var(--ip-search-h);
   padding: 7px 10px;
-  border: 1px solid var(--color-border, #dadce0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-bg, #ffffff);
-  color: var(--color-text, #202124);
+  background: var(--color-bg);
+  color: var(--color-text);
   font-size: 13px;
   flex-shrink: 0;
 }
@@ -163,7 +163,7 @@
 .searchInput:focus,
 .urlInput:focus {
   outline: none;
-  border-color: var(--color-primary, #1a73e8);
+  border-color: var(--color-primary);
 }
 
 /* Exactly three columns, and rows fixed to the item height so the visible
@@ -201,19 +201,19 @@
   min-width: 0;
   height: var(--ip-item-h);
   padding: 6px;
-  border: 1px solid var(--color-border, #e0e0e0);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--color-bg, #ffffff);
+  background: var(--color-bg);
   cursor: pointer;
   transition: border-color 0.1s, box-shadow 0.1s;
 }
 
 .driveItem:hover {
-  border-color: var(--color-primary, #1a73e8);
+  border-color: var(--color-primary);
 }
 
 .driveItemActive {
-  border-color: var(--color-primary, #1a73e8);
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary-subtle, rgba(26, 115, 232, 0.24));
 }
 
@@ -225,14 +225,14 @@
   min-height: 0;
   object-fit: cover;
   border-radius: 4px;
-  background: var(--color-bg-subtle, #f1f3f4);
+  background: var(--color-bg-subtle);
 }
 
 .driveName {
   height: var(--ip-item-name-h);
   line-height: var(--ip-item-name-h);
   font-size: 11px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -254,9 +254,9 @@
   flex: 1;
   min-height: 180px;
   padding: 24px;
-  border: 2px dashed var(--color-border, #dadce0);
+  border: 2px dashed var(--color-border);
   border-radius: 10px;
-  background: var(--color-bg, #ffffff);
+  background: var(--color-bg);
   text-align: center;
   cursor: pointer;
   transition: border-color 0.1s, background 0.1s;
@@ -266,25 +266,25 @@
 .dropZone:focus-visible,
 .dropZoneActive {
   outline: none;
-  border-color: var(--color-primary, #1a73e8);
-  background: var(--color-bg-hover, #f1f3f4);
+  border-color: var(--color-primary);
+  background: var(--color-bg-hover);
 }
 
 .dropIcon {
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 .dropText {
   margin: 0;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .dropHint {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 /* ── URL tab ── */
@@ -292,13 +292,13 @@
 .label {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 .note {
   margin: 0;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 /* ── Shared states ── */
@@ -312,7 +312,7 @@
   justify-content: center;
   padding: 0 24px;
   font-size: 13px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -336,7 +336,7 @@
   background: transparent;
   padding: 0;
   font-size: 13px;
-  color: var(--color-primary, #1a73e8);
+  color: var(--color-primary);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -350,13 +350,13 @@
   min-width: 0;
   min-height: 0;
   padding-left: 18px;
-  border-left: 1px solid var(--color-border, #e0e0e0);
+  border-left: 1px solid var(--color-border);
 }
 
 .previewLabel {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -368,9 +368,9 @@
   flex: 1;
   min-height: 0;
   padding: 8px;
-  border: 1px solid var(--color-border, #e0e0e0);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--color-bg-subtle, #f8f9fa);
+  background: var(--color-bg-subtle);
   overflow: hidden;
 }
 
@@ -389,7 +389,7 @@
   gap: 6px;
   padding: 0 12px;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -400,7 +400,7 @@
   height: 16px;
   line-height: 16px;
   font-size: 12px;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -411,7 +411,7 @@
   height: 14px;
   line-height: 14px;
   font-size: 11px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -423,7 +423,7 @@
   height: 3px;
   margin: 0 22px;
   border-radius: 2px;
-  background: var(--color-bg-subtle, #f1f3f4);
+  background: var(--color-bg-subtle);
   overflow: hidden;
   visibility: hidden;
 }
@@ -434,7 +434,7 @@
 
 .progressBar {
   height: 100%;
-  background: var(--color-primary, #1a73e8);
+  background: var(--color-primary);
   transition: width 0.15s ease-out;
 }
 
@@ -446,7 +446,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 22px 18px;
-  border-top: 1px solid var(--color-border, #e0e0e0);
+  border-top: 1px solid var(--color-border);
 }
 
 .footerError {
@@ -466,18 +466,18 @@
 }
 
 .cancelBtn {
-  border: 1px solid var(--color-border, #dadce0);
+  border: 1px solid var(--color-border);
   background: transparent;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .cancelBtn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .confirmBtn {
   border: 1px solid transparent;
-  background: var(--color-primary, #1a73e8);
+  background: var(--color-primary);
   color: #ffffff;
 }
 
@@ -514,6 +514,6 @@
     padding-left: 0;
     padding-top: 14px;
     border-left: none;
-    border-top: 1px solid var(--color-border, #e0e0e0);
+    border-top: 1px solid var(--color-border);
   }
 }

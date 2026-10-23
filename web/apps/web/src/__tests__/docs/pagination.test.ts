@@ -13,6 +13,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import {
   computePageBreaks,
   measureBlocks,
+  measureBlocksCached,
   paginate,
   type BlockBox,
   type PageBreak,
@@ -515,5 +516,85 @@ describe('measureBlocks', () => {
 
     expect(remeasured).toEqual(natural);
     expect(computePageBreaks(remeasured, LETTER)).toEqual(breaks);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// measureBlocksCached — re-measuring only what an edit replaced
+// ---------------------------------------------------------------------------
+
+/**
+ * A document of stacked blocks whose nodes, like ProseMirror's, are shared between versions unless
+ * replaced. Counts the rects read, which is the cost being saved.
+ */
+function liveView(width = 816) {
+  const blocks: { node: object; height: number }[] = [];
+  let reads = 0;
+  const elements = new Map<number, HTMLElement>();
+  const root = document.createElement('div');
+  root.getBoundingClientRect = () => ({ top: 0, height: 0, width }) as DOMRect;
+  Object.defineProperty(root, 'offsetWidth', { value: width });
+  const view = {
+    dom: root,
+    nodeDOM: (pos: number) => {
+      let el = elements.get(pos);
+      if (!el) {
+        el = document.createElement('div');
+        elements.set(pos, el);
+      }
+      el.getBoundingClientRect = () => {
+        reads += 1;
+        const top = blocks.slice(0, pos).reduce((sum, b) => sum + b.height, 0);
+        return { top, height: blocks[pos].height, width } as DOMRect;
+      };
+      return el;
+    },
+    state: { doc: { forEach: (fn: (node: unknown, offset: number) => void) => blocks.forEach((b, i) => fn(b.node, i)) } },
+  } as unknown as EditorView;
+  const add = (height: number) => ({ node: { nodeSize: 1, isTextblock: false }, height });
+  return {
+    view,
+    blocks,
+    add,
+    takeReads: () => { const r = reads; reads = 0; return r; },
+  };
+}
+
+describe('measureBlocksCached', () => {
+  it('reads only the replaced block and its neighbours, and agrees with a full measurement', () => {
+    const live = liveView();
+    for (let i = 0; i < 200; i += 1) live.blocks.push(live.add(20 + (i % 7) * 10));
+    let { cache } = measureBlocksCached(live.view, [], LETTER, null);
+    expect(live.takeReads()).toBe(200);
+
+    // Typing grows block 50 by a line: a new node there, every other node shared.
+    live.blocks[50] = live.add(live.blocks[50].height + 18);
+    const next = measureBlocksCached(live.view, [], LETTER, cache);
+    cache = next.cache;
+    // The replaced block, the next to learn the shift, and the tails of the two reused runs.
+    expect(live.takeReads()).toBeLessThanOrEqual(4);
+    expect(next.boxes).toEqual(measureBlocks(live.view, [], LETTER));
+  });
+
+  it('measures everything again when a block it reused has moved', () => {
+    const live = liveView();
+    for (let i = 0; i < 50; i += 1) live.blocks.push(live.add(30));
+    const { cache } = measureBlocksCached(live.view, [], LETTER, null);
+    live.takeReads();
+
+    // An image decodes in block 10 — same node, new height — while block 40 is edited.
+    live.blocks[10].height = 300;
+    live.blocks[40] = live.add(48);
+    const next = measureBlocksCached(live.view, [], LETTER, cache);
+    expect(next.boxes).toEqual(measureBlocks(live.view, [], LETTER));
+  });
+
+  it('does not reuse anything measured at another width or page setup', () => {
+    const live = liveView();
+    for (let i = 0; i < 20; i += 1) live.blocks.push(live.add(30));
+    const { cache } = measureBlocksCached(live.view, [], LETTER, null);
+    live.takeReads();
+    measureBlocksCached(live.view, [], { ...LETTER }, cache);
+    expect(live.takeReads()).toBe(20);
   });
 });

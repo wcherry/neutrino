@@ -11,7 +11,7 @@
  * Feature flag: feature.documents.preview
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { X, ExternalLink, AlertCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Text, Spinner, Button } from '@neutrino/ui';
@@ -56,6 +56,7 @@ import { documentToSvg as drawingToSvg } from '@/app/(apps)/drawing/editor/rende
 import { isDocumentEmpty as drawingIsEmpty } from '@/app/(apps)/drawing/editor/document/tree';
 import { readStoredBody } from '@/lib/storedBody';
 
+import { useDismiss } from '@neutrino/commands';
 import styles from './DocumentPreviewModal.module.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -632,13 +633,7 @@ export function DocumentPreviewModal({ id, kind, onClose }: DocumentPreviewModal
   const router = useRouter();
 
   // Close on Escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useDismiss(() => onClose());
 
   function handleBackdrop(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target === e.currentTarget) onClose();

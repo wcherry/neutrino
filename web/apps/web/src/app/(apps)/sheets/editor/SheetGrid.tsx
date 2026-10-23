@@ -1,10 +1,11 @@
 'use client';
 
+import { isShaped, type CellSet } from './cellSet';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Filter } from 'lucide-react';
 import type { CellProps } from './types';
 import { CELL_W, CELL_H, ROW_HDR_W, COL_HDR_H, MAX_ROWS, MAX_COLS, V_BUF, H_BUF } from './constants';
-import { numToAlpha, alphaToNum } from './utils';
+import { numToAlpha, alphaToNum, parseCellId } from './utils';
 import type { HeaderAxis, HeaderClickModifiers, HeaderRun } from './headerSelection';
 import { Cell } from './Cell';
 import { evaluateConditionalFormats } from './conditionalFormatting';
@@ -12,9 +13,12 @@ import type { CFRule, CFVariable } from './types';
 import { useSheetZoom } from './zoom';
 import styles from './page.module.css';
 
+/** Up to this many cells, a selection's outline is worked out by visiting each one. */
+const LISTED_SELECTION_MAX = 4096;
+
 export type SheetGridProps = {
     data: Map<string, CellProps>;
-    selectedCells: Set<string>;
+    selectedCells: CellSet;
     cutCells?: Set<string>;
     onCellActivate: (id: string) => void;
     onSelectionExtend: (id: string) => void;
@@ -40,7 +44,7 @@ export type SheetGridProps = {
     onFormulaPickMouseDown?: (cellId: string) => void;
     onFormulaPickMouseMove?: (cellId: string) => void;
     // The cells being highlighted during a formula pick drag
-    formulaPickCells?: Set<string>;
+    formulaPickCells?: CellSet;
     // Context menu
     onCellContextMenu?: (cellId: string, x: number, y: number) => void;
     onColHeaderContextMenu?: (colIndex: number, x: number, y: number) => void;
@@ -492,10 +496,23 @@ export const SheetGrid = React.memo(function SheetGrid({
         onCellContextMenu(id, e.clientX, e.clientY);
     }, [cellFromEvent, onCellContextMenu]);
 
-    const computeRangeBox = useCallback((cells: Set<string>) => {
+    const computeRangeBox = useCallback((cells: CellSet) => {
         if (cells.size === 0) return null;
         let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
-        for (const id of cells) {
+        if (isShaped(cells) && cells.size > LISTED_SELECTION_MAX) {
+            // A huge selection is not walked cell by cell: its edges come from its shape, and only
+            // the merged cells inside it — the one thing that can push an edge out — are looked at.
+            const b = cells.bounds();
+            minR = b.minRow - 1; maxR = b.maxRow - 1; minC = b.minCol - 1; maxC = b.maxCol - 1;
+            for (const [id, cell] of data) {
+                if ((cell.colSpan ?? 1) <= 1 && (cell.rowSpan ?? 1) <= 1) continue;
+                if (!cells.has(id)) continue;
+                const p = parseCellId(id);
+                if (!p) continue;
+                maxC = Math.max(maxC, p.col - 1 + (cell.colSpan ?? 1) - 1);
+                maxR = Math.max(maxR, p.row - 1 + (cell.rowSpan ?? 1) - 1);
+            }
+        } else for (const id of cells) {
             const match = id.match(/^([A-Z]+)(\d+)$/);
             if (match) {
                 const c = alphaToNum(match[1]) - 1;

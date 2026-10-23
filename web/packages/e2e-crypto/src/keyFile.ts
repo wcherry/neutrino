@@ -35,7 +35,7 @@
  * than pretending to hand back `KeyringEntry`s.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 import { activeEntry, type Keyring, type KeyringEntry } from './keyring';
 
 /**

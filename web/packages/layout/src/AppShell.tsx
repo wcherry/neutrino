@@ -1,33 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useState } from 'react';
+import { usePreference } from '@neutrino/preferences';
 import styles from './AppShell.module.css';
-
-/**
- * The collapse state is a user preference, not per-page state: it outlives a
- * refresh and follows the user from one app to the next. Stored like the other
- * preferences (theme, calendar week start) — localStorage, plus a `storage`
- * listener so a second tab picks the change up.
- */
-const SIDEBAR_COLLAPSED_KEY = 'neutrino.sidebar.collapsed';
-
-function readStoredCollapsed(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
-  } catch {
-    // localStorage unavailable (private browsing restrictions, etc.)
-    return false;
-  }
-}
-
-function writeStoredCollapsed(collapsed: boolean): void {
-  try {
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
-  } catch {
-    // Nothing to do — the sidebar still collapses, it just won't be remembered.
-  }
-}
+import frame from './shell/ShellFrame.module.css';
 
 interface ShellContextValue {
   sidebarOpen: boolean;
@@ -54,40 +30,57 @@ export interface AppShellProps {
   topbar: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /**
+   * `classic` is today's shell: the sidebar's logo row beside a separate top bar. `flow` is the
+   * new one the three new looks use (look-and-feel roadmap §2, "Structure"): one top bar across
+   * the width, the sidebar and the page below it as regions — cards in Quiet Precision, one
+   * seamless surface in the flows. Which one is the caller's choice, from `appearance.look`.
+   */
+  variant?: 'classic' | 'flow';
+  /**
+   * `editor` drops the top bar so an editor's own title bar is the first row (the editor frame);
+   * the sidebar stays, with its collapse control. Only the `flow` variant has an editor frame.
+   */
+  chrome?: 'full' | 'editor';
 }
 
-export function AppShell({ sidebar, topbar, children, className = '' }: AppShellProps) {
+export function AppShell({ sidebar, topbar, children, className = '', variant = 'classic', chrome = 'full' }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Starts expanded and is corrected on mount rather than read in the
-  // initialiser: this renders on the server too, and reading storage there
-  // would make the markup disagree with the client's on hydration.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const collapsedRef = useRef(sidebarCollapsed);
-  collapsedRef.current = sidebarCollapsed;
-
-  useEffect(() => {
-    setSidebarCollapsed(readStoredCollapsed());
-
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== SIDEBAR_COLLAPSED_KEY) return;
-      setSidebarCollapsed(readStoredCollapsed());
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  // A device preference (`shell.sidebarCollapsed`): it outlives a refresh and follows the user
+  // from one app to the next, but a laptop and a wide monitor want different answers, so it is
+  // not synced. The server render reads the default (expanded), as it always did.
+  const [sidebarCollapsed, setSidebarCollapsed] = usePreference('shell.sidebarCollapsed');
 
   const toggleSidebar = () => setSidebarOpen((v) => !v);
   const closeSidebar = () => setSidebarOpen(false);
-  const toggleSidebarCollapsed = () => {
-    const next = !collapsedRef.current;
-    collapsedRef.current = next;
-    setSidebarCollapsed(next);
-    writeStoredCollapsed(next);
-  };
+  const toggleSidebarCollapsed = () => setSidebarCollapsed(!sidebarCollapsed);
 
   const shellClasses = [styles.shell, sidebarCollapsed ? styles['sidebar-collapsed'] : '', className]
     .filter(Boolean)
     .join(' ');
+
+  if (variant === 'flow') {
+    return (
+      <ShellContext.Provider value={{ sidebarOpen, toggleSidebar, closeSidebar, sidebarCollapsed, toggleSidebarCollapsed }}>
+        <div
+          className={[frame.frame, className].filter(Boolean).join(' ')}
+          data-chrome={chrome}
+          data-collapsed={sidebarCollapsed || undefined}
+        >
+          {chrome === 'full' && <div className={frame.bar}>{topbar}</div>}
+          <div className={frame.body}>
+            <div className={[frame.side, sidebarOpen ? frame['mobile-open'] : ''].filter(Boolean).join(' ')}>
+              {sidebar}
+            </div>
+            {sidebarOpen && <div className={frame.backdrop} onClick={closeSidebar} aria-hidden="true" />}
+            <main className={frame.main} id="main-content">
+              <div className={frame.inner}>{children}</div>
+            </main>
+          </div>
+        </div>
+      </ShellContext.Provider>
+    );
+  }
 
   return (
     <ShellContext.Provider value={{ sidebarOpen, toggleSidebar, closeSidebar, sidebarCollapsed, toggleSidebarCollapsed }}>

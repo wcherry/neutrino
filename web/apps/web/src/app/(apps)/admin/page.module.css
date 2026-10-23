@@ -12,7 +12,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 /* The gutter is generous on a desktop window and would be most of a narrow
@@ -28,7 +28,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -36,7 +36,7 @@
   flex-shrink: 0;
   /* Carries the rule the tab bar used to draw, so it spans the window while
      the tabs themselves stay inside the centred column. */
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .headerInner {
@@ -58,19 +58,19 @@
   border: none;
   background: transparent;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s;
 }
 
 .backBtn:hover {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 .heading {
   font-size: 20px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0 0 16px;
 }
 
@@ -95,7 +95,7 @@
   background: transparent;
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
   margin-bottom: -1px;
@@ -103,12 +103,12 @@
 }
 
 .tabBtn:hover {
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .tabBtnActive {
-  color: var(--color-primary, #2563eb);
-  border-bottom-color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 
 /* ── Scrollable content ───────────────────────────────────────────────────── */
@@ -160,7 +160,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -171,7 +171,7 @@
  * column away entirely instead of offering a scrollbar.
  */
 .tableWrap {
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow-x: auto;
 }
@@ -185,19 +185,19 @@
 .table th {
   text-align: left;
   padding: 8px 12px;
-  background: var(--color-surface-raised, #f3f4f6);
+  background: var(--color-surface-raised);
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #6b7280);
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .table td {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
-  color: var(--color-text, #111827);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
   vertical-align: middle;
 }
 
@@ -212,7 +212,7 @@
 }
 
 .statusSleeping {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .statusOther {
@@ -239,13 +239,13 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .diskStatValue {
   font-size: 22px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .diskBarWrap {
@@ -254,7 +254,7 @@
 
 .diskBarLabel {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
 
@@ -262,7 +262,7 @@
 .serviceList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -273,8 +273,8 @@
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .serviceRow:last-child {
@@ -291,12 +291,12 @@
 .serviceName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .serviceMeta {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -311,7 +311,7 @@
 
 .serviceLabel {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
@@ -329,7 +329,7 @@
 .empty {
   padding: 32px 16px;
   text-align: center;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   font-size: 14px;
 }
 
@@ -337,7 +337,7 @@
 .userCount {
   font-weight: 400;
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   text-transform: none;
   letter-spacing: 0;
 }
@@ -345,10 +345,10 @@
 .roleSelect {
   font-size: 12px;
   padding: 3px 6px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111827);
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
 }
 
@@ -364,13 +364,13 @@
 }
 
 .twoFaOff {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 
 .selfLabel {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   font-style: italic;
 }
 
@@ -413,15 +413,15 @@
 .cancelBtn {
   font-size: 12px;
   padding: 3px 8px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   background: transparent;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
 .cancelBtn:hover {
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 /* ── Deleted accounts ────────────────────────────────────────────────────── */
@@ -432,7 +432,7 @@
   gap: 6px;
   margin-bottom: 12px;
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
@@ -469,16 +469,16 @@
 .pageBtn {
   font-size: 13px;
   padding: 5px 12px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111827);
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .pageBtn:hover:not(:disabled) {
-  background: var(--color-surface-raised, #f3f4f6);
+  background: var(--color-surface-raised);
 }
 
 .pageBtn:disabled {
@@ -488,7 +488,7 @@
 
 .pageInfo {
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Settings forms (version retention) ──────────────────────────────────── */
@@ -496,7 +496,7 @@
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   max-width: 108ch;
 }
 
@@ -505,10 +505,10 @@
   font-size: 13px;
   padding: 4px 8px;
   text-align: right;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111827);
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .numberInput:disabled {
@@ -526,7 +526,7 @@
 .settingMeta {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   max-width: 68ch;
 }
 
@@ -540,8 +540,8 @@
   align-items: flex-start;
   gap: 10px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .settingRowStacked:last-child {
@@ -553,10 +553,10 @@
   max-width: 340px;
   font-size: 13px;
   padding: 6px 8px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111827);
+  background: var(--color-surface);
+  color: var(--color-text);
   /* The value is a set of individual characters, so they are easier to tell
      apart — a lowercase l from a 1 — in a monospaced face. */
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -580,10 +580,10 @@
   min-width: 24px;
   height: 24px;
   padding: 0 6px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface-secondary, #f9fafb);
-  color: var(--color-text, #111827);
+  background: var(--color-surface-secondary);
+  color: var(--color-text);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 13px;
   line-height: 1;
@@ -609,9 +609,9 @@
 .primaryBtn {
   font-size: 13px;
   padding: 6px 14px;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--color-primary);
   border-radius: 6px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
@@ -645,15 +645,15 @@
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .moreBtn:hover,
 .moreBtn[aria-expanded='true'] {
-  background: var(--color-surface-raised, #f3f4f6);
-  color: var(--color-text, #111827);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
 }
 
 /*
@@ -666,14 +666,14 @@
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
 }
 
 .linkBtn:hover:not(:disabled) {
-  background: var(--color-surface-raised, #f3f4f6);
+  background: var(--color-surface-raised);
 }
 
 .linkBtn:disabled {
@@ -692,7 +692,7 @@
 
 .badgeOk {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .badgeDisabled {
@@ -740,7 +740,7 @@
 
 .quotaText {
   font-size: 12px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   white-space: nowrap;
 }
 
@@ -766,16 +766,16 @@
 .formLabel {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .formInput {
   font-size: 13px;
   padding: 7px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111827);
+  background: var(--color-surface);
+  color: var(--color-text);
   width: 100%;
   box-sizing: border-box;
 }
@@ -788,7 +788,7 @@
 .formHint {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -804,7 +804,7 @@
   align-items: flex-start;
   gap: 8px;
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .checkRow input {
@@ -819,12 +819,12 @@
   gap: 8px;
   margin-bottom: 12px;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .queueReason {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   max-width: 32ch;
   white-space: normal;
 }
@@ -903,7 +903,7 @@
  */
 .fontPathCell {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
   max-width: 36ch;
 }

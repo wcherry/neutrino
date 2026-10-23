@@ -8,7 +8,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Key versions ─────────────────────────────────────────────────────────── */
@@ -24,12 +24,12 @@
   align-items: flex-start;
   gap: 12px;
   padding: 12px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
 .activeIcon {
-  color: var(--color-success, #16a34a);
+  color: var(--color-success);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -37,7 +37,7 @@
 /* Retired versions are still load-bearing — they open older files — so they are
    dimmed rather than struck through, which would read as "no longer valid". */
 .retiredIcon {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -55,7 +55,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .activeBadge {
@@ -64,14 +64,14 @@
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--color-success-bg, #dcfce7);
-  color: var(--color-success, #16a34a);
+  color: var(--color-success);
 }
 
 .versionFingerprint {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 12px;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   word-break: keep-all;
   overflow-wrap: break-word;
 }
@@ -89,7 +89,7 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-secondary, transparent);
 }
@@ -97,7 +97,7 @@
 .blockTitle {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .outlineBtn,
@@ -111,24 +111,24 @@
   font-weight: 500;
   border-radius: 6px;
   cursor: pointer;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   background: transparent;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 .outlineBtn:hover:not(:disabled) {
-  background: var(--color-surface-hover, #f9fafb);
+  background: var(--color-surface-hover);
 }
 
 .primaryBtn {
   border-color: transparent;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
 .dangerBtn {
-  border-color: var(--color-error, #dc2626);
-  color: var(--color-error, #dc2626);
+  border-color: var(--color-error);
+  color: var(--color-error);
 }
 
 .outlineBtn:disabled,
@@ -151,9 +151,9 @@
   text-align: center;
   padding: 14px;
   border-radius: 8px;
-  border: 1px dashed var(--color-border, #e5e7eb);
-  background: var(--color-surface, #fff);
-  color: var(--color-text-primary, #111827);
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   user-select: all;
   white-space: pre-wrap;
   word-break: break-all;
@@ -166,7 +166,7 @@
   align-items: flex-start;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .confirmRow input {
@@ -186,7 +186,7 @@
 .sasLabel {
   font-size: 12px;
   text-align: center;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* Large and widely spaced: this is compared digit by digit against another
@@ -197,7 +197,7 @@
   font-weight: 600;
   letter-spacing: 0.3em;
   text-align: center;
-  color: var(--color-text-primary, #111827);
+  color: var(--color-text-primary);
 }
 
 /* ── Mobile key code ──────────────────────────────────────────────────────── */
@@ -240,7 +240,7 @@
   font-size: 12px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* The whole point is that it stopped being readable — greyed, not hidden, so
@@ -253,7 +253,7 @@
   padding: 16px;
   font-size: 13px;
   text-align: center;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   background: var(--color-surface-muted, #f9fafb);
   border-radius: 8px;
 }

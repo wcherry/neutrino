@@ -23,6 +23,8 @@ import { FilesView } from './FilesView';
 import { MembersView } from './MembersView';
 import { PagesView } from './PagesView';
 import { SettingsView } from './SettingsView';
+import { preferences } from '@neutrino/preferences';
+import { safeTeamColor } from '../../navSections';
 import styles from './space.module.css';
 
 const NAV: Array<{ view: TeamView; label: string; icon: typeof Home }> = [
@@ -75,6 +77,14 @@ function TeamSpace() {
     router.push(teamHref(teamId, nextView, pageId));
   };
 
+  // Inside this team's space its preference defaults apply (T2): density, and the Files view's
+  // view and order. Leaving the space leaves them behind.
+  useEffect(() => {
+    if (!team?.id) return;
+    preferences.setTeamContext(team.id);
+    return () => preferences.setTeamContext(null);
+  }, [team?.id]);
+
   // Search only means something in the page tree; carrying a filter into Files or Members would
   // show a filtered sidebar next to an unfiltered screen.
   useEffect(() => {
@@ -122,12 +132,17 @@ function TeamSpace() {
   }
 
   return (
-    <div className={styles.shell}>
+    // The team's colour tints its space (T1), so it is clear whose library this is.
+    <div
+      className={styles.shell}
+      data-tinted={safeTeamColor(team.avatarColor) ? true : undefined}
+      style={{ ['--team-color' as string]: safeTeamColor(team.avatarColor) }}
+    >
       <nav className={styles.sidebar} aria-label={`${team.name} navigation`}>
         <div className={styles.teamHeader}>
           <span
             className={styles.avatar}
-            style={{ ['--team-avatar-color' as string]: team.avatarColor ?? undefined }}
+            style={{ ['--team-avatar-color' as string]: safeTeamColor(team.avatarColor) }}
             aria-hidden
           >
             {team.avatarEmoji || team.name.trim().charAt(0).toUpperCase()}

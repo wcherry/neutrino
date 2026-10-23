@@ -1,0 +1,27 @@
+{
+  "$comment": "Raw (uncompressed) first-load JS per route, in KB, checked after every build by scripts/check-route-budgets.mjs. Each is the size when the budget was set plus about 5%; /sign-in is held at the P4 target (agent_docs/ui-performance-roadmap.md). Raising one is a decision: do it in the change that needs it and say why.",
+  "routes": {
+    "/": 520,
+    "/sign-in": 600,
+    "/register": 730,
+    "/share": 600,
+    "/self-host": 510,
+    "/drive": 1240,
+    "/docs": 1150,
+    "/docs/editor": 1960,
+    "/sheets": 1140,
+    "/sheets/editor": 1580,
+    "/slides": 1140,
+    "/slides/editor": 1370,
+    "/notes": 1140,
+    "/notes/editor": 1020,
+    "/photos": 1010,
+    "/photos/editor": 1070,
+    "/diagrams": 1140,
+    "/diagrams/editor": 1480,
+    "/drawing": 1140,
+    "/drawing/editor": 1240,
+    "/calendar": 1170,
+    "/settings": 1090
+  }
+}

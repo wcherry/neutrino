@@ -329,7 +329,7 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
       })
       .catch(() => { if (!cancelled) setError('Could not load diagram'); });
     return () => { cancelled = true; };
-  }, [diagramId, pageIndex, dekResolved]);
+  }, [diagramId, pageIndex, dekResolved, dekRef]);
 
   // Close context menu on any outside click.
   useEffect(() => {

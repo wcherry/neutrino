@@ -26,6 +26,9 @@ export { TeamAvatar } from './components/primitives/TeamAvatar';
 export type { TeamAvatarProps, TeamAvatarSize } from './components/primitives/TeamAvatar';
 
 // Inputs
+export { Chip } from './components/inputs/Chip';
+export type { ChipProps } from './components/inputs/Chip';
+
 export { TextInput } from './components/inputs/TextInput';
 export type { TextInputProps, TextInputSize } from './components/inputs/TextInput';
 
@@ -218,19 +221,6 @@ export type { PresenceBarProps, PresenceBarUser } from './components/collab/Pres
 export { Icon } from './icons/Icon';
 export type { IconProps } from './icons/Icon';
 
-// Motion
-export {
-  fadeIn,
-  slideUp,
-  slideDown,
-  slideLeft,
-  slideRight,
-  scaleIn,
-  scaleUp,
-  drawerLeft,
-  drawerRight,
-  drawerBottom,
-  staggerContainer,
-  staggerItem,
-  toastVariants,
-} from './motion/variants';
+// Motion — enter/exit for transient surfaces, in CSS (styles/motion.css)
+export { usePresence, EXIT_MS } from './motion/presence';
+export type { MotionName, PresenceState } from './motion/presence';

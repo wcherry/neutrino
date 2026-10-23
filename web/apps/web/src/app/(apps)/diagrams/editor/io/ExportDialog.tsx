@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ColorPickerPopover } from '@neutrino/ui';
 import type { DiagramDocument, DiagramPage, Viewport } from '../../types';
 import { exportSVG, exportPNG, exportJPEG, exportPNGCropped, exportJPEGCropped, exportSVGCropped, exportJSON, exportMermaid, triggerDownload, withDiagramSource } from './exportUtils';
+import { useDismiss } from '@neutrino/commands';
 import styles from './ExportDialog.module.css';
 
 export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'json' | 'mermaid';
@@ -97,13 +98,7 @@ export function ExportDialog({ document, activePage, canvasContainer, title, onC
   const isImageFormat = isRaster || format === 'svg';
   const mermaidPreview = format === 'mermaid' ? exportMermaid(activePage) : '';
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  useDismiss(() => onClose());
 
   async function handleExport() {
     if (selectArea && isImageFormat) {

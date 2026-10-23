@@ -28,7 +28,26 @@ export const DEFAULT_AI_SETTINGS: AiSettings = { provider: 'gemini', apiKey: '' 
 
 const PROVIDERS: AiProvider[] = ['gemini', 'claude', 'openai'];
 
-export function readAiSettings(): AiSettings {
+/**
+ * Where the settings actually live once the app has a preference store: the provider as a
+ * synced preference and the key sealed in the user's preference vault (`@neutrino/preferences`,
+ * wired in `apps/web/src/lib/preferencesSync.ts`). This package cannot import that store — its
+ * HTTP backend is built on this package — so the app registers it here instead. Unregistered
+ * (tests, and any surface without the store) the legacy `localStorage` record is used.
+ */
+export interface AiSettingsStore {
+  read(): AiSettings;
+  write(settings: AiSettings): void;
+}
+
+let store: AiSettingsStore | null = null;
+
+export function setAiSettingsStore(next: AiSettingsStore | null): void {
+  store = next;
+}
+
+/** The pre-registry record, read only until the preference store takes over. */
+export function readLegacyAiSettings(): AiSettings {
   if (typeof window === 'undefined') return DEFAULT_AI_SETTINGS;
   try {
     const raw = window.localStorage.getItem(AI_SETTINGS_STORAGE_KEY);
@@ -47,7 +66,15 @@ export function readAiSettings(): AiSettings {
   }
 }
 
+export function readAiSettings(): AiSettings {
+  return store ? store.read() : readLegacyAiSettings();
+}
+
 export function writeAiSettings(settings: AiSettings): void {
+  if (store) {
+    store.write(settings);
+    return;
+  }
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(AI_SETTINGS_STORAGE_KEY, JSON.stringify(settings));

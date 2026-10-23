@@ -1,5 +1,6 @@
 'use client';
 
+import { EditorDocIcon, EditorSaveState, createSaveStateStore } from '@/components/editorChrome/EditorTitle';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -84,7 +85,9 @@ import {
   type VectorObject,
   type VectorStyle,
 } from './types';
+import { useCommands } from '@neutrino/commands';
 import styles from './page.module.css';
+import { preferences } from '@neutrino/preferences';
 
 const VersionHistoryPanel = dynamic(
   () => import('@/components/VersionHistoryPanel').then((m) => ({ default: m.VersionHistoryPanel })),
@@ -113,27 +116,20 @@ const HISTORY_LIMIT = 100;
 /**
  * Where the brush is remembered between sessions.
  *
- * `localStorage` and not the document: a brush is a tool, not content
- * (`agent_docs/drawing_app_redesign.md` §3), so it belongs to the person rather
- * than to the drawing — the same rule the theme and the calendar's week start
- * follow. Storing it in the file would make opening somebody else's drawing
- * silently change your brush.
+ * A synced preference (`drawing.brush`) and not the document: a brush is a
+ * tool, not content (`agent_docs/drawing_app_redesign.md` §3), so it belongs to
+ * the person rather than to the drawing — the same rule the theme and the
+ * calendar's week start follow. Storing it in the file would make opening
+ * somebody else's drawing silently change your brush.
  */
-const BRUSH_STORAGE_KEY = 'neutrino:drawing:brush';
-
 function loadBrush(): BrushSettings {
   const fallback = createBrush('brush');
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(BRUSH_STORAGE_KEY);
-    if (!raw) return fallback;
-    // Merged over a real preset rather than trusted outright: the stored shape
-    // is from whichever build last wrote it, and a missing `pressure` object
-    // would be read on the first stroke.
-    return clampBrush({ ...fallback, ...(JSON.parse(raw) as Partial<BrushSettings>) });
-  } catch {
-    return fallback;
-  }
+  const stored = preferences.get('drawing.brush');
+  if (!stored) return fallback;
+  // Merged over a real preset rather than trusted outright: the stored shape
+  // is from whichever build last wrote it, and a missing `pressure` object
+  // would be read on the first stroke.
+  return clampBrush({ ...fallback, ...(stored as Partial<BrushSettings>) });
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -482,6 +478,8 @@ export function DrawingEditor() {
   // ── Autosave ──────────────────────────────────────────────────────
 
   const saveInProgress = useRef(false);
+  // For the title bar's save state in the new looks; a store so a save does not re-render the editor.
+  const saveStateRef = useRef(createSaveStateStore());
 
   /**
    * The document plus where the session had got to — redesign §5's viewport,
@@ -536,6 +534,7 @@ export function DrawingEditor() {
 
       isDirtyRef.current = false;
       saveInProgress.current = true;
+      saveStateRef.current.set('saving');
 
       const { awaitDek: resolveDek, versionGuard: guard, toast: notify, userId } = saveDepsRef.current;
       const body = serializeDocument(withSessionState(setTitle(docRef.current, title)));
@@ -553,6 +552,7 @@ export function DrawingEditor() {
           );
         })
         .then((meta) => {
+          saveStateRef.current.set('saved');
           guard.observe(meta.contentVersion);
           serverTitleRef.current = meta.title;
           indexOnSave(userId, {
@@ -563,6 +563,7 @@ export function DrawingEditor() {
           });
         })
         .catch((err) => {
+          saveStateRef.current.set('error');
           if (isMissingEncryptionKey(err)) {
             notify.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
@@ -587,12 +588,8 @@ export function DrawingEditor() {
   // ── Brushes ───────────────────────────────────────────────────────
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(BRUSH_STORAGE_KEY, JSON.stringify(brush));
-    } catch {
-      // A private window, or storage that is full. The brush still works for
-      // this session; only remembering it fails.
-    }
+    // Refused (and only for this session) if it outgrows the preference's size limit.
+    preferences.set('drawing.brush', brush as unknown as Record<string, unknown>);
   }, [brush]);
 
   /**
@@ -921,90 +918,44 @@ export function DrawingEditor() {
   }, [applyDocument]);
 
   // ── Keyboard ──────────────────────────────────────────────────────
+  // None of these run while typing in a field (the command catalog says so).
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      const mod = e.metaKey || e.ctrlKey;
-
-      if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) {
-        e.preventDefault();
-        handleDelete();
-        return;
-      }
-      if (!mod) {
-        const shortcuts: Record<string, ToolType> = {
-          s: 'select', a: 'node', v: 'transform',
-          p: 'pen', l: 'line', r: 'rectangle', e: 'ellipse', t: 'text',
-          b: 'brush', n: 'pencil', x: 'paint-eraser',
-          m: 'select-rect', q: 'lasso',
-        };
-        const next = shortcuts[e.key.toLowerCase()];
-        if (next) {
-          setTool(next);
-          return;
-        }
-      }
-      if (!mod) return;
-
-      switch (e.key.toLowerCase()) {
-        case 'z':
-          e.preventDefault();
-          if (e.shiftKey) handleRedo();
-          else handleUndo();
-          break;
-        case 'y':
-          e.preventDefault();
-          handleRedo();
-          break;
-        case 'a': e.preventDefault(); handleSelectAll(); break;
-        case 'c': e.preventDefault(); handleCopy(); break;
-        case 'x': e.preventDefault(); handleCut(); break;
-        case 'v': e.preventDefault(); handlePaste(); break;
-        case 'i':
-          if (!e.shiftKey) break;
-          e.preventDefault();
-          handleInvertSelection();
-          break;
-        case 'd':
-          e.preventDefault();
-          if (e.shiftKey) handleDeselectPixels();
-          else handleDuplicate();
-          break;
-        case 'g':
-          e.preventDefault();
-          if (e.shiftKey) handleUngroup();
-          else handleGroup();
-          break;
-        case ']': e.preventDefault(); reorder(-1); break;
-        case '[': e.preventDefault(); reorder(1); break;
-        case "'":
-          e.preventDefault();
-          applyDocument(setGrid(docRef.current, { visible: !docRef.current.grid.visible }));
-          break;
-        case 'r': {
-          e.preventDefault();
-          const current = workspaceOf(docRef.current.workspace);
-          applyDocument(setWorkspace(docRef.current, { rulers: !current.rulers }));
-          break;
-        }
-        case ';': {
-          e.preventDefault();
-          const current = workspaceOf(docRef.current.workspace);
-          applyDocument(setWorkspace(docRef.current, { showGuides: !current.showGuides }));
-          break;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    applyDocument, handleCopy, handleCut, handleDelete, handleDeselectPixels, handleDuplicate,
-    handleGroup, handleInvertSelection, handlePaste, handleRedo, handleSelectAll, handleUndo,
-    handleUngroup, reorder,
-  ]);
+  const toggleWorkspace = (key: 'rulers' | 'showGuides') => {
+    const current = workspaceOf(docRef.current.workspace);
+    applyDocument(setWorkspace(docRef.current, { [key]: !current[key] }));
+  };
+  useCommands({
+    'drawing.tool.select': () => setTool('select'),
+    'drawing.tool.node': () => setTool('node'),
+    'drawing.tool.transform': () => setTool('transform'),
+    'drawing.tool.pen': () => setTool('pen'),
+    'drawing.tool.line': () => setTool('line'),
+    'drawing.tool.rectangle': () => setTool('rectangle'),
+    'drawing.tool.ellipse': () => setTool('ellipse'),
+    'drawing.tool.text': () => setTool('text'),
+    'drawing.tool.brush': () => setTool('brush'),
+    'drawing.tool.pencil': () => setTool('pencil'),
+    'drawing.tool.eraser': () => setTool('paint-eraser'),
+    'drawing.tool.selectRect': () => setTool('select-rect'),
+    'drawing.tool.lasso': () => setTool('lasso'),
+    'drawing.delete': () => handleDelete(),
+    'drawing.undo': () => handleUndo(),
+    'drawing.redo': () => handleRedo(),
+    'drawing.selectAll': () => handleSelectAll(),
+    'drawing.copy': () => handleCopy(),
+    'drawing.cut': () => handleCut(),
+    'drawing.paste': () => handlePaste(),
+    'drawing.invertSelection': () => handleInvertSelection(),
+    'drawing.duplicate': () => handleDuplicate(),
+    'drawing.deselectPixels': () => handleDeselectPixels(),
+    'drawing.group': () => handleGroup(),
+    'drawing.ungroup': () => handleUngroup(),
+    'drawing.bringForward': () => reorder(-1),
+    'drawing.sendBackward': () => reorder(1),
+    'drawing.toggleGrid': () => applyDocument(setGrid(docRef.current, { visible: !docRef.current.grid.visible })),
+    'drawing.toggleRulers': () => toggleWorkspace('rulers'),
+    'drawing.toggleGuides': () => toggleWorkspace('showGuides'),
+  });
 
   // ── Viewport ──────────────────────────────────────────────────────
 
@@ -1158,6 +1109,7 @@ export function DrawingEditor() {
         <button className={styles.backBtn} onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft size={18} />
         </button>
+        <EditorDocIcon app="drawing" />
         <DrawingMenuBar
           tool={tool}
           onToolChange={setTool}
@@ -1216,6 +1168,7 @@ export function DrawingEditor() {
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
           aria-label="Drawing title"
         />
+        <EditorSaveState store={saveStateRef.current} />
       </div>
 
       <div className={styles.editorBody}>

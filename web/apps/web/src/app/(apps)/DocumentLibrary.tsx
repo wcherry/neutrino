@@ -7,14 +7,19 @@ import { Button, EmptyState, FileGrid, Heading, useToast, type GridItem, type So
 import { Eye, FilePlus, Link, Pencil, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
+import { useDismiss } from '@neutrino/commands';
 import styles from './DocumentLibrary.module.css';
 import contextMenuStyles from './drive/FileContextMenu.module.css';
+import { useListingView, type ListingId } from '@/lib/listingViews';
+import { usePreference } from '@neutrino/preferences';
 
 /** The subset of an app's metadata response the library needs to render a card. */
 export interface LibraryItem {
   id: string;
   title: string;
   updatedAt: string;
+  /** This item's Type column and card line, when it differs from the library's (`Diagram (SVG)`). */
+  typeText?: string;
 }
 
 export interface DocumentLibraryProps {
@@ -41,6 +46,11 @@ export interface DocumentLibraryProps {
    * here (issue #128). Rendered before it, so the primary action stays last.
    */
   headerActions?: React.ReactNode;
+  /**
+   * What the create buttons do instead of calling `createItem` straight away — Diagrams opens its
+   * template picker, which creates the item itself.
+   */
+  onCreate?: () => void;
 }
 
 function capitalize(word: string): string {
@@ -80,16 +90,13 @@ function LibraryContextMenu({ x, y, noun, onClose, onPreview, onRename, onCopyLi
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   return (
     <div
@@ -161,12 +168,19 @@ export function DocumentLibrary({
   renameItem,
   deleteItem,
   headerActions,
+  onCreate,
 }: DocumentLibraryProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [sortBy, setSortBy] = React.useState<SortField>('updatedAt');
-  const [sortDir, setSortDir] = React.useState<SortDir>('desc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView(queryKey as ListingId, { view: 'large', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
+  // The new looks: the library is one region — title, controls and list together (Drive boards).
+  const [look] = usePreference('appearance.look');
+  const flow = look !== 'classic';
+  const create = onCreate ?? (() => createMutation.mutate());
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
   const [renaming, setRenaming] = React.useState<{ id: string; title: string } | null>(null);
@@ -242,7 +256,8 @@ export function DocumentLibrary({
     kind: 'doc',
     icon,
     iconColor,
-    typeText,
+    typeText: item.typeText ?? typeText,
+    subtitle: item.typeText,
     modifiedText: formatDate(item.updatedAt),
     // No subtitle: the icon already says what the item is, so the card's meta
     // line is the friendly date `updatedAt` renders as.
@@ -250,12 +265,12 @@ export function DocumentLibrary({
   }));
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-own-regions={flow || undefined}>
       <div className={styles.header}>
-        <Heading level={1} size="xl">{title}</Heading>
+        {flow ? <h1 className={styles['page-title']}>{title}</h1> : <Heading level={1} size="xl">{title}</Heading>}
         <div className={styles['header-actions']}>
           {headerActions}
-          <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} icon={<FilePlus size={16} />}>
+          <Button onClick={create} disabled={createMutation.isPending} icon={<FilePlus size={16} />}>
             {newLabel}
           </Button>
         </div>
@@ -271,7 +286,7 @@ export function DocumentLibrary({
             title={`No ${noun}s yet`}
             description={`Create a new ${noun} to get started.`}
             action={
-              <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} icon={<FilePlus size={16} />}>
+              <Button onClick={create} disabled={createMutation.isPending} icon={<FilePlus size={16} />}>
                 {newLabel}
               </Button>
             }
@@ -281,9 +296,11 @@ export function DocumentLibrary({
         onItemMenuOpen={handleMenuOpen}
         showFilter={false}
         showSizeColumn={false}
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        onSortChange={listing.setSort}
         totalCount={isLoading ? undefined : items.length}
       />
 

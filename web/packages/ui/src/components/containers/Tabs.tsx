@@ -1,8 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useId, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { fadeIn } from '../../motion/variants';
 import styles from './Tabs.module.css';
 
 export type TabsVariant = 'default' | 'pills';
@@ -125,15 +123,16 @@ export function TabPanel({ id, className = '', children }: TabPanelProps) {
   if (!isActive) return null;
 
   return (
-    <motion.div
+    <div
       id={`${baseId}-panel-${id}`}
       role="tabpanel"
       aria-labelledby={`${baseId}-tab-${id}`}
       className={[styles.panel, className].filter(Boolean).join(' ')}
       tabIndex={0}
-      {...fadeIn}
+      data-motion="fade"
+      data-state="open"
     >
       {children}
-    </motion.div>
+    </div>
   );
 }

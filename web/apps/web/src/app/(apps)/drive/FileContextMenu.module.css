@@ -2,10 +2,14 @@
   position: fixed;
   z-index: 1000;
   min-width: 180px;
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  /* Frosted in the new looks (--glass-*, packages/tokens/src/looks.css); perf scenario B7
+     measures what that costs over a scrolling list. */
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   padding: var(--space-1);
   display: flex;
   flex-direction: column;
@@ -28,7 +32,7 @@
 }
 
 .item:hover {
-  background-color: var(--color-bg-subtle);
+  background-color: var(--menu-item-hover);
 }
 
 .item:focus-visible {
@@ -37,11 +41,11 @@
 }
 
 .item.danger {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .item.danger:hover {
-  background-color: color-mix(in srgb, var(--color-error, #dc2626) 8%, transparent);
+  background-color: color-mix(in srgb, var(--color-error) 8%, transparent);
 }
 
 .itemIcon {
@@ -52,11 +56,11 @@
 }
 
 .danger .itemIcon {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .separator {
   height: 1px;
-  background-color: var(--color-border);
+  background-color: var(--menu-separator);
   margin: var(--space-1) 0;
 }

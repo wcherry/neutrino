@@ -1,0 +1,69 @@
+/*
+ * Text size, contrast and motion — the user's own accessibility settings (customization roadmap
+ * U2, U5), applied by attributes on <html> that the anti-FOUC script sets before first paint.
+ * Each one also follows the operating system's setting while it is left at `system` (no attribute).
+ * Imported after looks.css so it adjusts whatever the look decided.
+ */
+
+/* ── Text size (`appearance.textSize`) ───────────────────────────────────────
+   The type scale is in rem, so the root size moves all of it; the UI's px base (density.css)
+   follows through `--text-scale`. */
+:root {
+  --text-scale: 1;
+}
+
+html[data-text-size='sm'] {
+  font-size: 15px;
+  --text-scale: 0.9375;
+}
+
+html[data-text-size='lg'] {
+  font-size: 18px;
+  --text-scale: 1.125;
+}
+
+/* ── Higher contrast (`a11y.contrast`) ───────────────────────────────────────
+   Muted text takes the secondary colour, secondary takes the primary, every border and rule is
+   drawn at its strong weight, controls show their borders at rest, and frosted surfaces go opaque.
+   `html:root[…]` so it outranks the look-and-theme blocks it adjusts. */
+html:root[data-contrast='more'] {
+  --color-text-muted: var(--color-text-secondary);
+  --text-3: var(--text-2);
+  --text-2: var(--text-1);
+  --color-border: var(--color-border-strong);
+  --button-border-rest: var(--button-border-hover);
+  --field-border: var(--color-border-strong);
+  --chip-border: var(--button-border-hover);
+  --filter-chip-border: var(--color-border-strong);
+  --glass-bg: var(--color-surface-overlay);
+  --glass-filter: none;
+}
+
+@media (prefers-contrast: more) {
+  html:root:not([data-contrast='standard']) {
+    --color-text-muted: var(--color-text-secondary);
+    --text-3: var(--text-2);
+    --text-2: var(--text-1);
+    --color-border: var(--color-border-strong);
+    --button-border-rest: var(--button-border-hover);
+    --field-border: var(--color-border-strong);
+    --chip-border: var(--button-border-hover);
+    --filter-chip-border: var(--color-border-strong);
+    --glass-bg: var(--color-surface-overlay);
+    --glass-filter: none;
+  }
+}
+
+/* ── Reduce motion (`a11y.reduceMotion`) ─────────────────────────────────────
+   `on` stills every transition and animation, as the OS setting does in motion.css; `off`
+   overrides that OS setting (motion.css skips its rule when the attribute says so). */
+[data-reduce-motion='on'] *,
+[data-reduce-motion='on'] *::before,
+[data-reduce-motion='on'] *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* Reduce transparency (`a11y.reduceTransparency`) maps onto `data-transparency`, which
+   looks.css already honours: `on` → "off", `off` → "on" (overriding the OS). */

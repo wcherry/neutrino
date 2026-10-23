@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { DRIVE_CHANGED_EVENT, DRIVE_CHANGED_TYPE } from '@/lib/driveLiveUpdates';
+import { PREFERENCES_CHANGED_EVENT, PREFERENCES_CHANGED_TYPE } from '@/lib/preferencesSignal';
 
 // ---------------------------------------------------------------------------
 // useNotifications — the drive-change signal riding the notification socket.
@@ -184,5 +185,49 @@ describe('useNotifications — drive change signals', () => {
     expect(result.current.connected).toBe(true);
     expect(result.current.notifications).toHaveLength(0);
     expect(driveChanges).toBe(0);
+  });
+});
+
+describe('useNotifications — preference change signals', () => {
+  let prefChanges: number;
+  let countPrefChange: () => void;
+
+  beforeEach(() => {
+    FakeWebSocket.last = null;
+    localStorage.setItem('access_token', unexpiredToken());
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    prefChanges = 0;
+    countPrefChange = () => {
+      prefChanges += 1;
+    };
+    window.addEventListener(PREFERENCES_CHANGED_EVENT, countPrefChange);
+  });
+
+  afterEach(() => {
+    window.removeEventListener(PREFERENCES_CHANGED_EVENT, countPrefChange);
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('tells the store when another device changed the user’s preferences', async () => {
+    const { socket, result } = await mountHook();
+
+    await act(async () => {
+      socket.receive({ type: PREFERENCES_CHANGED_TYPE, originClientId: 'a-laptop' });
+    });
+
+    expect(prefChanges).toBe(1);
+    // A signal, never a notification.
+    expect(result.current.notifications).toHaveLength(0);
+  });
+
+  it('ignores the echo of this tab’s own preference write', async () => {
+    const { socket } = await mountHook();
+
+    await act(async () => {
+      socket.receive({ type: PREFERENCES_CHANGED_TYPE, originClientId: OUR_CLIENT_ID });
+    });
+
+    expect(prefChanges).toBe(0);
   });
 });

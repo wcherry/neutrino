@@ -135,7 +135,8 @@ describe('useSearchIndexSync', () => {
   });
 
   it('respects the Settings toggle that disables background syncing', async () => {
-    localStorage.setItem('neutrino:search:syncDisabled', 'true');
+    // A device preference (`search.syncDisabled`); the fresh module's store reads it on load.
+    localStorage.setItem('neutrino.prefs.device', JSON.stringify({ 'search.syncDisabled': true }));
     const useSearchIndexSync = await freshHook();
     renderHook(() => useSearchIndexSync('user-1'));
 

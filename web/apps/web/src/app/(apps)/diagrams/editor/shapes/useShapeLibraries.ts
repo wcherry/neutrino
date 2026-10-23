@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ShapeType } from '../../types';
 import { SHAPE_CATEGORIES } from './ShapeLibrary';
+import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,24 +66,17 @@ interface PersistedConfig {
   libraryOrder?: string[];
 }
 
-const STORAGE_KEY = 'neutrino:diagrams:shapeLibraries';
-
+/**
+ * The config is personal content (custom libraries are the user's own shapes), so it lives in the
+ * sealed preference vault — `library.diagrams.shapeLibraries` — and follows the user across
+ * devices instead of staying in one browser's `localStorage`.
+ */
 function loadFromStorage(): PersistedConfig | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as PersistedConfig;
-  } catch {
-    return null;
-  }
+  return (readVaultOrLegacy(preferences, 'library.diagrams.shapeLibraries') as PersistedConfig | null) ?? null;
 }
 
 function saveToStorage(config: PersistedConfig): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  } catch {
-    // Ignore storage errors
-  }
+  preferences.set('library.diagrams.shapeLibraries', config as unknown as Record<string, unknown>);
 }
 
 // ---------------------------------------------------------------------------

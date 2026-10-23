@@ -15,6 +15,10 @@ export interface NavItem {
   onClick?: () => void;
   active?: boolean;
   badge?: number | string;
+  /** The icon's colour in the new shell — an app's identity colour. The classic sidebar ignores it. */
+  color?: string;
+  /** Drawn instead of the icon in the new shell: a team's square, its accent and initial or emoji. */
+  swatch?: { color: string; text: string };
 }
 
 export interface NavSection {
@@ -125,10 +129,11 @@ export function Sidebar({
       {/* Logo row + collapse toggle */}
       <div className={styles['logo-row']}>
         <Link className={styles.logo} href={logoHref} aria-label={`${logoText} home`} title={collapsed ? logoText : undefined}>
-          <span className={styles['logo-icon']} aria-hidden="true">
+          {/* `data-brand`: an instance's uploaded logo is drawn here by the server's CSS (src/branding/inject.rs). */}
+          <span className={styles['logo-icon']} aria-hidden="true" data-brand="logo">
             <Cloud size={20} />
           </span>
-          {!collapsed && <span className={styles['logo-text']}>{logoText}</span>}
+          {!collapsed && <span className={styles['logo-text']} data-brand="name">{logoText}</span>}
         </Link>
         <button
           type="button"

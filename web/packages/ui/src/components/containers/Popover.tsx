@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef, useEffect, useId } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { scaleIn } from '../../motion/variants';
+import { useDismiss } from '@neutrino/commands';
+import { usePresence } from '../../motion/presence';
 import styles from './Popover.module.css';
 
 export type PopoverPlacement =
@@ -44,20 +44,12 @@ export function Popover({
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, onClose]);
+
+  useDismiss(onClose, open);
+  const { mounted, state } = usePresence(open);
 
   const placementClass = placement.replace('-', '-');
 
@@ -74,19 +66,19 @@ export function Popover({
       <div aria-expanded={open} aria-controls={open ? id : undefined}>
         {trigger}
       </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            id={id}
-            className={contentClasses}
-            role="dialog"
-            aria-modal="false"
-            {...scaleIn}
-          >
-            {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mounted && (
+        <div
+          id={id}
+          className={contentClasses}
+          role="dialog"
+          aria-modal="false"
+          aria-hidden={open ? undefined : true}
+          data-motion="scale"
+          data-state={state}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }

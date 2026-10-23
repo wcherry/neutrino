@@ -14,6 +14,11 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  createDocument,
+  createRect,
+} from '../../../web/apps/web/src/app/(apps)/drawing/editor/document/factory';
+import { serializeDocument } from '../../../web/apps/web/src/app/(apps)/drawing/editor/document/serialize';
 
 export const ASSET_DIR = path.join(__dirname, 'assets');
 
@@ -223,26 +228,27 @@ export function buildDiagram(nodes: number): string {
   });
 }
 
-/** A drawing of `shapes` rectangles — `DrawingContent` in the drawing editor. */
+/**
+ * A drawing of `shapes` rectangles on one vector layer.
+ *
+ * Built with the drawing editor's own model (`document/factory.ts`,
+ * `serialize.ts`) rather than by hand. The format became a version 2 layer tree
+ * and `parseDocument` refuses anything else — the hand-written version 1 body
+ * this used to produce opened as "This file is not a drawing this version can
+ * open", which is why E4b never found a canvas to pan. Using the factory means
+ * the fixture follows the format instead of trailing it.
+ */
 export function buildDrawing(shapes: number): string {
-  return JSON.stringify({
-    version: 1,
-    shapes: Array.from({ length: shapes }, (_, i) => ({
-      id: `s${i}`,
-      type: 'rectangle',
-      x: (i % 30) * 40,
-      y: Math.floor(i / 30) * 40,
-      width: 32,
-      height: 32,
-      points: [],
-      text: '',
-      fill: '#93c5fd',
-      stroke: '#1d4ed8',
-      strokeWidth: 1,
-      rotation: 0,
-      opacity: 1,
-    })),
-  });
+  const doc = createDocument({ title: `perf-drawing-${shapes}` });
+  const layer = doc.root.children[0];
+  if (layer.type !== 'vector') throw new Error('createDocument no longer starts with a vector layer');
+  layer.objects = Array.from({ length: shapes }, (_, i) =>
+    createRect(
+      { x: 40 + (i % 30) * 40, y: 40 + Math.floor(i / 30) * 40, width: 32, height: 32 },
+      { fill: '#93c5fd', stroke: '#1d4ed8', strokeWidth: 1 },
+    ),
+  );
+  return serializeDocument(doc);
 }
 
 // ── Images ──────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { ArrowDownAZ, ArrowUpZA, ArrowDown01, ArrowUp10, Filter, X, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash2, Eraser, EyeOff } from 'lucide-react';
+import { useDismiss } from '@neutrino/commands';
 import styles from './SheetContextMenu.module.css';
 
 export interface HeaderContextMenuProps {
@@ -36,16 +37,13 @@ export function HeaderContextMenu({
         function onPointerDown(e: PointerEvent) {
             if (ref.current && !ref.current.contains(e.target as Node)) onClose();
         }
-        function onKeyDown(e: KeyboardEvent) {
-            if (e.key === 'Escape') onClose();
-        }
         document.addEventListener('pointerdown', onPointerDown);
-        document.addEventListener('keydown', onKeyDown);
         return () => {
             document.removeEventListener('pointerdown', onPointerDown);
-            document.removeEventListener('keydown', onKeyDown);
         };
     }, [onClose]);
+
+    useDismiss(() => onClose());
 
     const menuWidth = 220;
     const menuHeight = 320;

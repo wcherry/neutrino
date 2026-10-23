@@ -3,6 +3,7 @@ import { Plugin, PluginKey, type Transaction, type EditorState } from '@tiptap/p
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { applyGrammarRules, type GrammarIssue } from '@/hooks/useGrammarCheck';
+import { buildAll, forEachText, updateForTransaction } from './incrementalDecorations';
 
 // ── Plugin key (exported for context-menu read access) ─────────────────────────
 
@@ -17,28 +18,25 @@ interface GrammarPluginState {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function buildDecorations(doc: PmNode): DecorationSet {
-  const decorations: Decoration[] = [];
-
-  doc.descendants((node, pos) => {
-    if (!node.isText || !node.text) return;
-    const issues = applyGrammarRules(node.text);
-    for (const issue of issues) {
-      decorations.push(
-        Decoration.inline(
-          pos + issue.offset,
-          pos + issue.offset + issue.length,
-          {
-            class: 'grammar-issue',
-            title: issue.message,
-            'data-suggestion': issue.suggestion ?? '',
-          },
-        ),
+/** The grammar issues in one textblock, checked a text node at a time as before. */
+function blockDecorations(block: PmNode, pos: number): Decoration[] {
+  const out: Decoration[] = [];
+  forEachText(block, pos, (text, at) => {
+    for (const issue of applyGrammarRules(text)) {
+      out.push(
+        Decoration.inline(at + issue.offset, at + issue.offset + issue.length, {
+          class: 'grammar-issue',
+          title: issue.message,
+          'data-suggestion': issue.suggestion ?? '',
+        }),
       );
     }
   });
+  return out;
+}
 
-  return DecorationSet.create(doc, decorations);
+function buildDecorations(doc: PmNode): DecorationSet {
+  return buildAll(doc, blockDecorations);
 }
 
 // ── Command type augmentation ─────────────────────────────────────────────────
@@ -62,18 +60,20 @@ export const GrammarCheckExtension = Extension.create({
         key: grammarCheckPluginKey,
 
         state: {
-          init(_config: unknown, state: EditorState): GrammarPluginState {
-            return { enabled: false, decorations: buildDecorations(state.doc) };
+          // Nothing is checked while grammar checking is off — it used to rebuild the whole
+          // document's issues on every keystroke whether or not they would be shown.
+          init(): GrammarPluginState {
+            return { enabled: false, decorations: DecorationSet.empty };
           },
 
           apply(tr: Transaction, old: GrammarPluginState, _oldState: EditorState, newState: EditorState): GrammarPluginState {
             const meta = tr.getMeta(grammarCheckPluginKey) as { enabled?: boolean } | undefined;
             const enabled = meta?.enabled !== undefined ? meta.enabled : old.enabled;
-            const decorations =
-              tr.docChanged || meta?.enabled !== undefined
-                ? buildDecorations(newState.doc)
-                : old.decorations;
-            return { enabled, decorations };
+            if (meta?.enabled !== undefined) {
+              return { enabled, decorations: enabled ? buildDecorations(newState.doc) : DecorationSet.empty };
+            }
+            if (!enabled || !tr.docChanged) return enabled ? old : { enabled, decorations: DecorationSet.empty };
+            return { enabled, decorations: updateForTransaction(old.decorations, tr, blockDecorations) };
           },
         },
 

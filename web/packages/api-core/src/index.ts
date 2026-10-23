@@ -27,12 +27,14 @@ export {
   AI_SETTINGS_STORAGE_KEY,
   DEFAULT_AI_SETTINGS,
   readAiSettings,
+  readLegacyAiSettings,
   writeAiSettings,
+  setAiSettingsStore,
   aiCredentials,
   aiApi,
 } from './ai';
 
-export type { AiProvider, AiSettings, AiCompleteOptions } from './ai';
+export type { AiProvider, AiSettings, AiSettingsStore, AiCompleteOptions } from './ai';
 
 export {
   OOXML_MIME,

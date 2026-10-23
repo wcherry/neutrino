@@ -490,3 +490,44 @@
   font-weight: 600;
   color: var(--color-text-primary);
 }
+
+/* ── The team's colour (T1) ────────────────────────────────────────────────────
+   A tint, not a fill: the identity colour marks whose space this is and never carries text. */
+.shell[data-tinted] .sidebar {
+  background: color-mix(in srgb, var(--team-color) 5%, var(--color-surface));
+  box-shadow: inset 0 3px 0 var(--team-color);
+}
+
+.shell[data-tinted] .navItemActive,
+.shell[data-tinted] .treeItemActive {
+  background: color-mix(in srgb, var(--team-color) 12%, var(--color-surface));
+}
+
+.colorRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.colorSwatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.colorSwatch:disabled {
+  cursor: default;
+}
+
+.colorSwatchActive {
+  border-color: var(--color-text-primary);
+}
+
+.defaultsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}

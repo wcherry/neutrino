@@ -120,6 +120,8 @@ const USER_OWNED_TABLES: &[(&str, &str)] = &[
     ("slide_themes", "user_id"),
     ("custom_themes", "user_id"),
     ("custom_fonts", "uploaded_by"),
+    ("user_preferences", "user_id"),
+    ("user_preference_vault", "user_id"),
 ];
 
 /// Rows that hang off one of the user's files rather than off the user.

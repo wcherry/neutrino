@@ -57,7 +57,7 @@ test.describe('F — delivery and payload', () => {
         title: 'Delivery audit — encoding and cache headers on every /drive asset',
         repeats: 1,
         manualMetricsOnly: true,
-        budgets: { uncompressedTextAssets: 0, staticAssetsWithoutImmutable: 0 },
+        budgets: { uncompressedTextAssets: 0, staticAssetsWithoutImmutable: 0, thirdPartyRequests: 0 },
       },
       async (s) => {
         const assets: AssetRecord[] = [];
@@ -85,11 +85,24 @@ test.describe('F — delivery and payload', () => {
         };
         page.on('response', onResponse);
 
+        // Requests, not responses: a blocked or black-holed third-party host
+        // may never answer, and that is the case that stalls first paint
+        // (performance roadmap P5 — fonts used to come from Google).
+        const ownOrigin = new URL(BASE_URL).origin;
+        const thirdParty = new Set<string>();
+        const onRequest = (req: import('@playwright/test').Request): void => {
+          const url = req.url();
+          if (/^https?:/.test(url) && new URL(url).origin !== ownOrigin) thirdParty.add(url.split('?')[0]);
+        };
+        page.on('request', onRequest);
+
         await s.coldStart();
         await page.goto('/drive');
         await waitForFirstRow(page);
         await waitForIdle(page);
         page.off('response', onResponse);
+        page.off('request', onRequest);
+        s.record('thirdPartyRequests', thirdParty.size, 'count');
 
         const isText = (a: AssetRecord): boolean =>
           /javascript|text\/css|text\/html|application\/json/.test(a.contentType);
@@ -119,6 +132,7 @@ test.describe('F — delivery and payload', () => {
         test.info().attach('F1-assets.json', {
           body: JSON.stringify(
             {
+              thirdParty: [...thirdParty],
               uncompressed: uncompressed.map((a) => ({ url: a.url, bytes: a.bytes })),
               withoutImmutable: withoutImmutable.map((a) => ({
                 url: a.url,

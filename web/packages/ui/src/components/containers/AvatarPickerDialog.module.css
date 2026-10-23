@@ -12,7 +12,7 @@
 
 /* ── Dialog shell ─────────────────────────────────────────────────────────── */
 .dialog {
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   width: 100%;
@@ -29,14 +29,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
 .dialogTitle {
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .closeBtn {
@@ -49,20 +49,20 @@
   background: transparent;
   border-radius: 6px;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.12s, color 0.12s;
 }
 
 .closeBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
-  color: var(--color-text, #111827);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
 
 /* ── Tab bar ──────────────────────────────────────────────────────────────── */
 .tabBar {
   display: flex;
   padding: 0 20px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -72,7 +72,7 @@
   background: transparent;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -80,12 +80,12 @@
 }
 
 .tabBtn:hover {
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .tabBtnActive {
-  color: var(--color-primary, #2563eb);
-  border-bottom-color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
 }
 
 /* ── Body ─────────────────────────────────────────────────────────────────── */
@@ -103,31 +103,31 @@
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 20px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
 .cancelBtn {
   padding: 8px 18px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 7px;
   background: transparent;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: background 0.12s;
 }
 
 .cancelBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .applyBtn {
   padding: 8px 20px;
   border: none;
   border-radius: 7px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -151,7 +151,7 @@
   height: 120px;
   border-radius: 50%;
   display: block;
-  border: 2px solid var(--color-border, #e5e7eb);
+  border: 2px solid var(--color-border);
 }
 
 /* FileTab canvas fills the larger canvasArea */
@@ -189,26 +189,26 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* Letter input */
 .letterInput {
   width: 48px;
   padding: 6px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 20px;
   font-weight: 700;
   text-align: center;
-  color: var(--color-text, #111827);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
   box-sizing: border-box;
 }
 
 .letterInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 /* Font / style pill buttons */
@@ -220,25 +220,25 @@
 
 .pill {
   padding: 5px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 5px;
   background: transparent;
   font-size: 13px;
   cursor: pointer;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   transition: border-color 0.12s, background 0.12s, color 0.12s;
   min-width: 32px;
   text-align: center;
 }
 
 .pill:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .pillActive {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
   background: #eff6ff;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 /* Color swatches */
@@ -265,14 +265,14 @@
 }
 
 .swatchActive {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--color-text, #111827);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--color-text);
 }
 
 .colorInput {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   padding: 0;
   cursor: pointer;
   background: none;
@@ -311,7 +311,7 @@
 }
 
 .avatarCellSelected {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 /* ── FileTab layout ───────────────────────────────────────────────────────── */
@@ -337,9 +337,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--color-surface-raised, #f3f4f6);
-  border: 2px dashed var(--color-border, #e5e7eb);
-  color: var(--color-text-secondary, #6b7280);
+  background: var(--color-surface-raised);
+  border: 2px dashed var(--color-border);
+  color: var(--color-text-secondary);
   font-size: 12px;
   cursor: pointer;
   transition: background 0.15s;
@@ -347,7 +347,7 @@
 }
 
 .uploadPlaceholder:hover {
-  background: var(--color-surface-hover, #e9ecef);
+  background: var(--color-surface-hover);
 }
 
 /* Shown briefly below the canvas while image is loaded */
@@ -357,7 +357,7 @@
   left: 50%;
   transform: translateX(-50%);
   font-size: 10px;
-  color: var(--color-text-secondary, #9ca3af);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -372,19 +372,19 @@
 
 .changeBtn {
   padding: 6px 12px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   width: fit-content;
   transition: background 0.12s;
 }
 
 .changeBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 /* Drag cursor states on the canvas */
@@ -408,13 +408,13 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .slider {
   width: 100%;
   cursor: pointer;
-  accent-color: var(--color-primary, #2563eb);
+  accent-color: var(--color-primary);
 }
 
 .slider:disabled {

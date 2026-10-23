@@ -34,7 +34,7 @@
  * fits directly and no relay is needed.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 import { deserializeKeyring, serializeKeyring, type Keyring } from './keyring';
 
 const NONCE_BYTES = 16;

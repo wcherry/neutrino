@@ -39,7 +39,7 @@
  *         MAC||ciphertext — which is what `sodium.secretBox.open` expects
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 import { activeEntry, type Keyring } from './keyring';
 
 /** Matches `KeyQRDecryptService`'s fallback, so an older build without `iter` still opens this. */

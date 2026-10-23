@@ -46,18 +46,22 @@ type SheetFileContent = { sheets?: SheetData[] };
 export function extractSheetText(raw: string): string {
   if (!raw) return '';
   try {
-    const parsed = JSON.parse(raw) as SheetFileContent;
-    const parts: string[] = [];
-    for (const s of parsed.sheets ?? []) {
-      for (const cell of Object.values(s.cells ?? {})) {
-        const text = cell.value ?? (cell.raw?.startsWith('=') ? '' : cell.raw);
-        if (text) parts.push(text);
-      }
-    }
-    return parts.join(' ').replace(/\s+/g, ' ').trim();
+    return extractSheetModelText(JSON.parse(raw) as SheetFileContent);
   } catch {
     return '';
   }
+}
+
+/** `extractSheetText` for a model already in hand, without a trip through JSON. */
+export function extractSheetModelText(content: SheetFileContent): string {
+  const parts: string[] = [];
+  for (const s of content.sheets ?? []) {
+    for (const cell of Object.values(s.cells ?? {})) {
+      const text = cell.value ?? (cell.raw?.startsWith('=') ? '' : cell.raw);
+      if (text) parts.push(text);
+    }
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 // ---------------------------------------------------------------------------

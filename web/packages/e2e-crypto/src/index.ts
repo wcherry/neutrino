@@ -25,6 +25,14 @@ export {
 } from './place';
 
 export {
+  sealPreferenceVault,
+  openPreferenceVault,
+  preferenceVaultKeyVersion,
+  PreferenceVaultError,
+  PREFERENCE_VAULT_VERSION,
+} from './preferenceVault';
+
+export {
   loadKeyPair,
   loadKeyPairForVersion,
   activeKeyVersion,

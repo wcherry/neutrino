@@ -14,6 +14,7 @@ import { formatDateTime, formatFriendlyDate } from '@neutrino/utils';
 import { Card, Text, FileListSkeleton, Badge } from '../../index';
 import { ZoomablePreview } from './ZoomablePreview';
 import styles from './FileGrid.module.css';
+import { useWindowedItems } from './useWindowedItems';
 
 export type ViewMode = 'large' | 'small' | 'list';
 export type SortField = 'name' | 'size' | 'createdAt' | 'updatedAt';
@@ -192,6 +193,176 @@ function handleItemKeyDown(e: React.KeyboardEvent, callback: () => void) {
   }
 }
 
+/**
+ * What one rendered item needs. Each layout's item is memoised on exactly
+ * this, so a change elsewhere on the page — opening a context menu, typing in
+ * the search box — re-renders the list's shell and not every row in it.
+ * Callers already pass stable `useCallback` handlers and memoised items; that
+ * is what makes the comparison hold.
+ */
+interface ItemProps {
+  item: GridItem;
+  isSelected: boolean;
+  /**
+   * 1-based position in the whole listing, and its length. Only a window of
+   * rows is in the DOM, so without these a screen reader would announce
+   * "item 3 of 30" in a folder of a thousand.
+   */
+  position: number;
+  setSize: number;
+  onItemClick: (item: GridItem) => void;
+  onItemSelect?: (item: GridItem) => void;
+  onItemMenuOpen?: (item: GridItem, e: React.MouseEvent) => void;
+  onToggleStar?: (item: GridItem) => void;
+}
+
+function itemClickHandler({ item, onItemClick, onItemSelect }: ItemProps) {
+  return (e: React.MouseEvent) => {
+    if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
+    else onItemClick(item);
+  };
+}
+
+function StarBadge({ item, onToggleStar, size }: { item: GridItem; onToggleStar?: (item: GridItem) => void; size: number }) {
+  // Without `onToggleStar` the badge is only an indicator, so it is dropped
+  // entirely for unstarred items (Trash, tag pages).
+  if (!onToggleStar && !item.isStarred) return null;
+  return (
+    <button
+      type="button"
+      className={styles['star-badge']}
+      data-starred={item.isStarred ? 'true' : undefined}
+      aria-label={item.isStarred ? 'Remove from starred' : 'Add to starred'}
+      onClick={onToggleStar ? (e) => { e.stopPropagation(); onToggleStar(item); } : undefined}
+      style={onToggleStar ? undefined : { pointerEvents: 'none' }}
+    >
+      <Star
+        size={size}
+        style={{ color: item.isStarred ? 'var(--color-amber, #d97706)' : 'var(--color-text-muted)' }}
+        fill={item.isStarred ? 'var(--color-amber, #d97706)' : 'none'}
+      />
+    </button>
+  );
+}
+
+function ItemMenuButton({ item, onItemMenuOpen, size }: { item: GridItem; onItemMenuOpen: (item: GridItem, e: React.MouseEvent) => void; size: number }) {
+  return (
+    <button
+      type="button"
+      className={styles['item-menu-btn']}
+      aria-label={`More options for ${item.name}`}
+      onClick={(e) => { e.stopPropagation(); onItemMenuOpen(item, e); }}
+    >
+      <MoreVertical size={size} />
+    </button>
+  );
+}
+
+const LargeCard = React.memo(function LargeCard(props: ItemProps) {
+  const { item, isSelected, onItemClick, onItemMenuOpen, onToggleStar } = props;
+  const thumbSrc = item.thumbnailUrl ?? null;
+  return (
+    <Card
+      hoverable
+      padding="none"
+      className={[styles['card-large'], isSelected ? styles['card--selected'] : ''].filter(Boolean).join(' ')}
+      role="listitem"
+      aria-posinset={props.position}
+      aria-setsize={props.setSize}
+      tabIndex={0}
+      aria-label={item.name}
+      aria-selected={isSelected}
+      onClick={itemClickHandler(props)}
+      onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
+    >
+      <div className={styles['preview-large']} style={{ color: item.iconColor }}>
+        {item.preview
+          ? <ZoomablePreview label={item.name}>{item.preview}</ZoomablePreview>
+          : thumbSrc
+            ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
+            : <item.icon size={48} strokeWidth={1} />
+        }
+        <StarBadge item={item} onToggleStar={onToggleStar} size={14} />
+      </div>
+      <div className={styles['card-large-body']}>
+        <Text size="sm" weight="medium" truncate>{item.name}</Text>
+        <CardMeta subtitle={item.subtitle} updatedAt={item.updatedAt} />
+      </div>
+      {onItemMenuOpen && <ItemMenuButton item={item} onItemMenuOpen={onItemMenuOpen} size={14} />}
+    </Card>
+  );
+});
+
+const SmallCard = React.memo(function SmallCard(props: ItemProps) {
+  const { item, isSelected, onItemClick, onItemMenuOpen, onToggleStar } = props;
+  const thumbSrc = item.thumbnailUrl ?? null;
+  return (
+    <Card
+      hoverable
+      padding="none"
+      className={[styles['card-small'], isSelected ? styles['card--selected'] : ''].filter(Boolean).join(' ')}
+      role="listitem"
+      aria-posinset={props.position}
+      aria-setsize={props.setSize}
+      tabIndex={0}
+      aria-label={item.name}
+      aria-selected={isSelected}
+      onClick={itemClickHandler(props)}
+      onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
+    >
+      <div className={styles['preview-small']} style={{ color: item.iconColor }}>
+        {thumbSrc
+          ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
+          : <item.icon size={28} strokeWidth={1.25} />
+        }
+        <StarBadge item={item} onToggleStar={onToggleStar} size={12} />
+      </div>
+      <div className={styles['card-small-body']}>
+        <Text size="xs" weight="medium" truncate>{item.name}</Text>
+      </div>
+      {onItemMenuOpen && <ItemMenuButton item={item} onItemMenuOpen={onItemMenuOpen} size={12} />}
+    </Card>
+  );
+});
+
+const ListRow = React.memo(function ListRow(props: ItemProps & { listCols: string; showSizeColumn: boolean }) {
+  const { item, isSelected, onItemClick, onItemMenuOpen, listCols, showSizeColumn } = props;
+  const thumbSrc = item.thumbnailUrl ?? null;
+  return (
+    <div
+      className={[styles['list-row'], isSelected ? styles['list-row--selected'] : ''].filter(Boolean).join(' ')}
+      style={{ gridTemplateColumns: listCols }}
+      role="listitem"
+      aria-posinset={props.position}
+      aria-setsize={props.setSize}
+      tabIndex={0}
+      aria-label={item.name}
+      aria-selected={isSelected}
+      onClick={itemClickHandler(props)}
+      onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
+    >
+      <div className={styles['list-name']}>
+        <span className={styles['file-icon-sm']} style={{ color: item.iconColor }}>
+          {thumbSrc
+            ? <img src={thumbSrc} alt="" className={styles['list-thumb']} loading="lazy" />
+            : <item.icon size={18} strokeWidth={1.5} />
+          }
+        </span>
+        <Text size="sm" truncate>{item.name}</Text>
+        {item.isStarred && <Star size={12} style={{ color: 'var(--color-amber, #d97706)', flexShrink: 0 }} />}
+      </div>
+      <Text size="sm" color="muted">{item.typeText ?? '—'}</Text>
+      {showSizeColumn && <Text size="sm" color="muted">{item.sizeText ?? '—'}</Text>}
+      <Text size="sm" color="muted">{item.modifiedText ?? '—'}</Text>
+      {onItemMenuOpen ? <ItemMenuButton item={item} onItemMenuOpen={onItemMenuOpen} size={14} /> : <span />}
+    </div>
+  );
+});
+
+/** The `minmax()` minimums in FileGrid.module.css — kept beside the CSS they mirror. */
+const LARGE_MIN_COLUMN = 180;
+const SMALL_MIN_COLUMN = 110;
+
 export interface FileGridProps {
   items: GridItem[];
   isLoading?: boolean;
@@ -218,6 +389,14 @@ export interface FileGridProps {
   sortDir: SortDir;
   onSortChange: (field: SortField, dir: SortDir) => void;
   defaultViewMode?: ViewMode;
+  /**
+   * The view, for a caller that owns it (a remembered default view, which can change under the
+   * grid when another device saves one). Omitted, the grid keeps its own, starting at
+   * `defaultViewMode`.
+   */
+  viewMode?: ViewMode;
+  /** The user picked a view — for a caller that remembers it (`listing.views`, `teamSpace.view`). */
+  onViewModeChange?: (mode: ViewMode) => void;
   totalCount?: number;
   /** Drag-and-drop handlers — wire these up to make the grid a drop target */
   onDragEnter?: React.DragEventHandler<HTMLDivElement>;
@@ -253,6 +432,8 @@ export function FileGrid({
   sortDir,
   onSortChange,
   defaultViewMode = 'large',
+  viewMode: viewModeProp,
+  onViewModeChange,
   totalCount,
   onDragEnter,
   onDragOver,
@@ -263,7 +444,8 @@ export function FileGrid({
   onItemSelect,
   footer,
 }: FileGridProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+  const [ownViewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+  const viewMode = viewModeProp ?? ownViewMode;
   const [uncontrolledFilter, setUncontrolledFilter] = useState<FilterType>('all');
   const filter = filterProp ?? uncontrolledFilter;
 
@@ -278,6 +460,25 @@ export function FileGrid({
   );
   const sortOptions = showSizeColumn ? ALL_SORT_OPTIONS : ALL_SORT_OPTIONS.filter((o) => o.field !== 'size');
   const listCols = showSizeColumn ? '1fr 64px 96px 140px 40px' : '1fr 64px 140px 40px';
+
+  // Only the rows on screen are rendered; see useWindowedItems.
+  const { ref: windowRef, range } = useWindowedItems({
+    count: filteredItems.length,
+    minColumnWidth: viewMode === 'large' ? LARGE_MIN_COLUMN : viewMode === 'small' ? SMALL_MIN_COLUMN : undefined,
+    layoutKey: viewMode,
+  });
+  const visibleItems = filteredItems.slice(range.start, range.end);
+  const windowStyle = { paddingTop: range.padTop, paddingBottom: range.padBottom };
+  const itemProps = (item: GridItem, offset: number): ItemProps => ({
+    item,
+    isSelected: selectedIds?.has(item.id) ?? false,
+    position: range.start + offset + 1,
+    setSize: filteredItems.length,
+    onItemClick,
+    onItemSelect,
+    onItemMenuOpen,
+    onToggleStar,
+  });
 
   function handleSort(field: SortField) {
     onSortChange(field, sortBy === field ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc');
@@ -312,7 +513,7 @@ export function FileGrid({
             key={mode}
             type="button"
             className={[styles['view-btn'], viewMode === mode ? styles['view-btn-active'] : ''].filter(Boolean).join(' ')}
-            onClick={() => setViewMode(mode)}
+            onClick={() => { setViewMode(mode); onViewModeChange?.(mode); }}
             aria-label={label}
             aria-pressed={viewMode === mode}
             title={label}
@@ -367,131 +568,23 @@ export function FileGrid({
         </>
       ) : viewMode === 'large' ? (
         /* ── Large grid ── */
-        <div className={styles['grid-large']} role="list">
-          {filteredItems.map((item) => {
-            const thumbSrc = item.thumbnailUrl ?? null;
-            const isSelected = selectedIds?.has(item.id) ?? false;
-            return (
-            <Card
-              key={item.id}
-              hoverable
-              padding="none"
-              className={[styles['card-large'], isSelected ? styles['card--selected'] : ''].filter(Boolean).join(' ')}
-              role="listitem"
-              tabIndex={0}
-              aria-label={item.name}
-              aria-selected={isSelected}
-              onClick={(e) => {
-                if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
-                else onItemClick(item);
-              }}
-              onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
-            >
-              <div className={styles['preview-large']} style={{ color: item.iconColor }}>
-                {item.preview
-                  ? <ZoomablePreview label={item.name}>{item.preview}</ZoomablePreview>
-                  : thumbSrc
-                    ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
-                    : <item.icon size={48} strokeWidth={1} />
-                }
-                {/* Without `onToggleStar` the badge is only an indicator, so it
-                    is dropped entirely for unstarred items (Trash, tag pages). */}
-                {(onToggleStar || item.isStarred) && (
-                <button
-                  type="button"
-                  className={styles['star-badge']}
-                  data-starred={item.isStarred ? 'true' : undefined}
-                  aria-label={item.isStarred ? 'Remove from starred' : 'Add to starred'}
-                  onClick={onToggleStar ? (e) => { e.stopPropagation(); onToggleStar(item); } : undefined}
-                  style={onToggleStar ? undefined : { pointerEvents: 'none' }}
-                >
-                  <Star
-                    size={14}
-                    style={{ color: item.isStarred ? 'var(--color-amber, #d97706)' : 'var(--color-text-muted)' }}
-                    fill={item.isStarred ? 'var(--color-amber, #d97706)' : 'none'}
-                  />
-                </button>
-                )}
-              </div>
-              <div className={styles['card-large-body']}>
-                <Text size="sm" weight="medium" truncate>{item.name}</Text>
-                <CardMeta subtitle={item.subtitle} updatedAt={item.updatedAt} />
-              </div>
-              {onItemMenuOpen && (
-                <button
-                  type="button"
-                  className={styles['item-menu-btn']}
-                  aria-label={`More options for ${item.name}`}
-                  onClick={(e) => { e.stopPropagation(); onItemMenuOpen(item, e); }}
-                >
-                  <MoreVertical size={14} />
-                </button>
-              )}
-            </Card>
-          ); })}
+        <>
+          <div ref={windowRef} className={styles['grid-large']} role="list" style={windowStyle}>
+            {visibleItems.map((item, i) => <LargeCard key={item.id} {...itemProps(item, i)} />)}
+          </div>
+          {/* After the grid, not inside it: the rows below the window are
+              padding, and an infinite-scroll sentinel inside the grid would sit
+              above that padding — always near the viewport, loading every page. */}
           {footer && <div className={styles['grid-footer']}>{footer}</div>}
-        </div>
+        </>
       ) : viewMode === 'small' ? (
         /* ── Small grid ── */
-        <div className={styles['grid-small']} role="list">
-          {filteredItems.map((item) => {
-            const thumbSrc = item.thumbnailUrl ?? null;
-            const isSelected = selectedIds?.has(item.id) ?? false;
-            return (
-            <Card
-              key={item.id}
-              hoverable
-              padding="none"
-              className={[styles['card-small'], isSelected ? styles['card--selected'] : ''].filter(Boolean).join(' ')}
-              role="listitem"
-              tabIndex={0}
-              aria-label={item.name}
-              aria-selected={isSelected}
-              onClick={(e) => {
-                if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
-                else onItemClick(item);
-              }}
-              onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
-            >
-              <div className={styles['preview-small']} style={{ color: item.iconColor }}>
-                {thumbSrc
-                  ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
-                  : <item.icon size={28} strokeWidth={1.25} />
-                }
-                {(onToggleStar || item.isStarred) && (
-                <button
-                  type="button"
-                  className={styles['star-badge']}
-                  data-starred={item.isStarred ? 'true' : undefined}
-                  aria-label={item.isStarred ? 'Remove from starred' : 'Add to starred'}
-                  onClick={onToggleStar ? (e) => { e.stopPropagation(); onToggleStar(item); } : undefined}
-                  style={onToggleStar ? undefined : { pointerEvents: 'none' }}
-                >
-                  <Star
-                    size={12}
-                    style={{ color: item.isStarred ? 'var(--color-amber, #d97706)' : 'var(--color-text-muted)' }}
-                    fill={item.isStarred ? 'var(--color-amber, #d97706)' : 'none'}
-                  />
-                </button>
-                )}
-              </div>
-              <div className={styles['card-small-body']}>
-                <Text size="xs" weight="medium" truncate>{item.name}</Text>
-              </div>
-              {onItemMenuOpen && (
-                <button
-                  type="button"
-                  className={styles['item-menu-btn']}
-                  aria-label={`More options for ${item.name}`}
-                  onClick={(e) => { e.stopPropagation(); onItemMenuOpen(item, e); }}
-                >
-                  <MoreVertical size={12} />
-                </button>
-              )}
-            </Card>
-          ); })}
+        <>
+          <div ref={windowRef} className={styles['grid-small']} role="list" style={windowStyle}>
+            {visibleItems.map((item, i) => <SmallCard key={item.id} {...itemProps(item, i)} />)}
+          </div>
           {footer && <div className={styles['grid-footer']}>{footer}</div>}
-        </div>
+        </>
       ) : (
         /* ── Detailed list ── */
         <div className={styles['list-container']}>
@@ -525,50 +618,10 @@ export function FileGrid({
             </button>
             <span />
           </div>
-          <div role="list">
-            {filteredItems.map((item) => {
-              const thumbSrc = item.thumbnailUrl ?? null;
-              const isSelected = selectedIds?.has(item.id) ?? false;
-              return (
-              <div
-                key={item.id}
-                className={[styles['list-row'], isSelected ? styles['list-row--selected'] : ''].filter(Boolean).join(' ')}
-                style={{ gridTemplateColumns: listCols }}
-                role="listitem"
-                tabIndex={0}
-                aria-label={item.name}
-                aria-selected={isSelected}
-                onClick={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
-                  else onItemClick(item);
-                }}
-                onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
-              >
-                <div className={styles['list-name']}>
-                  <span className={styles['file-icon-sm']} style={{ color: item.iconColor }}>
-                    {thumbSrc
-                      ? <img src={thumbSrc} alt="" className={styles['list-thumb']} loading="lazy" />
-                      : <item.icon size={18} strokeWidth={1.5} />
-                    }
-                  </span>
-                  <Text size="sm" truncate>{item.name}</Text>
-                  {item.isStarred && <Star size={12} style={{ color: 'var(--color-amber, #d97706)', flexShrink: 0 }} />}
-                </div>
-                <Text size="sm" color="muted">{item.typeText ?? '—'}</Text>
-                {showSizeColumn && <Text size="sm" color="muted">{item.sizeText ?? '—'}</Text>}
-                <Text size="sm" color="muted">{item.modifiedText ?? '—'}</Text>
-                {onItemMenuOpen ? (
-                  <button
-                    type="button"
-                    className={styles['item-menu-btn']}
-                    aria-label={`More options for ${item.name}`}
-                    onClick={(e) => { e.stopPropagation(); onItemMenuOpen(item, e); }}
-                  >
-                    <MoreVertical size={14} />
-                  </button>
-                ) : <span />}
-              </div>
-              ); })}
+          <div ref={windowRef} role="list" style={windowStyle}>
+            {visibleItems.map((item, i) => (
+              <ListRow key={item.id} {...itemProps(item, i)} listCols={listCols} showSizeColumn={showSizeColumn} />
+            ))}
           </div>
           {footer}
         </div>

@@ -3,6 +3,7 @@ import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 import { ThemeProvider, useTheme } from '../providers/ThemeProvider';
+import { preferences, BOOT_KEY } from '@neutrino/preferences';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,6 +37,10 @@ function renderProvider() {
 describe('ThemeProvider', () => {
   beforeEach(() => {
     localStorage.clear();
+    // The choice is the `appearance.theme` preference; the store is a module singleton.
+    preferences.reset('appearance.theme');
+    preferences.reset('appearance.look');
+    preferences.reset('appearance.density');
     document.documentElement.removeAttribute('data-theme');
     // jsdom does not implement matchMedia — provide a light-mode stub by default
     Object.defineProperty(window, 'matchMedia', {
@@ -71,34 +76,45 @@ describe('ThemeProvider', () => {
     expect(screen.getByTestId('resolved').textContent).toBe('dark');
   });
 
-  it('reads stored light theme from localStorage', () => {
-    localStorage.setItem('neutrino.theme', 'light');
+  it('reads a stored light theme preference', () => {
+    preferences.set('appearance.theme', 'light');
     renderProvider();
     expect(screen.getByTestId('theme').textContent).toBe('light');
     expect(screen.getByTestId('resolved').textContent).toBe('light');
   });
 
-  it('reads stored dark theme from localStorage', () => {
-    localStorage.setItem('neutrino.theme', 'dark');
+  it('reads a stored dark theme preference', () => {
+    preferences.set('appearance.theme', 'dark');
     renderProvider();
     expect(screen.getByTestId('theme').textContent).toBe('dark');
     expect(screen.getByTestId('resolved').textContent).toBe('dark');
   });
 
   it('sets data-theme attribute on documentElement', async () => {
-    localStorage.setItem('neutrino.theme', 'dark');
+    preferences.set('appearance.theme', 'dark');
     renderProvider();
     // Allow effects to flush
     await act(async () => {});
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
 
-  it('persists theme choice to localStorage on setTheme', async () => {
+  it('persists the choice as the preference, and into the boot record the first paint reads', async () => {
     renderProvider();
     await act(async () => {
       await userEvent.click(screen.getByRole('button', { name: 'Set Dark' }));
     });
-    expect(localStorage.getItem('neutrino.theme')).toBe('dark');
+    expect(preferences.get('appearance.theme')).toBe('dark');
+    expect(JSON.parse(localStorage.getItem(BOOT_KEY)!)['appearance.theme']).toBe('dark');
+  });
+
+  it('applies the look and density preferences to <html>', async () => {
+    renderProvider();
+    await act(async () => {
+      preferences.set('appearance.look', 'precision');
+      preferences.set('appearance.density', 'compact');
+    });
+    expect(document.documentElement.getAttribute('data-look')).toBe('precision');
+    expect(document.documentElement.getAttribute('data-density')).toBe('compact');
   });
 
   it('updates data-theme when setTheme is called', async () => {
@@ -180,19 +196,19 @@ describe('ThemeProvider', () => {
   // -------------------------------------------------------------------------
   describe('custom theme ids', () => {
     it('accepts a stored custom-<id> theme choice instead of resetting it to system', () => {
-      localStorage.setItem('neutrino.theme', 'custom-abc123');
+      preferences.set('appearance.theme', 'custom-abc123');
       renderProvider();
       expect(screen.getByTestId('theme').textContent).toBe('custom-abc123');
     });
 
     it('resolves a custom theme choice to itself, never further to light/dark', () => {
-      localStorage.setItem('neutrino.theme', 'custom-abc123');
+      preferences.set('appearance.theme', 'custom-abc123');
       renderProvider();
       expect(screen.getByTestId('resolved').textContent).toBe('custom-abc123');
     });
 
     it('sets data-theme to the literal custom id string via applyTheme', async () => {
-      localStorage.setItem('neutrino.theme', 'custom-abc123');
+      preferences.set('appearance.theme', 'custom-abc123');
       renderProvider();
       await act(async () => {});
       expect(document.documentElement.getAttribute('data-theme')).toBe('custom-abc123');
@@ -218,7 +234,7 @@ describe('ThemeProvider', () => {
         await userEvent.click(screen.getByRole('button', { name: 'Set Custom' }));
       });
       expect(screen.getByTestId('theme').textContent).toBe('custom-xyz789');
-      expect(localStorage.getItem('neutrino.theme')).toBe('custom-xyz789');
+      expect(preferences.get('appearance.theme')).toBe('custom-xyz789');
       expect(document.documentElement.getAttribute('data-theme')).toBe('custom-xyz789');
     });
   });

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { RotateCcw, Trash2 } from 'lucide-react';
+import { useDismiss } from '@neutrino/commands';
 import styles from '../FileContextMenu.module.css';
 
 interface Props {
@@ -25,16 +26,13 @@ export function TrashContextMenu({ x, y, onClose, onRestore, onDeleteForever }: 
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   // After first render, measure actual dimensions and clamp within viewport.
   useLayoutEffect(() => {

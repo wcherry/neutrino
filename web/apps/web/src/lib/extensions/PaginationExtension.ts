@@ -46,6 +46,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorView } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { transactionDiff } from './incrementalDecorations';
 
 /** Page geometry, in CSS px at the editor's 96 dpi screen scale. */
 export interface PageMetrics {
@@ -274,6 +275,10 @@ function sameBreaks(a: PageBreak[], b: PageBreak[]): boolean {
   return a.every((x, i) => x.pos === b[i].pos && Math.abs(x.height - b[i].height) <= 1);
 }
 
+/** How long typing has to pause before an edit re-paginates, and the longest it waits regardless. */
+const SETTLE_MS = 150;
+const SETTLE_MAX_MS = 750;
+
 /**
  * Measure the top-level blocks, undoing both the zoom transform and this
  * plugin's own spacers so the result is in natural flow coordinates.
@@ -287,6 +292,36 @@ export function measureBlocks(
   breaks: PageBreak[],
   metrics?: PageMetrics | null,
 ): BlockBox[] {
+  return measureBlocksCached(view, breaks, metrics ?? null, null).boxes;
+}
+
+/**
+ * What one measurement saw, keyed by node: ProseMirror shares every top-level node an edit did not
+ * replace, so the next measurement can tell exactly which blocks it has to read again.
+ */
+export interface MeasureCache {
+  boxes: Map<ProseMirrorNode, BlockBox>;
+  width: number;
+  scale: number;
+  metrics: PageMetrics | null;
+}
+
+/**
+ * `measureBlocks`, reading rects only for the blocks that changed since `cache`.
+ *
+ * Measuring every block forces layout and reads a rect per block, which in a long document was the
+ * cost of each re-pagination while typing. A block the edit did not replace keeps its height, and
+ * the blocks after a change all move by the same amount — so only the replaced blocks are measured,
+ * plus the first untouched block after them to learn that amount. The last reused block of each run
+ * is measured too, as a check: anything else that moved a block (an image decoding, a font
+ * arriving) fails it, and the whole document is measured instead.
+ */
+export function measureBlocksCached(
+  view: EditorView,
+  breaks: PageBreak[],
+  metrics: PageMetrics | null,
+  cache: MeasureCache | null,
+): { boxes: BlockBox[]; cache: MeasureCache } {
   // Lines cost a tree walk and a rect per text node, so they are measured only
   // where they can be used: everywhere when splitting is on, and otherwise only
   // for a block too tall to fit a page whole, which `canSplit` breaks up
@@ -300,16 +335,51 @@ export function measureBlocks(
   // the zoom factor without the plugin having to know about it.
   const width = (view.dom as HTMLElement).offsetWidth;
   const scale = width > 0 && rootRect.width > 0 ? rootRect.width / width : 1;
+  const reuse =
+    cache && cache.width === width && Math.abs(cache.scale - scale) < 1e-6 && cache.metrics === metrics
+      ? cache.boxes
+      : null;
 
   const boxes: BlockBox[] = [];
+  const seen = new Map<ProseMirrorNode, BlockBox>();
   let spacerIndex = 0;
   let spacerShift = 0;
+  // How far the reused blocks have moved; null right after a replaced block, until the next
+  // untouched one is measured to find out.
+  let delta: number | null = 0;
+  // The last reused block of the current run, checked when the run ends.
+  let tail: { offset: number; box: BlockBox; spacerShift: number } | null = null;
+  let consistent = true;
+
+  const naturalTop = (dom: HTMLElement, shift: number) =>
+    (dom.getBoundingClientRect().top - rootRect.top) / scale - shift;
+  const checkTail = () => {
+    if (!tail) return;
+    const dom = view.nodeDOM(tail.offset);
+    if (dom && dom.nodeType === 1 && Math.abs(naturalTop(dom as HTMLElement, tail.spacerShift) - tail.box.top) > 1) {
+      consistent = false;
+    }
+    tail = null;
+  };
 
   view.state.doc.forEach((node, offset) => {
+    if (!consistent) return;
     while (spacerIndex < breaks.length && breaks[spacerIndex].pos <= offset) {
       spacerShift += breaks[spacerIndex].height;
       spacerIndex += 1;
     }
+
+    const cached = reuse?.get(node);
+    if (cached && delta !== null) {
+      const box: BlockBox = { pos: offset, top: cached.top + delta, height: cached.height };
+      if (cached.lines) box.lines = cached.lines.map(l => ({ ...l, pos: l.pos + offset - cached.pos }));
+      boxes.push(box);
+      seen.set(node, box);
+      tail = { offset, box, spacerShift };
+      return;
+    }
+    checkTail();
+
     const dom = view.nodeDOM(offset);
     if (!dom || dom.nodeType !== 1) return;
     const rect = (dom as HTMLElement).getBoundingClientRect();
@@ -333,10 +403,18 @@ export function measureBlocks(
       if (lines.length > 1) box.lines = lines;
     }
 
-    boxes.push(box);
-  });
+    // A reused block measured to learn the shift has to have kept its height, or it was not
+    // untouched after all.
+    if (cached && Math.abs(cached.height - height) > 1) consistent = false;
+    delta = cached ? top - cached.top : null;
 
-  return boxes;
+    boxes.push(box);
+    seen.set(node, box);
+  });
+  checkTail();
+
+  if (!consistent) return measureBlocksCached(view, breaks, metrics, null);
+  return { boxes, cache: { boxes: seen, width, scale, metrics } };
 }
 
 /**
@@ -448,12 +526,15 @@ export const PaginationExtension = Extension.create<PaginationOptions>({
             if (meta?.metrics) metrics = meta.metrics;
             if (meta?.breaks) breaks = meta.breaks;
 
-            if (tr.docChanged && !meta?.breaks) {
+            const diff = tr.docChanged && !meta?.breaks ? transactionDiff(tr) : null;
+            if (diff) {
               // Keep the existing spacers roughly in place until the next
               // measurement lands; dropping them for a frame makes the page
-              // visibly jump on every keystroke.
+              // visibly jump on every keystroke. Mapped past what changed rather
+              // than through the steps, which for an undo replace the whole
+              // document and would pile every spacer up at the top.
               breaks = breaks
-                .map(b => ({ ...b, pos: tr.mapping.map(b.pos, -1) }))
+                .map(b => ({ ...b, pos: diff.map.map(b.pos, -1) }))
                 .filter(b => b.pos >= 0 && b.pos <= newState.doc.content.size);
             }
 
@@ -472,10 +553,16 @@ export const PaginationExtension = Extension.create<PaginationOptions>({
 
         view(view) {
           let frame = 0;
+          let settle: ReturnType<typeof setTimeout> | null = null;
+          let typingSince = 0;
           let reportedPages = 0;
+          let cache: MeasureCache | null = null;
 
           const recalculate = () => {
             frame = 0;
+            if (settle) clearTimeout(settle);
+            settle = null;
+            typingSince = 0;
             if (view.isDestroyed) return;
             // Never dispatch mid-composition: an IME candidate window is bound
             // to the selection, and the next composition event would re-run
@@ -483,7 +570,9 @@ export const PaginationExtension = Extension.create<PaginationOptions>({
             if (view.composing) return;
             const state = paginationPluginKey.getState(view.state);
             if (!state?.metrics) return;
-            const blocks = measureBlocks(view, state.breaks, state.metrics);
+            const measured = measureBlocksCached(view, state.breaks, state.metrics, cache);
+            cache = measured.cache;
+            const blocks = measured.boxes;
             const { breaks, pages } = paginate(blocks, state.metrics);
             // Reported before the early return: a block too tall to break
             // changes how many pages the content covers without changing a
@@ -504,6 +593,20 @@ export const PaginationExtension = Extension.create<PaginationOptions>({
             frame = requestAnimationFrame(recalculate);
           };
 
+          // An edit re-measures once typing settles, not every frame: measuring a long document
+          // forces layout and reads a rect per block, which before each keystroke's paint was most
+          // of its cost. The existing spacers are mapped through the edit meanwhile, so the page does
+          // not jump; continuous typing still re-paginates at least every SETTLE_MAX_MS. Run from a
+          // timeout, after paint, the layout it reads is already clean.
+          const scheduleAfterEdit = () => {
+            if (frame) return;
+            const now = performance.now();
+            if (!typingSince) typingSince = now;
+            if (settle) clearTimeout(settle);
+            const wait = Math.min(SETTLE_MS, Math.max(0, typingSince + SETTLE_MAX_MS - now));
+            settle = setTimeout(recalculate, wait);
+          };
+
           // Images decoding and webfonts swapping in change block heights
           // without any transaction to hang a recalculation off.
           const observer =
@@ -513,9 +616,13 @@ export const PaginationExtension = Extension.create<PaginationOptions>({
           schedule();
 
           return {
-            update: () => schedule(),
+            update: (_view, prevState) => {
+              if (view.state.doc !== prevState.doc) scheduleAfterEdit();
+              else schedule();
+            },
             destroy: () => {
               if (frame) cancelAnimationFrame(frame);
+              if (settle) clearTimeout(settle);
               observer?.disconnect();
             },
           };

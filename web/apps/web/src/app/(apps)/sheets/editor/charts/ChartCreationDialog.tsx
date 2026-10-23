@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { CellProps } from '../types';
 import type { ChartDef, ChartType } from './chartTypes';
-import { ChartRenderer } from './ChartRenderer';
+import { ChartRenderer } from './LazyChartRenderer';
 import { autoDetectChartConfig, generateChartId } from './chartUtils';
 import styles from './charts.module.css';
 

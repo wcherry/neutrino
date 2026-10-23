@@ -29,6 +29,7 @@ import { useFileSync } from '@/hooks/useFileSync';
 import BlockEditor, { Block, type BlockEditorHandle, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles, blocksToMarkdown, blocksToHtml, type NoteLinkTarget } from './blockEditorHelpers';
 import { HamburgerMenu } from './MenuBar';
+import { useCommands } from '@neutrino/commands';
 import styles from './page.module.css';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -614,25 +615,12 @@ function NoteEditor({ noteId }: { noteId: string }) {
   // browser would otherwise intercept itself (Save Page As / a print of the
   // raw DOM instead of `printNote`'s formatted layout), and Select-all's
   // native Ctrl+A only ever reaches the one block currently in edit mode.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === 's') {
-        e.preventDefault();
-        handleManualSave();
-      } else if (key === 'p') {
-        e.preventDefault();
-        handlePrint();
-      } else if (key === 'a' && document.activeElement !== titleInputRef.current) {
-        // Leave the title field's own native select-all alone.
-        e.preventDefault();
-        handleSelectAll();
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [handleManualSave, handlePrint, handleSelectAll]);
+  useCommands({
+    'notes.save': () => handleManualSave(),
+    'notes.print': () => handlePrint(),
+    // Leave the title field's own native select-all alone.
+    'notes.selectAll': () => (document.activeElement === titleInputRef.current ? false : handleSelectAll()),
+  });
 
   if (!noteId) return <div className={styles.message}>No note ID provided.</div>;
   if (isLoading) return <Spinner size="lg" overlay />;

@@ -1,0 +1,117 @@
+/*
+ * The new shell's frame (look-and-feel roadmap §2, "Structure"; §3 per look). One structure for
+ * all three looks: every difference between them is a token (`--shell-*`, `--region-*`,
+ * `--surface-*` in @neutrino/tokens looks.css), never a branch here. In Quiet Precision the top
+ * bar and each region below it are cards with a gap; in the flows they are one surface.
+ */
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  /* Blended's wash is a gradient on the ground: static, so it costs nothing per frame. */
+  background: var(--surface-ground);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: var(--ui-font-size);
+}
+
+.bar {
+  flex: 0 0 auto;
+  margin: var(--shell-bar-margin);
+  position: relative;
+  z-index: var(--z-sticky);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--shell-gap);
+  padding: var(--shell-body-pad);
+}
+
+/* The editor frame has no top bar; in Precision the cards still need their margin from the top. */
+.frame[data-chrome='editor'] .body {
+  padding-top: var(--shell-editor-top);
+}
+
+.side {
+  flex: 0 0 var(--shell-sidebar-width);
+  width: var(--shell-sidebar-width);
+  min-height: 0;
+  display: flex;
+  transition: flex-basis var(--duration-normal) var(--ease-default), width var(--duration-normal) var(--ease-default);
+}
+
+.frame[data-collapsed] .side {
+  flex-basis: var(--shell-rail-width);
+  width: var(--shell-rail-width);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  background: var(--surface-region);
+  border: var(--region-border);
+  border-radius: var(--region-radius);
+  box-shadow: var(--region-shadow);
+}
+
+/* A page that draws its own regions (Drive's Quick access and Files) sits on the ground. */
+.main:has([data-own-regions]) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .body {
+    padding: 0;
+    gap: 0;
+  }
+
+  .side {
+    display: none;
+  }
+
+  .side.mobile-open {
+    display: flex;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(var(--shell-sidebar-width), 85vw);
+    z-index: var(--z-modal);
+    background: var(--surface-ground);
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: var(--scrim);
+    backdrop-filter: var(--scrim-filter);
+    z-index: calc(var(--z-modal) - 1);
+  }
+
+  .main {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

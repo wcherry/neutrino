@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
@@ -13,7 +13,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 20px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -47,41 +47,41 @@
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s;
 }
 
 .navBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .todayBtn {
   padding: 6px 14px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   transition: background 0.15s;
 }
 
 .todayBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .periodLabel {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   min-width: 200px;
   text-align: center;
 }
 
 .viewToggle {
   display: flex;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -89,12 +89,12 @@
 .viewBtn {
   padding: 6px 14px;
   border: none;
-  border-right: 1px solid var(--color-border, #e5e7eb);
+  border-right: 1px solid var(--color-border);
   background: transparent;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
 }
 
@@ -103,16 +103,16 @@
 }
 
 .viewBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .viewBtnActive {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
 .viewBtnActive:hover {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
 }
 
 /* ── Main layout ─────────────────────────────────────────────────────────── */
@@ -132,7 +132,7 @@
 
 .sidebar {
   width: 280px;
-  border-left: 1px solid var(--color-border, #e5e7eb);
+  border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -144,7 +144,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   /* Scroll the weeks rather than clipping them: a 6-week month (or a short
      window) must not lose its last week — issue #160. */
@@ -157,8 +157,8 @@
 .weekHeader {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  background: var(--color-surface-secondary, #f9fafb);
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-secondary);
+  border-bottom: 1px solid var(--color-border);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -171,14 +171,14 @@
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   letter-spacing: 0.05em;
 }
 
 .monthWeek {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   /* Grow into spare height, but never shrink below a full-height week. */
   flex: 1 0 auto;
   min-height: 100px;
@@ -193,7 +193,7 @@
 .dayCell {
   min-height: 100px;
   padding: 6px;
-  border-right: 1px solid var(--color-border, #e5e7eb);
+  border-right: 1px solid var(--color-border);
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -203,25 +203,25 @@
 }
 
 .dayCell:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .dayCellOtherMonth {
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
 }
 
 .dayCellToday {
-  background: var(--color-primary-light, #dbeafe);
+  background: var(--color-primary-light);
 }
 
 .dayCellToday .dayNumber {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border-radius: 50%;
 }
 
 .dayCellPast {
-  background: var(--color-surface-past, #f9fafb);
+  background: var(--color-surface-past);
 }
 
 .dayNumber {
@@ -232,16 +232,16 @@
   height: 26px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin-bottom: 4px;
 }
 
 .dayNumberOtherMonth {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 .dayNumberPast {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .dayEvents {
@@ -256,8 +256,8 @@
   font-size: 11px;
   font-weight: 500;
   font-family: inherit;
-  background: var(--color-primary-light, #dbeafe);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
   border: none;
   text-align: left;
   width: 100%;
@@ -272,13 +272,13 @@
 }
 
 .eventChip:hover {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
 .moreEvents {
   font-size: 11px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   padding: 1px 6px;
   cursor: pointer;
 }
@@ -312,8 +312,8 @@
   font-weight: 500;
   font-family: inherit;
   /* --event-*: the event's calendar colour (`eventColorStyle`), else the primary colour. */
-  background: var(--event-bg, var(--color-primary-light, #dbeafe));
-  color: var(--event-fg, var(--color-primary, #2563eb));
+  background: var(--event-bg, var(--color-primary-light));
+  color: var(--event-fg, var(--color-primary));
   border: none;
   text-align: left;
   cursor: pointer;
@@ -328,7 +328,7 @@
 }
 
 .weekEventBar:hover {
-  background: var(--event-solid, var(--color-primary, #2563eb));
+  background: var(--event-solid, var(--color-primary));
   color: #fff;
 }
 
@@ -363,7 +363,7 @@
   display: flex;
   gap: 16px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .agendaDate {
@@ -376,12 +376,12 @@
   font-size: 22px;
   font-weight: 700;
   line-height: 1;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .agendaDateDay {
   font-size: 11px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
 }
 
@@ -398,19 +398,19 @@
   gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  border-left: 3px solid var(--event-solid, var(--color-primary, #2563eb));
-  background: var(--color-surface-secondary, #f9fafb);
+  border-left: 3px solid var(--event-solid, var(--color-primary));
+  background: var(--color-surface-secondary);
   cursor: pointer;
   transition: background 0.1s;
 }
 
 .agendaEvent:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .agendaEventTime {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   min-width: 70px;
 }
@@ -418,18 +418,18 @@
 .agendaEventTitle {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .agendaEventLocation {
   font-size: 11px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .agendaEmpty {
   padding: 8px 0;
   font-size: 13px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   font-style: italic;
 }
 
@@ -444,7 +444,7 @@
 }
 
 .sidebarSection + .sidebarSection {
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
   flex: 0 0 auto;
   max-height: 50%;
 }
@@ -461,7 +461,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .reminderItem {
@@ -470,14 +470,14 @@
   gap: 8px;
   padding: 8px;
   border-radius: 6px;
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
 }
 
 .reminderCheckbox {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid var(--color-border, #e5e7eb);
+  border: 2px solid var(--color-border);
   flex-shrink: 0;
   cursor: pointer;
   margin-top: 2px;
@@ -486,8 +486,8 @@
 }
 
 .reminderCheckbox:checked {
-  border-color: var(--color-primary, #2563eb);
-  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
 }
 
 .reminderContent {
@@ -500,12 +500,12 @@
   gap: 4px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .reminderDue {
   font-size: 11px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .reminderLink {
@@ -513,7 +513,7 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -523,16 +523,16 @@
    line of its own. */
 .reminderRepeatIcon {
   flex-shrink: 0;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 .reminderDueOverdue {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .noItems {
   font-size: 13px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   text-align: center;
   padding: 16px 0;
 }
@@ -547,13 +547,13 @@
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
 }
 
 .reminderNewBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
 }
 
 .reminderSearch {
@@ -566,24 +566,24 @@
 .reminderSearchIcon {
   position: absolute;
   left: 8px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   pointer-events: none;
 }
 
 .reminderSearchInput {
   width: 100%;
   padding: 5px 26px 5px 26px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 12px;
-  color: var(--color-text, #111827);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
   transition: border-color 0.15s;
 }
 
 .reminderSearchInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .reminderSearchClear {
@@ -595,13 +595,13 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   padding: 2px;
   border-radius: 3px;
 }
 
 .reminderSearchClear:hover {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Reminder date-range filter ──────────────────────────────────────────────
@@ -611,7 +611,7 @@
 .reminderRangeToggle {
   display: flex;
   margin-bottom: 8px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -620,14 +620,14 @@
   flex: 1;
   padding: 4px 0;
   border: none;
-  border-right: 1px solid var(--color-border, #e5e7eb);
+  border-right: 1px solid var(--color-border);
   background: transparent;
   font-size: 11px;
   font-weight: 500;
   font-family: inherit;
   white-space: nowrap;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
 }
 
@@ -636,12 +636,12 @@
 }
 
 .reminderRangeBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .reminderRangeBtnActive,
 .reminderRangeBtnActive:hover {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -667,37 +667,37 @@
   border-radius: 3px;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   transition: background 0.1s, color 0.1s;
 }
 
 .reminderActionBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
-  color: var(--color-text-secondary, #6b7280);
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
 }
 
 .reminderActionDelete:hover {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 /* ── Tasks on the calendar (calendarTasks.ts) ────────────────────────────── */
 /* A task's own background, whatever the views' event colours: amber, a checkbox, no calendar. */
 .calendarTask {
   /* Through the views' own colour properties, so it wins whichever stylesheet loads last. */
-  --event-bg: var(--color-warning-subtle, #fef3c7);
-  --event-fg: var(--color-text, #111827);
-  --event-solid: var(--color-warning, #d97706);
+  --event-bg: var(--color-warning-subtle);
+  --event-fg: var(--color-text);
+  --event-solid: var(--color-warning);
   display: flex;
   align-items: center;
   gap: 4px;
-  border-left: 3px solid var(--color-warning, #d97706);
+  border-left: 3px solid var(--color-warning);
 }
 
 /* An event's hover goes solid with white text, unreadable on a task's light tint; a task
    darkens its tint instead. Doubled to outrank the views' own :hover rules in either sheet. */
 .calendarTask.calendarTask:hover {
-  background: color-mix(in srgb, var(--color-warning, #d97706) 28%, var(--color-surface, #fff));
-  color: var(--color-text, #111827);
+  background: color-mix(in srgb, var(--color-warning) 28%, var(--color-surface));
+  color: var(--color-text);
 }
 
 /* An agenda row has a background of its own, which a task's replaces. */
@@ -713,7 +713,7 @@
 .calendarTaskDone .calendarTaskTitle,
 .calendarTaskDone .agendaEventTitle {
   text-decoration: line-through;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 /* In an event bar the bar's flex gap spaces the time from the title; in a task the title
@@ -728,7 +728,7 @@
   margin: 0;
   flex-shrink: 0;
   cursor: pointer;
-  accent-color: var(--color-warning, #d97706);
+  accent-color: var(--color-warning);
 }
 
 .calendarTaskTitle {
@@ -752,7 +752,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .geofenceText {
@@ -761,7 +761,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .placeTextBtn {
@@ -774,7 +774,7 @@
   font: inherit;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -800,17 +800,17 @@
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   font: inherit;
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   cursor: pointer;
 }
 
 .placeChoice:hover {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .placeSearch {
@@ -827,7 +827,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   max-height: 180px;
   overflow-y: auto;
@@ -840,7 +840,7 @@
   width: 100%;
   padding: 8px 10px;
   border: none;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   background: transparent;
   font: inherit;
   text-align: left;
@@ -849,11 +849,11 @@
 
 .placeResult span {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .placeResult:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .placeSpot {
@@ -866,7 +866,7 @@
   height: 220px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
 }
 
 .placeSaveToggle {
@@ -878,7 +878,7 @@
 
 .placeError {
   font-size: 12px;
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 /* Smart Add's offer for an @place that names no saved place. */
@@ -890,9 +890,9 @@
   margin: 6px 0;
   padding: 8px;
   border-radius: 6px;
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
   font-size: 12px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .placeOffer > span {
@@ -902,7 +902,7 @@
 
 .placeOfferAddress {
   display: block;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -928,7 +928,7 @@
 }
 
 .calendarRow:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .calendarCheck {
@@ -945,12 +945,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .calendarLock {
   flex-shrink: 0;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 /* A colour swatch over an invisible native colour input. */
@@ -1009,7 +1009,7 @@
 }
 
 .calendarColorChoiceActive {
-  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-secondary, #6b7280);
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text-secondary);
 }
 
 .calendarAddActions {
@@ -1024,32 +1024,32 @@
   font: inherit;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   padding: 2px 4px;
 }
 
 .calendarTextBtn:disabled {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   cursor: default;
 }
 
 .calendarError {
   margin-top: 6px;
   font-size: 12px;
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .calendarSettingsLink {
   display: inline-block;
   margin-top: 6px;
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   text-decoration: none;
 }
 
 .calendarSettingsLink:hover {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   text-decoration: underline;
 }
 
@@ -1062,7 +1062,7 @@
 
 .formHint {
   font-size: 11px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 /* The "this / this and following / all" choice for a repeating event or reminder. */
@@ -1075,22 +1075,22 @@
 .formLabel {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .formInput {
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 14px;
-  color: var(--color-text, #111827);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
   transition: border-color 0.15s;
 }
 
 .formInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .formTextarea {
@@ -1109,19 +1109,19 @@
 .attendeeInput {
   display: flex;
   align-items: center;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
   transition: border-color 0.15s;
 }
 
 .attendeeInput:focus-within {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .attendeeIcon {
   margin: 0 8px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
 
@@ -1131,24 +1131,24 @@
   border: none;
   outline: none;
   font-size: 14px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   background: transparent;
 }
 
 .attendeeAddBtn {
   padding: 8px 12px;
   border: none;
-  border-left: 1px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface-secondary, #f9fafb);
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface-secondary);
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .attendeeAddBtn:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .attendeeList {
@@ -1164,8 +1164,8 @@
   gap: 4px;
   padding: 3px 8px;
   border-radius: 12px;
-  background: var(--color-primary-light, #dbeafe);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
   font-size: 12px;
 }
 
@@ -1192,13 +1192,13 @@
   justify-content: space-between;
   padding: 6px 10px;
   border-radius: 6px;
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
   margin-bottom: 4px;
   font-size: 13px;
 }
 
 .reminderEntryLabel {
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .reminderEntryRemove {
@@ -1207,20 +1207,20 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   padding: 2px;
   border-radius: 3px;
   transition: color 0.1s;
 }
 
 .reminderEntryRemove:hover {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 /* ── Attachment tabs (note / file) ───────────────────────────────────────── */
 .attachmentTabs {
   display: flex;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -1233,16 +1233,16 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: background 0.15s, color 0.15s;
 }
 
 .attachmentTab + .attachmentTab {
-  border-left: 1px solid var(--color-border, #e5e7eb);
+  border-left: 1px solid var(--color-border);
 }
 
 .attachmentTabActive {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -1252,7 +1252,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   margin-bottom: 4px;
 }
 
@@ -1262,7 +1262,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
 
@@ -1278,7 +1278,7 @@
   align-items: center;
   gap: 3px;
   margin-left: 4px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 .detailAttendeeList {
@@ -1290,10 +1290,10 @@
 .detailAttendeePill {
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--color-surface-secondary, #f9fafb);
-  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border);
   font-size: 11px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .detailReminderRow {
@@ -1312,7 +1312,7 @@
   align-items: flex-start;
   gap: 6px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .detailAttachment:last-child {
@@ -1321,7 +1321,7 @@
 
 .detailAttachmentNote {
   font-size: 12px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   white-space: pre-wrap;
   line-height: 1.4;
   max-height: 80px;
@@ -1334,12 +1334,12 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px dashed var(--color-border, #e5e7eb);
+  border: 1px dashed var(--color-border);
   border-radius: 6px;
   background: transparent;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   width: 100%;
@@ -1347,8 +1347,8 @@
 }
 
 .browseBtn:hover {
-  background: var(--color-primary-light, #dbeafe);
-  border-color: var(--color-primary, #2563eb);
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
 }
 
 .selectedFileRow {
@@ -1356,15 +1356,15 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
 }
 
 .selectedFileName {
   flex: 1;
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1380,20 +1380,20 @@
   border-radius: 3px;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
   transition: color 0.1s, background 0.1s;
 }
 
 .selectedFileClear:hover {
-  color: var(--color-error, #dc2626);
-  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-error);
+  background: var(--color-surface-hover);
 }
 
 /* ── ICS drag-over ───────────────────────────────────────────────────────── */
 .calendarAreaDragOver {
   position: relative;
-  outline: 2px dashed var(--color-primary, #2563eb);
+  outline: 2px dashed var(--color-primary);
   outline-offset: -4px;
   border-radius: 8px;
 }
@@ -1410,7 +1410,7 @@
   border-radius: 8px;
   z-index: 10;
   pointer-events: none;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   font-size: 14px;
   font-weight: 500;
 }
@@ -1426,7 +1426,7 @@
   left: 8px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   pointer-events: none;
   display: flex;
   align-items: center;
@@ -1435,17 +1435,17 @@
 .drivePickerSearchInput {
   width: 100%;
   padding: 7px 10px 7px 30px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 13px;
-  color: var(--color-text, #111827);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
   transition: border-color 0.15s;
 }
 
 .drivePickerSearchInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .drivePickerBreadcrumb {
@@ -1462,25 +1462,25 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   padding: 2px 4px;
   border-radius: 4px;
   transition: background 0.1s;
 }
 
 .drivePickerBreadcrumbBtn:hover {
-  background: var(--color-primary-light, #dbeafe);
+  background: var(--color-primary-light);
 }
 
 .drivePickerBreadcrumbCurrent {
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   padding: 2px 4px;
 }
 
 .drivePickerBreadcrumbSep {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   display: flex;
   align-items: center;
 }
@@ -1516,7 +1516,7 @@
 }
 
 .drivePickerItem:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .drivePickerItemIcon {
@@ -1527,7 +1527,7 @@
 
 .drivePickerItemName {
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -1536,7 +1536,7 @@
 
 .drivePickerItemMeta {
   font-size: 11px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
 
@@ -1545,14 +1545,14 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
 }
 
 .drivePickerSelectedFileName {
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -1565,7 +1565,7 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   padding: 2px;
   border-radius: 3px;
   transition: color 0.1s, background 0.1s;
@@ -1573,8 +1573,8 @@
 }
 
 .drivePickerClearBtn:hover {
-  color: var(--color-error, #dc2626);
-  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-error);
+  background: var(--color-surface-hover);
 }
 
 /* ── Task Lists sidebar ──────────────────────────────────────────────────── */
@@ -1584,7 +1584,7 @@
 
 .tasksDivider {
   border: none;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
   margin: 0 0 12px 0;
 }
 
@@ -1601,21 +1601,21 @@
   width: 100%;
   padding: 6px 8px;
   font-size: 12px;
-  border: 1px solid var(--color-border, #d1d5db);
+  border: 1px solid var(--color-border);
   border-radius: 5px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111827);
+  background: var(--color-surface);
+  color: var(--color-text);
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.15s;
 }
 
 .taskComposerInput::placeholder {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 .taskComposerInput:focus {
-  border-color: var(--color-primary, #6366f1);
+  border-color: var(--color-primary);
 }
 
 .taskComposerInput:disabled {
@@ -1626,7 +1626,7 @@
   margin-top: 4px;
   font-size: 10px;
   line-height: 1.4;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 /* What Smart Add read out of the line being typed, one chip per field, so a
@@ -1647,8 +1647,8 @@
   font-size: 10px;
   line-height: 16px;
   border-radius: 8px;
-  background: var(--color-surface-secondary, #f3f4f6);
-  color: var(--color-text-secondary, #4b5563);
+  background: var(--color-surface-secondary);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1661,7 +1661,7 @@
 
 .taskTag {
   font-size: 10px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   white-space: nowrap;
 }
 
@@ -1688,7 +1688,7 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
 }
 
 .taskItem {
@@ -1697,7 +1697,7 @@
   gap: 8px;
   padding: 6px 8px;
   border-radius: 6px;
-  background: var(--color-surface-secondary, #f9fafb);
+  background: var(--color-surface-secondary);
   margin-bottom: 4px;
   cursor: grab;
 }
@@ -1710,7 +1710,7 @@
   width: 17px;
   height: 17px;
   border-radius: 4px;
-  border: 2px solid var(--color-text-secondary, #6b7280);
+  border: 2px solid var(--color-text-secondary);
   flex-shrink: 0;
   cursor: pointer;
   appearance: none;
@@ -1719,12 +1719,12 @@
 }
 
 .taskCheckbox:hover {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .taskCheckbox:checked {
-  border-color: var(--color-primary, #2563eb);
-  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
 }
 
 .taskCheckbox:checked::after {
@@ -1742,18 +1742,18 @@
 
 .taskTitle {
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   line-height: 1.4;
 }
 
 .taskDone {
   text-decoration: line-through;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .tasksEmpty {
   font-size: 12px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   padding: 4px 0 4px 4px;
   font-style: italic;
 }
@@ -1766,8 +1766,8 @@
 
 .taskItemDragOverlay {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-  border: 1px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   opacity: 1 !important;
 }
 
@@ -1779,15 +1779,15 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   padding: 2px;
   border-radius: 4px;
   transition: color 0.1s, background 0.1s;
 }
 
 .modalClose:hover {
-  color: var(--color-text, #111827);
-  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text);
+  background: var(--color-surface-hover);
 }
 
 /* A task's tags: chips and a field in one input-like box, and a dropdown of
@@ -1803,15 +1803,15 @@
   gap: 4px;
   min-height: 36px;
   padding: 4px 6px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   cursor: text;
   transition: border-color 0.15s;
 }
 
 .tagInputBox:focus-within {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .tagInputField {
@@ -1821,7 +1821,7 @@
   border: none;
   outline: none;
   font-size: 14px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   background: transparent;
 }
 
@@ -1831,8 +1831,8 @@
   gap: 3px;
   padding: 2px 4px 2px 8px;
   border-radius: 12px;
-  background: var(--color-primary-light, #dbeafe);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
   font-size: 12px;
   line-height: 18px;
 }
@@ -1864,9 +1864,9 @@
   padding: 4px;
   overflow-y: auto;
   list-style: none;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
@@ -1877,10 +1877,10 @@
   padding: 6px 8px;
   border-radius: 4px;
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   cursor: pointer;
 }
 
 .tagSuggestionActive {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }

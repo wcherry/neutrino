@@ -1,10 +1,12 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
+import { preferences } from '@neutrino/preferences';
 import { AppShell } from '../AppShell';
 import { Sidebar } from '../Sidebar';
 
-const KEY = 'neutrino.sidebar.collapsed';
+/** Where device-tier preferences live (`@neutrino/preferences` store). */
+const DEVICE_KEY = 'neutrino.prefs.device';
 
 function renderShell() {
   return render(<AppShell sidebar={<Sidebar />} topbar={null}>{null}</AppShell>);
@@ -18,6 +20,7 @@ function toggle() {
 describe('sidebar collapse persistence', () => {
   beforeEach(() => {
     localStorage.clear();
+    preferences.reset('shell.sidebarCollapsed');
   });
 
   it('starts expanded when nothing is stored', () => {
@@ -26,17 +29,17 @@ describe('sidebar collapse persistence', () => {
     expect(toggle()).toHaveAccessibleName('Collapse sidebar');
   });
 
-  it('stores the choice when the sidebar is collapsed', () => {
+  it('stores the choice, on this device only, when the sidebar is collapsed', () => {
     renderShell();
 
     fireEvent.click(toggle());
 
     expect(toggle()).toHaveAccessibleName('Expand sidebar');
-    expect(localStorage.getItem(KEY)).toBe('true');
+    expect(JSON.parse(localStorage.getItem(DEVICE_KEY)!)['shell.sidebarCollapsed']).toBe(true);
   });
 
   it('restores the collapsed state on a later mount', () => {
-    localStorage.setItem(KEY, 'true');
+    preferences.set('shell.sidebarCollapsed', true);
 
     renderShell();
 
@@ -44,21 +47,22 @@ describe('sidebar collapse persistence', () => {
   });
 
   it('stores the choice when the sidebar is expanded again', () => {
-    localStorage.setItem(KEY, 'true');
+    preferences.set('shell.sidebarCollapsed', true);
     renderShell();
 
     fireEvent.click(toggle());
 
     expect(toggle()).toHaveAccessibleName('Collapse sidebar');
-    expect(localStorage.getItem(KEY)).toBe('false');
+    expect(JSON.parse(localStorage.getItem(DEVICE_KEY)!)['shell.sidebarCollapsed']).toBe(false);
   });
 
   it('picks up a change made in another tab', () => {
     renderShell();
 
-    localStorage.setItem(KEY, 'true');
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: 'true' }));
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: DEVICE_KEY, newValue: JSON.stringify({ 'shell.sidebarCollapsed': true }) }),
+      );
     });
 
     expect(toggle()).toHaveAccessibleName('Expand sidebar');

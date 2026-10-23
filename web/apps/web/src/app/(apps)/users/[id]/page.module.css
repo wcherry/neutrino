@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 .loading {
@@ -12,13 +12,13 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .empty {
   padding: 48px 28px;
   font-size: 14px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -27,7 +27,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 20px 28px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -40,18 +40,18 @@
   background: transparent;
   cursor: pointer;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   transition: color 0.15s;
 }
 
 .backBtn:hover {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 .heading {
   font-size: 20px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -83,12 +83,12 @@
 .heroName {
   font-size: 22px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .heroBio {
   font-size: 14px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0;
   line-height: 1.55;
   max-width: 480px;
@@ -99,7 +99,7 @@
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
@@ -112,8 +112,8 @@
   width: 88px;
   height: 88px;
   border-radius: 50%;
-  border: 2px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface-raised, #f3f4f6);
+  border: 2px solid var(--color-border);
+  background: var(--color-surface-raised);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -130,7 +130,7 @@
 .avatarInitials {
   font-size: 26px;
   font-weight: 600;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   user-select: none;
 }
 
@@ -146,7 +146,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin: 0;
 }
 
@@ -168,19 +168,19 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .fieldValue {
   font-size: 14px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 /* ── Social links ─────────────────────────────────────────────────────────── */
 .socialList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -191,7 +191,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
   text-decoration: none;
   transition: background 0.12s;
 }
@@ -201,18 +201,18 @@
 }
 
 .socialLink:hover {
-  background: var(--color-surface-hover, #f9fafb);
+  background: var(--color-surface-hover);
 }
 
 .socialPlatform {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .socialUrl {
   font-size: 13px;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -223,7 +223,7 @@
 .profileImage {
   max-width: 320px;
   border-radius: 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   display: block;
 }
 

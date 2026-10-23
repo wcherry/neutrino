@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Download, AlertCircle } from 'lucide-react';
 import { Text, Spinner } from '@neutrino/ui';
@@ -9,8 +10,11 @@ import { storageApi, authApi, downloadAndDecryptFile, type FileItem } from '@/li
 import { initSodium, loadKeyPair } from '@neutrino/e2e-crypto';
 import { toRenderableImageBlob } from '@/lib/heic';
 import { highlightText } from './previewText';
-import { ZipViewer } from './ZipViewer';
+import { useDismiss } from '@neutrino/commands';
 import styles from './PreviewModal.module.css';
+
+// zip.js is ≈ 116 KB parsed and only an archive preview needs it.
+const ZipViewer = dynamic(() => import('./ZipViewer').then((m) => m.ZipViewer), { ssr: false });
 
 interface PreviewModalProps {
   file: FileItem;
@@ -218,13 +222,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
   }
 
   // Close on Escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useDismiss(() => onClose());
 
   async function handleDownload() {
     const blob = await storageApi.downloadFile(file.id);

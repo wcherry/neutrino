@@ -136,7 +136,7 @@ export function useSheets({
         setColWidths(new Map());
         setRowHeights(new Map());
         resetHistoryAndSelection();
-    }, [setData, setColWidths, setRowHeights, resetHistoryAndSelection]);
+    }, [dirtyRef, setData, setColWidths, setRowHeights, resetHistoryAndSelection]);
 
     const moveSheet = useCallback((index: number, direction: 'left' | 'right') => {
         const target = direction === 'left' ? index - 1 : index + 1;

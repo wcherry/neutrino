@@ -25,6 +25,7 @@ import { MENU_SEPARATOR, RowActionsMenu } from './RowActionsMenu';
 import type { RowActionEntry } from './RowActionsMenu';
 import { PasswordPolicySection } from './PasswordPolicySection';
 import { WorkQueueTab } from './WorkQueueTab';
+import { OrganisationTab } from './OrganisationTab';
 import { FontsTab } from './FontsTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
 import { TeamsTab } from './TeamsTab';
@@ -1128,6 +1129,7 @@ function JobsTab() {
 // ---------------------------------------------------------------------------
 
 type Tab =
+  | 'organisation'
   | 'processes'
   | 'disk'
   | 'services'
@@ -1148,6 +1150,9 @@ type Tab =
  * the feature. Hiding it is the honest rendering of "this is not on here".
  */
 const TABS: { id: Tab; label: string; flag?: 'teamSpaces' }[] = [
+  // First: what the instance is called and what everyone on it starts with — the decisions an
+  // administrator makes once, before anyone else signs in.
+  { id: 'organisation', label: 'Organisation' },
   { id: 'processes', label: 'Processes' },
   { id: 'disk', label: 'Disk Space' },
   { id: 'services', label: 'Services' },
@@ -1224,6 +1229,7 @@ export default function AdminPage() {
       {/* ── Tab content ─────────────────────────────────────────────────── */}
       <div className={styles.content}>
         <div className={styles.contentInner}>
+          {activeTab === 'organisation' && <OrganisationTab />}
           {activeTab === 'processes' && <ProcessesTab />}
           {activeTab === 'disk' && <DiskTab />}
           {activeTab === 'services' && <ServicesTab />}

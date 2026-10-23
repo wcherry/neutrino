@@ -20,9 +20,9 @@
   },
   "dependencies": {
     "@emotion/is-prop-valid": "^1.4.0",
+    "@neutrino/commands": "workspace:*",
     "@neutrino/tokens": "workspace:*",
     "@neutrino/utils": "workspace:*",
-    "framer-motion": "^11.0.0",
     "lucide-react": "^0.400.0"
   },
   "devDependencies": {

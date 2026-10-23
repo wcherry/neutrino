@@ -43,11 +43,11 @@
 }
 
 .backBtn:hover {
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary);
 }
 
 .backBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
@@ -68,7 +68,7 @@
   font-weight: 500;
   color: #e5e7eb;
   background: #2a2a2a;
-  border: 1px solid var(--color-primary, #3b82f6);
+  border: 1px solid var(--color-primary);
   border-radius: 4px;
   padding: 2px 6px;
   outline: none;
@@ -132,19 +132,19 @@
 }
 
 .toolBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
 /* Active tool — tinted highlight using the theme accent */
 .toolBtnActive {
-  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
-  color: var(--color-primary, #3b82f6);
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
 }
 
 .toolBtnActive:hover {
-  background: color-mix(in srgb, var(--color-primary, #3b82f6) 28%, transparent);
-  color: var(--color-primary, #3b82f6);
+  background: color-mix(in srgb, var(--color-primary) 28%, transparent);
+  color: var(--color-primary);
 }
 
 .toolDivider {
@@ -169,7 +169,7 @@
 
 /* Drop-zone active state — shown when a file is dragged over the canvas */
 .canvasArea.dropZoneActive {
-  outline: 2px dashed var(--color-primary, #3b82f6);
+  outline: 2px dashed var(--color-primary);
   outline-offset: -2px;
 }
 
@@ -210,7 +210,7 @@
   --color-text-primary: #e5e7eb;
   --color-text-secondary: #9ca3af;
   --color-text-muted: #6b7280;
-  --color-accent: var(--color-primary, #3b82f6);
+  --color-accent: var(--color-primary);
 }
 
 .panelPlaceholder {
@@ -246,19 +246,19 @@
 }
 
 .applyHeaderBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
 .applyHeaderBtnAccent {
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary);
   color: #fff;
   border-color: transparent;
 }
 
 .applyHeaderBtnAccent:hover {
   opacity: 0.88;
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -289,7 +289,7 @@
 
 .slider {
   width: 100%;
-  accent-color: var(--color-primary, #3b82f6);
+  accent-color: var(--color-primary);
   cursor: pointer;
 }
 
@@ -324,7 +324,7 @@
 }
 
 .rotateBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
@@ -375,14 +375,14 @@
 }
 
 .orientBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
 .orientBtnActive {
-  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
-  color: var(--color-primary, #3b82f6);
-  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 .rotationHint {
@@ -524,13 +524,13 @@
 }
 
 .filterBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
 .filterBtnActive {
-  border-color: var(--color-primary, #3b82f6);
-  background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, #111);
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, #111);
 }
 
 /* Colourful gradient swatch — CSS filter applied inline to preview the effect */
@@ -551,7 +551,7 @@
 }
 
 .filterBtnActive .filterLabel {
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary);
 }
 
 /* ── Background removal ──────────────────────────────────────────────────── */
@@ -579,7 +579,7 @@
 }
 
 .bgRemoveBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
@@ -614,7 +614,7 @@
 }
 
 .bgReplaceBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
@@ -726,14 +726,14 @@
 }
 
 .shapeBtn:focus-visible {
-  outline: 2px solid var(--color-primary, #3b82f6);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
 .shapeBtnActive {
-  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
-  color: var(--color-primary, #3b82f6);
-  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 /* ── AI panel ────────────────────────────────────────────────────────────── */
@@ -831,9 +831,9 @@
 }
 
 .intelTypeBtnActive {
-  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
-  color: var(--color-primary, #3b82f6);
-  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 /* ── Reduced-motion ──────────────────────────────────────────────────────── */

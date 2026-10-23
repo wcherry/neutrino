@@ -11,6 +11,7 @@ import {
   uploadAttachment,
 } from '@/lib/driveImages';
 import type { SlideBackground, Theme } from './slideEditorTypes';
+import { useLibrary } from '@neutrino/preferences';
 
 const DRIVE_IMAGE_PAGE = 200;
 
@@ -23,6 +24,8 @@ export default function SlidesFillPicker({
   onChange: (bg: SlideBackground) => void;
   theme?: Theme;
 }) {
+  // Saved gradients follow the user across devices (the preference vault).
+  const [fillPresets, setFillPresets] = useLibrary('library.fill.slides');
   const fetchDriveImages = useCallback(async (): Promise<DriveImageItem[]> => {
     const { items } = await storageApi.listFiles({
       limit: DRIVE_IMAGE_PAGE,
@@ -59,7 +62,8 @@ export default function SlidesFillPicker({
       background={background as Background}
       onChange={onChange as (bg: Background) => void}
       theme={theme as BackgroundTheme | undefined}
-      presetsKey="neutrino:slides:gradientPresets"
+      presets={fillPresets as string[]}
+      onPresetsChange={setFillPresets}
       triggerLabel="BG"
       onFetchDriveImages={fetchDriveImages}
       onStoreImage={storeImage}

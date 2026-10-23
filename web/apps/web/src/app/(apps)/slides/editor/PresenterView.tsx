@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { SlidePresentation } from './slideEditorTypes';
 import { useSlideBackgroundStyle } from './useSlideBackgroundStyle';
 import { SlideRenderer } from './SlideRenderer';
+import { useCommand, useDismiss } from '@neutrino/commands';
 import styles from './page.module.css';
 
 interface PresenterViewProps {
@@ -78,22 +79,16 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
   }, [idx]);
 
   // Keyboard navigation
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') next();
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prev();
-      else if (e.key === 'Escape') {
-        channelRef.current?.postMessage({ type: 'exit' });
-        channelRef.current?.close();
-        channelRef.current = null;
-        mirrorWindowRef.current?.close();
-        mirrorWindowRef.current = null;
-        onExit();
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onExit]);
+  useCommand('slides.present.next', () => next(), { preventDefault: false });
+  useCommand('slides.present.previous', () => prev(), { preventDefault: false });
+  useDismiss(() => {
+    channelRef.current?.postMessage({ type: 'exit' });
+    channelRef.current?.close();
+    channelRef.current = null;
+    mirrorWindowRef.current?.close();
+    mirrorWindowRef.current = null;
+    onExit();
+  });
 
   async function openMirror() {
     setShowMirrorPrompt(false);

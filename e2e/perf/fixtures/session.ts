@@ -76,6 +76,17 @@ export async function signIn(
   await waitForKeyring(page, userId);
   const keyPair = await activeKeyPair(page, userId);
 
+  // `PERF_PREFS='{"appearance.look":"lightflow","appearance.density":"compact"}'` runs a scenario in
+  // a look and density other than the defaults — Stage 4's exit asks for the B section at every
+  // density. Written through the API, as Settings writes it; the next page load applies it.
+  if (process.env.PERF_PREFS) {
+    const res = await request.patch(`${BASE_URL}/api/v1/preferences`, {
+      data: { values: JSON.parse(process.env.PERF_PREFS) },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    });
+    expect(res.ok(), `PERF_PREFS: ${res.status()} ${await res.text()}`).toBeTruthy();
+  }
+
   return { email, token, userId, keyPair, page, request };
 }
 

@@ -2,16 +2,16 @@
  * Unit tests for the useSpellCheck hook.
  *
  * Covers:
- *   - Initialises from localStorage (defaulting to true when absent)
- *   - Reads stored value from localStorage on mount
- *   - toggle() flips the state and writes to localStorage
+ *   - Initialises from the `docs.spellCheck` preference (defaulting to true when unset)
+ *   - Reads a stored value on mount
+ *   - toggle() flips the state and writes the preference
  *   - Keyboard shortcut (Cmd+Shift+; / Ctrl+Shift+;) triggers toggle
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-// Import the hook after the mock is set up
+import { preferences } from '@neutrino/preferences';
 import { useSpellCheck } from '../hooks/useSpellCheck';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -25,6 +25,8 @@ function fireKeydown(key: string, metaKey: boolean, ctrlKey: boolean, shiftKey: 
 
 beforeEach(() => {
     localStorage.clear();
+    // The store is a module singleton; each test starts from the default.
+    preferences.reset('docs.spellCheck');
 });
 
 afterEach(() => {
@@ -34,19 +36,19 @@ afterEach(() => {
 // ── tests ────────────────────────────────────────────────────────────────────
 
 describe('useSpellCheck — initial state', () => {
-    it('defaults to true when localStorage has no stored value', () => {
+    it('defaults to true when the preference is unset', () => {
         const { result } = renderHook(() => useSpellCheck());
         expect(result.current.spellCheck).toBe(true);
     });
 
-    it('reads true from localStorage when stored as "true"', () => {
-        localStorage.setItem('neutrino.spellCheck', 'true');
+    it('reads a stored true', () => {
+        preferences.set('docs.spellCheck', true);
         const { result } = renderHook(() => useSpellCheck());
         expect(result.current.spellCheck).toBe(true);
     });
 
-    it('reads false from localStorage when stored as "false"', () => {
-        localStorage.setItem('neutrino.spellCheck', 'false');
+    it('reads a stored false', () => {
+        preferences.set('docs.spellCheck', false);
         const { result } = renderHook(() => useSpellCheck());
         expect(result.current.spellCheck).toBe(false);
     });
@@ -61,16 +63,16 @@ describe('useSpellCheck — toggle()', () => {
     });
 
     it('flips state from false to true', () => {
-        localStorage.setItem('neutrino.spellCheck', 'false');
+        preferences.set('docs.spellCheck', false);
         const { result } = renderHook(() => useSpellCheck());
         act(() => result.current.toggle());
         expect(result.current.spellCheck).toBe(true);
     });
 
-    it('persists updated value to localStorage', () => {
+    it('persists the updated value as the preference', () => {
         const { result } = renderHook(() => useSpellCheck());
         act(() => result.current.toggle());
-        expect(localStorage.getItem('neutrino.spellCheck')).toBe('false');
+        expect(preferences.get('docs.spellCheck')).toBe(false);
     });
 
     it('toggle() is a stable reference across renders', () => {

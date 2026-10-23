@@ -58,7 +58,7 @@ export function folderToGridItem(folder: FolderItem): GridItem {
     name: folder.name,
     kind: 'folder',
     icon: Folder,
-    iconColor: folder.color ?? 'var(--color-amber, #d97706)',
+    iconColor: folder.color ?? 'var(--folder-color)',
     subtitle: 'Folder',
     typeText: 'Folder',
     sizeText: '—',

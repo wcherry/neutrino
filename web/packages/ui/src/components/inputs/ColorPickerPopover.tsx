@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useDismiss } from '@neutrino/commands';
 import { ColorPicker } from './ColorPicker';
 import { ToolbarButton } from '../display/Toolbar';
 
@@ -40,19 +41,15 @@ export function ColorPickerPopover({ color, onChange, onOpen, disabled, title, c
             if (isOutside(e.target)) setOpen(false);
         }
 
-        function handleKeyDown(e: KeyboardEvent) {
-            if (e.key === 'Escape') setOpen(false);
-        }
-
         document.addEventListener('mousedown', handleMouseDown);
         document.addEventListener('mouseup', handleMouseUp);
-        document.addEventListener('keydown', handleKeyDown);
         return () => {
             document.removeEventListener('mousedown', handleMouseDown);
             document.removeEventListener('mouseup', handleMouseUp);
-            document.removeEventListener('keydown', handleKeyDown);
         };
     }, [open]);
+
+    useDismiss(() => setOpen(false), open);
 
     // After the popover renders, clamp it so it stays fully within the viewport.
     // useLayoutEffect fires before the browser paints, avoiding any visible flicker.

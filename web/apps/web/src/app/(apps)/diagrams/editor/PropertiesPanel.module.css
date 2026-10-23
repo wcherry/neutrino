@@ -1,8 +1,8 @@
 .panel {
   width: 220px;
   flex-shrink: 0;
-  background: var(--color-surface, #fff);
-  border-left: 1px solid var(--color-border, #e2e8f0);
+  background: var(--editor-panel-bg, var(--color-surface));
+  border-left: var(--editor-panel-rule, 1px solid var(--color-border));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -14,8 +14,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #64748b);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -28,7 +28,7 @@
 .empty {
   padding: 16px 12px;
   font-size: 12px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   line-height: 1.5;
 }
 
@@ -39,11 +39,11 @@
 .sectionTitle {
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 8px 0 4px;
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  border-bottom: 1px solid var(--color-border);
   margin-bottom: 6px;
 }
 
@@ -57,7 +57,7 @@
 
 .row label {
   font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   min-width: 50px;
 }
 
@@ -72,7 +72,7 @@
 
 .geoRow label {
   font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
 }
 
 .numInput {
@@ -80,27 +80,27 @@
   min-width: 0;
   height: 26px;
   padding: 0 6px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 12px;
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 .numInputSingle {
   width: 56px;
   min-width: 0;
   height: 26px;
   padding: 0 6px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 12px;
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .numInput:focus {
   outline: none;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 
@@ -108,35 +108,35 @@
   flex: 1;
   height: 26px;
   padding: 0 6px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 12px;
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .textInput:focus {
   outline: none;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .select {
   flex: 1;
   height: 26px;
   padding: 0 4px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 12px;
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .select:focus {
   outline: none;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .rangeInput {
   flex: 1;
-  accent-color: var(--color-primary, #2563eb);
+  accent-color: var(--color-primary);
 }

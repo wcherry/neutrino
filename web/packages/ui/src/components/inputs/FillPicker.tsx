@@ -38,6 +38,14 @@ export interface FillPickerProps {
   theme?: BackgroundTheme;
   /** localStorage key for user-saved gradient presets (default: 'neutrino:bg:gradientPresets') */
   presetsKey?: string;
+  /**
+   * The user's saved presets, owned by the caller — pass with `onPresetsChange` to store them
+   * somewhere other than this browser (the app keeps them in the synced preference vault). Without
+   * these, the picker keeps them itself under `presetsKey`, as it always did. `@neutrino/ui` has no
+   * API dependency, so it takes its storage through props like `ImagePickerDialog` does.
+   */
+  presets?: string[];
+  onPresetsChange?: (presets: string[]) => void;
   /** Label shown on the trigger button (default: 'BG') */
   triggerLabel?: string;
   /**
@@ -219,6 +227,8 @@ export function FillPicker({
   onChange,
   theme,
   presetsKey,
+  presets: controlledPresets,
+  onPresetsChange,
   triggerLabel,
   showAlpha,
   onFetchDriveImages,
@@ -249,12 +259,20 @@ export function FillPicker({
   const [gradConfig, setGradConfig] = useState<GradientConfig>(() =>
     background.type === 'gradient' ? (parseGradient(background.value) ?? DEFAULT_CONFIG) : DEFAULT_CONFIG,
   );
-  const [userPresets, setUserPresets] = useState<string[]>([]);
+  const [ownPresets, setOwnPresets] = useState<string[]>([]);
+  const controlled = controlledPresets !== undefined;
+  const userPresets = controlled ? controlledPresets : ownPresets;
+  const setUserPresets = (next: string[]) => {
+    if (controlled) onPresetsChange?.(next);
+    else setOwnPresets(next);
+  };
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({ visibility: 'hidden' });
   const lastCssRef = useRef(background.type === 'gradient' ? background.value : '');
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setUserPresets(loadUserPresets(resolvedPresetsKey)); }, [resolvedPresetsKey]);
+  useEffect(() => {
+    if (!controlled) setOwnPresets(loadUserPresets(resolvedPresetsKey));
+  }, [resolvedPresetsKey, controlled]);
 
   // A stored image value isn't necessarily loadable — a caller that persists
   // references hands back something only it can resolve.
@@ -376,13 +394,13 @@ export function FillPicker({
     const css = buildGradient(gradConfig);
     const updated = [css, ...userPresets.filter((p) => p !== css)].slice(0, 12);
     setUserPresets(updated);
-    persistUserPresets(resolvedPresetsKey, updated);
+    if (!controlled) persistUserPresets(resolvedPresetsKey, updated);
   }
 
   function removePreset(idx: number) {
     const updated = userPresets.filter((_, i) => i !== idx);
     setUserPresets(updated);
-    persistUserPresets(resolvedPresetsKey, updated);
+    if (!controlled) persistUserPresets(resolvedPresetsKey, updated);
   }
 
   function addStop() {

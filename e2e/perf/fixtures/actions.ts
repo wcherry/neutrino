@@ -43,39 +43,134 @@ export async function waitForFirstRow(page: Page): Promise<void> {
  * windowed. This is what actually grows the DOM to `expected` rows.
  */
 export async function loadAllDriveRows(page: Page, expected: number): Promise<number> {
-  const rows = driveRows(page);
   await waitForFirstRow(page);
 
   let previous = -1;
   for (let guard = 0; guard < 200; guard += 1) {
-    const count = await rows.count();
-    if (count >= expected) return count;
+    const count = await loadedRowCount(page);
+    if (count >= expected) break;
     if (count === previous) {
       // Two passes with no growth and the list is as long as it gets — an
       // account with fewer files than asked for, or a page that stopped
       // fetching. Either way there is nothing left to wait on.
-      return count;
+      break;
     }
     previous = count;
-    await rows.last().scrollIntoViewIfNeeded();
+    await scrollToBottom(page);
     await page
       .waitForFunction(
-        (n) =>
-          document.querySelectorAll(
-            '[aria-labelledby="all-files-heading"] [role="listitem"]',
-          ).length > n,
-        count,
+        ({ sel, n }) => {
+          const row = document.querySelector(`${sel} [role="listitem"]`);
+          return Number(row?.getAttribute('aria-setsize') ?? 0) > n;
+        },
+        { sel: FILES_LIST, n: count },
         { timeout: 20_000 },
       )
       .catch(() => {
         // Falls through to the no-growth check above on the next pass.
       });
   }
-  return rows.count();
+  // End at the bottom with the last page painted, so a scenario that wants the
+  // final rows finds them in the window.
+  await scrollToBottom(page);
+  return loadedRowCount(page);
+}
+
+const FILES_LIST = '[aria-labelledby="all-files-heading"]';
+
+/**
+ * How many rows the listing holds — not how many are in the DOM.
+ *
+ * `FileGrid` renders only the rows on screen (performance roadmap P1), so a
+ * count of `listitem`s is the size of the window. Every rendered row carries
+ * the listing's length as `aria-setsize`, which is what this reads; a grid
+ * without it (an older build) falls back to counting.
+ */
+async function loadedRowCount(page: Page): Promise<number> {
+  return page.evaluate((sel) => {
+    const rows = document.querySelectorAll(`${sel} [role="listitem"]`);
+    const size = rows[0]?.getAttribute('aria-setsize');
+    return size ? Number(size) : rows.length;
+  }, FILES_LIST);
+}
+
+/**
+ * Scroll the listing to its last row, the way a user's scrolling would.
+ *
+ * Deliberately not "set the scroller's `scrollTop` to its `scrollHeight`": which element scrolls
+ * is only knowable once the windowed list has applied its full height, and asking a moment
+ * earlier — the first paint renders a short slice — picks `<html>`, which does not scroll here
+ * (the app shell's main area does). That silently left Drive at its first page of 200 in four of
+ * five repeats of the first baseline run. Bringing the last *rendered* row into view instead moves
+ * whatever really scrolls, and the window follows it; the walk stops when the last rendered row is
+ * the last row of the listing (`aria-posinset` equals `aria-setsize`), which is where the
+ * infinite-scroll sentinel sits.
+ */
+async function scrollToBottom(page: Page): Promise<void> {
+  await page.evaluate(async (sel) => {
+    const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    // The element that scrolls the list: the nearest ancestor that overflows and is taller inside
+    // than out. Looked up again on every pass, because which one it is only settles once the
+    // windowed list has its full height.
+    const scroller = (el: HTMLElement): HTMLElement | null => {
+      for (let n = el.parentElement; n; n = n.parentElement) {
+        const o = getComputedStyle(n).overflowY;
+        if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+      }
+      return null;
+    };
+    for (let i = 0; i < 200; i += 1) {
+      const rows = document.querySelectorAll(`${sel} [role="listitem"]`);
+      const last = rows[rows.length - 1] as HTMLElement | undefined;
+      if (!last) return;
+      // To the end of what is loaded, in one move. Bringing the last *rendered* row into view
+      // advanced only by the window's overscan per pass — four rows in the list, four rows of six
+      // in the large grid — so B1 timed this walk, six times longer in the list, rather than the
+      // listing. A scroller that cannot be found yet falls back to that walk.
+      const box = scroller(last);
+      if (box) box.scrollTop = box.scrollHeight;
+      else last.scrollIntoView({ block: 'end' });
+      await frame();
+      const now = document.querySelectorAll(`${sel} [role="listitem"]`);
+      const end = now[now.length - 1] as HTMLElement | undefined;
+      const pos = Number(end?.getAttribute('aria-posinset') ?? 0);
+      const size = Number(end?.getAttribute('aria-setsize') ?? 0);
+      if (!size || pos >= size) break;
+    }
+    document.querySelector(`${sel} [aria-live="polite"]`)?.scrollIntoView({ block: 'end' });
+    await frame();
+  }, FILES_LIST);
+}
+
+/**
+ * Bring a row into the rendered window by scrolling the listing to it, the
+ * way a user would — a windowed list only has the rows on screen in the DOM.
+ * Walks the scroller a viewport at a time from the top until the row exists.
+ */
+export async function scrollRowIntoWindow(page: Page, fileName: string): Promise<void> {
+  const row = page.getByRole('listitem', { name: fileName });
+  if ((await row.count()) > 0) return;
+  const scroller = await scrollerFor(page, FILES_LIST);
+  await page.evaluate(
+    async ({ sel, name }) => {
+      const el = document.querySelector(sel);
+      if (!el) return;
+      const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      const present = () => !!document.querySelector(`[role="listitem"][aria-label="${CSS.escape(name)}"]`);
+      el.scrollTop = 0;
+      await frame();
+      while (!present() && el.scrollTop + el.clientHeight < el.scrollHeight) {
+        el.scrollTop += el.clientHeight;
+        await frame();
+      }
+    },
+    { sel: scroller, name: fileName },
+  );
 }
 
 /** Open a file's three-dot menu, the way the functional specs do. */
 export async function openRowMenu(page: Page, fileName: string): Promise<void> {
+  await scrollRowIntoWindow(page, fileName);
   await page.getByRole('listitem', { name: fileName }).first().hover();
   await page.getByLabel(`More options for ${fileName}`).click();
   await expect(page.getByRole('menu', { name: 'File options' })).toBeVisible({

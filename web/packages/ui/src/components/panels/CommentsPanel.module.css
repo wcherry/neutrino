@@ -3,8 +3,8 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg, #fff);
-  border-left: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
   overflow: hidden;
 }
 
@@ -15,7 +15,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -25,7 +25,7 @@
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .headerRight {
@@ -46,10 +46,10 @@
 .filterSelect {
   font-size: 12px;
   padding: 2px 6px;
-  border: 1px solid var(--color-border, #e0e0e0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-bg, #fff);
-  color: var(--color-text, #202124);
+  background: var(--color-bg);
+  color: var(--color-text);
   cursor: pointer;
   outline: none;
 }
@@ -64,18 +64,18 @@
   background: none;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 .closeBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 /* ── New comment form ── */
 
 .newCommentForm {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -87,13 +87,13 @@
   box-sizing: border-box;
   font-size: 13px;
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #e0e0e0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   resize: none;
   font-family: inherit;
   line-height: 1.4;
-  color: var(--color-text, #202124);
-  background: var(--color-bg, #fff);
+  color: var(--color-text);
+  background: var(--color-bg);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -111,15 +111,15 @@
 .cancelBtn {
   font-size: 13px;
   padding: 5px 12px;
-  border: 1px solid var(--color-border, #e0e0e0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   background: none;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 
 .cancelBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .submitBtn {
@@ -154,7 +154,7 @@
 .empty {
   padding: 24px 16px;
   text-align: center;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
@@ -216,19 +216,19 @@
 .authorName {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
 }
 
 .timestamp {
   font-size: 11px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
 }
 
 .commentBody {
   margin: 0 0 6px 0;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -266,7 +266,7 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   background: none;
   border: none;
   border-radius: 4px;
@@ -276,8 +276,8 @@
 }
 
 .replyBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
-  color: var(--color-text, #202124);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 /* ── Reply ── */
@@ -300,7 +300,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -324,13 +324,13 @@
   background: none;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
 .iconBtn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
-  color: var(--color-text, #202124);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .iconBtn:disabled {

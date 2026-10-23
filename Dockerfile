@@ -31,11 +31,13 @@ COPY web/packages/api-slides/package.json web/packages/api-slides/package.json
 COPY web/packages/api-themes/package.json web/packages/api-themes/package.json
 COPY web/packages/auth/package.json web/packages/auth/package.json
 COPY web/packages/collab-core/package.json web/packages/collab-core/package.json
+COPY web/packages/commands/package.json web/packages/commands/package.json
 COPY web/packages/e2e-crypto/package.json web/packages/e2e-crypto/package.json
 COPY web/packages/hooks/package.json web/packages/hooks/package.json
 COPY web/packages/layout/package.json web/packages/layout/package.json
 COPY web/packages/markdown/package.json web/packages/markdown/package.json
 COPY web/packages/offline/package.json web/packages/offline/package.json
+COPY web/packages/preferences/package.json web/packages/preferences/package.json
 COPY web/packages/search/package.json web/packages/search/package.json
 COPY web/packages/sheet-embed/package.json web/packages/sheet-embed/package.json
 COPY web/packages/tokens/package.json web/packages/tokens/package.json
@@ -56,6 +58,11 @@ COPY web/ web/
 ARG APP_VERSION=""
 ARG BUILD_COMMIT=""
 RUN node web/apps/web/scripts/write-version.mjs
+
+# `1` only for the image the perf suite measures (e2e/scripts/run-perf.sh), so
+# its slow frames can be traced to source. Off by default: served maps would
+# publish the app's source from a real deployment (see next.config.ts).
+ARG NEUTRINO_BROWSER_SOURCEMAPS=""
 
 WORKDIR /app/web/apps/web
 RUN pnpm build

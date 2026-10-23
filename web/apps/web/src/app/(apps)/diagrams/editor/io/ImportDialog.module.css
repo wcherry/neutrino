@@ -9,7 +9,7 @@
 }
 
 .dialog {
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
   border-radius: 10px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   width: 460px;
@@ -23,14 +23,14 @@
 .title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   margin: 0;
 }
 
 .tabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .tab {
@@ -40,18 +40,18 @@
   border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   margin-bottom: -1px;
 }
 
 .tab.active {
-  color: var(--color-primary, #2563eb);
-  border-bottom-color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
   font-weight: 500;
 }
 
 .dropZone {
-  border: 2px dashed var(--color-border, #e2e8f0);
+  border: 2px dashed var(--color-border);
   border-radius: 8px;
   padding: 24px;
   text-align: center;
@@ -60,18 +60,18 @@
 }
 
 .dropZone:hover, .dropZone.dragOver {
-  border-color: var(--color-primary, #2563eb);
-  background: var(--color-primary-light, #eff6ff);
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
 }
 
 .dropLabel {
   font-size: 13px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
 }
 
 .dropHint {
   font-size: 11px;
-  color: var(--color-text-muted, #94a3b8);
+  color: var(--color-text-muted);
   margin-top: 4px;
 }
 
@@ -84,23 +84,23 @@
   height: 160px;
   resize: vertical;
   padding: 10px 12px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 12px;
   font-family: var(--font-mono, monospace);
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   box-sizing: border-box;
 }
 
 .textarea:focus {
   outline: none;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .hint {
   font-size: 11px;
-  color: var(--color-text-muted, #94a3b8);
+  color: var(--color-text-muted);
 }
 
 .error {
@@ -120,16 +120,16 @@
 .cancelBtn {
   padding: 0 16px;
   height: 34px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text-secondary, #64748b);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
   font-size: 13px;
   cursor: pointer;
 }
 
 .cancelBtn:hover {
-  background: var(--color-bg-hover, #f1f5f9);
+  background: var(--color-bg-hover);
 }
 
 .importBtn {
@@ -137,7 +137,7 @@
   height: 34px;
   border: none;
   border-radius: 6px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   font-size: 13px;
   font-weight: 500;

@@ -25,7 +25,7 @@
 }
 
 .item:hover:not(:disabled):not(.active) {
-  background-color: var(--color-bg-subtle);
+  background-color: var(--menu-item-hover);
 }
 
 .item:focus-visible {
@@ -39,8 +39,8 @@
 }
 
 .item.active {
-  background-color: var(--color-accent-subtle);
-  color: var(--color-accent-text);
+  background-color: var(--selected-bg);
+  color: var(--selected-fg);
   font-weight: var(--font-medium);
 }
 
@@ -84,8 +84,9 @@
   letter-spacing: 0.05em;
 }
 
+/* A rule in classic; in the new looks groups are separated by space alone. */
 .separator {
   height: 1px;
-  background-color: var(--color-border);
+  background-color: var(--menu-separator);
   margin: var(--space-1) 0;
 }

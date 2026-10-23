@@ -18,12 +18,15 @@ import { fileToGridItem, folderToGridItem, sortEntries } from '../gridItems';
 import { routeForFile } from '../routeForFile';
 import { PreviewModal } from '../PreviewModal';
 import styles from './page.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 export default function SharedWithMePage() {
   const router = useRouter();
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
-  const [sortBy, setSortBy] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('shared', { view: 'large', sort: 'name', dir: 'asc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['shared-with-me'],
@@ -68,9 +71,11 @@ export default function SharedWithMePage() {
         isLoading={isLoading}
         isError={isError}
         onItemClick={openItem}
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        onSortChange={listing.setSort}
         totalCount={isLoading ? undefined : total}
         emptyState={
           isError ? (
