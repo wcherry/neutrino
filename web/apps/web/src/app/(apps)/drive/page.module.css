@@ -1,3 +1,21 @@
+/* My Drive inside its panel rail: the rail fills the main area and the page scrolls within it. */
+.panelHost {
+  flex: 1;
+  min-height: 0;
+}
+
+.scroller {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.panelEmpty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted);
+}
+
 .page {
   composes: container from '../pageContainer.module.css';
   display: flex;

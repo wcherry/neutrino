@@ -85,7 +85,9 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 }));
 
 // UI package — minimal stubs to avoid CSS module issues in jsdom
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   Heading: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Button: ({

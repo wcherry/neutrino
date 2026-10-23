@@ -23,7 +23,7 @@ import {
  */
 
 /** Every surface that hosts a `PanelRail`. A surface's id is the key its layout is stored under. */
-export type PanelSurface = 'photos-editor' | 'docs-editor' | 'diagrams-editor' | 'drawing-editor' | 'sheets-editor' | 'slides-editor' | 'photos-library';
+export type PanelSurface = 'photos-editor' | 'docs-editor' | 'diagrams-editor' | 'drawing-editor' | 'sheets-editor' | 'slides-editor' | 'photos-library' | 'drive';
 
 /** One surface's stored layout (null when the user has never arranged it) and its setter. */
 export function usePanelLayout(surface: PanelSurface): [unknown, (layout: RailLayout) => void] {
