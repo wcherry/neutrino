@@ -162,6 +162,8 @@ export type { DropdownProps, DropdownPlacement } from './components/navigation/D
 
 // Display
 export { FileGrid, categorizeMime } from './components/display/FileGrid';
+export { ZoomablePreview } from './components/display/ZoomablePreview';
+export type { ZoomablePreviewProps } from './components/display/ZoomablePreview';
 export type { FileGridProps, GridItem, ViewMode, SortField, SortDir, FilterType, FileCategory } from './components/display/FileGrid';
 
 export { ShareButton } from './components/display/ShareButton';
