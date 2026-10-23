@@ -152,6 +152,8 @@ export interface TeamLibrary {
   publishedAt: string;
   fills: Partial<Record<'slides' | 'diagrams' | 'drawing' | 'default', string[]>>;
   cfTemplates: unknown[];
+  /** Custom Diagrams shape libraries: a name and a list of built-in shapes, each with a label. */
+  shapeLibraries: { id: string; name: string; shapes: { id: string; type: string; label: string }[] }[];
 }
 
 const FILL_KEYS = {
@@ -175,7 +177,23 @@ export function readLibrary(raw: unknown): TeamLibrary | null {
     publishedAt: typeof r.publishedAt === 'string' ? r.publishedAt : '',
     fills: Object.fromEntries((Object.keys(FILL_KEYS) as (keyof typeof FILL_KEYS)[]).map((k) => [k, strings(fills[k])])),
     cfTemplates: Array.isArray(r.cfTemplates) ? r.cfTemplates.slice(0, 50) : [],
+    shapeLibraries: readShapeLibraries(r.shapeLibraries),
   };
+}
+
+function readShapeLibraries(value: unknown): TeamLibrary['shapeLibraries'] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).flatMap((raw) => {
+    const r = raw as Record<string, unknown>;
+    if (typeof r?.id !== 'string' || typeof r.name !== 'string' || !Array.isArray(r.shapes)) return [];
+    const shapes = r.shapes.slice(0, 200).flatMap((sh) => {
+      const x = sh as Record<string, unknown>;
+      return typeof x?.id === 'string' && typeof x.type === 'string' && typeof x.label === 'string'
+        ? [{ id: x.id, type: x.type, label: x.label.slice(0, 80) }]
+        : [];
+    });
+    return [{ id: r.id, name: r.name.slice(0, 80), shapes }];
+  });
 }
 
 /** This user's own presets and templates, as a library to publish. */
@@ -187,6 +205,9 @@ export function ownLibrary(): TeamLibrary {
       k, strings(readVaultOrLegacy(preferences, key as 'library.fill.slides')),
     ])),
     cfTemplates: (readVaultOrLegacy(preferences, 'library.sheets.cfTemplates') as unknown[] | null) ?? [],
+    shapeLibraries: readShapeLibraries(
+      (readVaultOrLegacy(preferences, 'library.diagrams.shapeLibraries') as { customLibraries?: unknown } | null)?.customLibraries,
+    ),
   };
 }
 
