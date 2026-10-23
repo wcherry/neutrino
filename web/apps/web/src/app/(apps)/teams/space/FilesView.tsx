@@ -27,6 +27,7 @@ import { usePreference } from '@neutrino/preferences';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { TEAM_LIBRARY_NAME } from '@/lib/teamResources';
+import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
 import { ChevronRight, Folder, FolderPlus, Trash2, Upload, X } from 'lucide-react';
 import {
   AlertDialog,
@@ -196,11 +197,16 @@ export function FilesView({ team }: { team: Team }) {
           .then((u) => u.id)
           .catch(() => null));
       const uploaded = await uploadDriveFile(file, userId, {});
-      return teamsApi.claimFile(team.id, uploaded.id, folderId);
+      const claimed = await teamsApi.claimFile(team.id, uploaded.id, folderId);
+      // Claiming gives the members access; only this browser can give them the key. Without this
+      // step every other member saw the file and could not open it.
+      const keys = await handFileKeyToTeam(team.id, uploaded.id, userId ?? undefined);
+      return { claimed, keys };
     },
-    onSuccess: () => {
+    onSuccess: ({ keys }) => {
       invalidate();
-      success('File added to the team.');
+      const note = describeKeyHandover(keys);
+      success(note ? `File added to the team. ${note}` : 'File added to the team.');
     },
     onError: (err: unknown) => {
       toastError(
