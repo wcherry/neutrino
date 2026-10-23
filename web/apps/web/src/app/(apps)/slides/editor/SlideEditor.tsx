@@ -349,6 +349,7 @@ export function SlideEditor() {
   // Rejects a save that would overwrite a revision written elsewhere since this
   // presentation was loaded. See `useContentVersionGuard`.
   const versionGuard = useContentVersionGuard();
+  const writeChainRef = useRef<Promise<unknown>>(Promise.resolve());
 
   const [title, setTitle] = useState('');
   const [presentation, setPresentation] = useState<SlidePresentation>(makeDefaultPresentation);
@@ -646,6 +647,16 @@ export function SlideEditor() {
    * user navigates away — see `AutosaveTransport` in `@neutrino/api-drive`.
    */
   async function writeContent(content: string, keepalive = false): Promise<FileItem> {
+    // One write at a time. Two saves in flight both carried the version the deck had before
+    // either, so the second was refused as a conflict (409) — and Back, which waits for its save,
+    // then stayed on the page. Each write now starts after the last, with the version it left.
+    const run = () => writeContentNow(content, keepalive);
+    const next = writeChainRef.current.then(run, run);
+    writeChainRef.current = next.catch(() => {});
+    return next;
+  }
+
+  async function writeContentNow(content: string, keepalive: boolean): Promise<FileItem> {
     const transport = keepalive ? { keepalive: true } : undefined;
     // Re-serialize the current presentation into real PPTX bytes and write
     // them to the SAME Drive file id via the binary-safe transport.
@@ -665,9 +676,11 @@ export function SlideEditor() {
       // client-side, so the .pptx that reaches the user's disk is the same
       // either way. What the plaintext write bought was a readable deck in
       // object storage: issue #95.
-      return driveAutosaveEncryptedBytes(
+      const saved = await driveAutosaveEncryptedBytes(
         slideId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
       );
+      versionGuard.observe(saved?.contentVersion);
+      return saved;
     }
   }
 
