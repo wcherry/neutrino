@@ -33,6 +33,7 @@ import {
   deserializeSnapshot,
   exportSnapshot,
   importSnapshot,
+  indexFingerprint,
   serializeSnapshot,
   IndexEngine,
   type IndexSnapshot,
@@ -101,23 +102,6 @@ export function forgetSyncedVersion(userId: string): void {
   } catch {
     // Nothing to forget if storage is unavailable.
   }
-}
-
-/**
- * Cheap identity for a snapshot's contents.
- *
- * Uploading is the expensive half of a sync — serialise, encrypt, send several
- * megabytes — and most syncs run against an index nothing has touched. Counts
- * plus the newest revision are enough to notice any indexing that happened,
- * because every write path bumps a document's `updatedAt` or changes how many
- * entries there are.
- */
-export function snapshotFingerprint(snapshot: IndexSnapshot): string {
-  let newest = 0;
-  for (const doc of snapshot.docs) {
-    if (doc.updatedAt > newest) newest = doc.updatedAt;
-  }
-  return `${snapshot.docs.length}:${snapshot.tokens.length}:${newest}`;
 }
 
 function storedFingerprint(userId: string): string | null {
@@ -189,19 +173,23 @@ export async function pushSnapshot(userId: string): Promise<PushResult> {
   // and the query path use.
   if (!keys) return { status: 'skipped' };
 
-  const snapshot = await exportSnapshot();
-  if (snapshot.docs.length === 0) {
+  // Uploading is the expensive half of a sync — read the whole index, serialise, encrypt, send
+  // several megabytes — and most syncs run against an index nothing has touched. Even reading it
+  // blocked the page for ~300 ms on every load, so the cheap fingerprint decides first.
+  const { documents, fingerprint } = await indexFingerprint();
+  if (documents === 0) {
     // Never replace a real snapshot with an empty one. A device whose local
     // index has not been built yet has nothing worth sharing.
     return { status: 'skipped' };
   }
-
-  const fingerprint = snapshotFingerprint(snapshot);
   if (fingerprint === storedFingerprint(userId)) {
-    // Identical to what is already stored — including the case where we just
-    // imported it, which would otherwise make every pull echo straight back.
+    // Unchanged since it was last uploaded or imported — the import case
+    // would otherwise make every pull echo straight back.
     return { status: 'skipped' };
   }
+
+  const snapshot = await exportSnapshot();
+  if (snapshot.docs.length === 0) return { status: 'skipped' };
 
   const { ciphertext, wrappedKey } = await encryptSnapshot(snapshot, keys.publicKey);
 
@@ -245,6 +233,7 @@ export async function forceUploadSnapshot(userId: string): Promise<PushResult> {
   const keys = loadKeyPair(userId);
   if (!keys) return { status: 'skipped' };
 
+  const { fingerprint } = await indexFingerprint();
   const snapshot = await exportSnapshot();
 
   const { ciphertext, wrappedKey } = await encryptSnapshot(snapshot, keys.publicKey);
@@ -254,7 +243,7 @@ export async function forceUploadSnapshot(userId: string): Promise<PushResult> {
     deviceId: deviceId(),
   });
   rememberVersion(userId, meta.version);
-  rememberFingerprint(userId, snapshotFingerprint(snapshot));
+  rememberFingerprint(userId, fingerprint);
   console.debug(`[search:sync] force-uploaded snapshot v${meta.version}`);
   return { status: 'uploaded', version: meta.version, documents: snapshot.docs.length };
 }
@@ -297,7 +286,7 @@ export async function pullSnapshot(userId: string): Promise<PullResult> {
   rememberVersion(userId, meta.version);
   // The local index now *is* this snapshot, so record its fingerprint: without
   // this the push that follows would re-upload what we just downloaded.
-  rememberFingerprint(userId, snapshotFingerprint(snapshot));
+  rememberFingerprint(userId, (await indexFingerprint()).fingerprint);
   console.debug(
     `[search:sync] imported snapshot v${meta.version} — ${documents} docs`,
   );

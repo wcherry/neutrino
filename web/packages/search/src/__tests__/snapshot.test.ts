@@ -17,6 +17,7 @@ import {
   deserializeSnapshot,
   exportSnapshot,
   importSnapshot,
+  indexFingerprint,
   serializeSnapshot,
   SNAPSHOT_FORMAT,
 } from '../snapshot';
@@ -75,6 +76,51 @@ describe('exportSnapshot', () => {
     const snapshot = await exportSnapshot();
     expect(snapshot.docs).toEqual([]);
     expect(snapshot.tokens).toEqual([]);
+  });
+});
+
+describe('indexFingerprint', () => {
+  // The sync skips reading the whole index when this is unchanged, so every kind of write must
+  // move it — or a device would silently stop sharing its index.
+  it('counts the index without reading it', async () => {
+    await seedIndex();
+    const { documents, fingerprint } = await indexFingerprint();
+    const snapshot = await exportSnapshot();
+    expect(documents).toBe(2);
+    expect(fingerprint.startsWith(`2:${snapshot.tokens.length}:`)).toBe(true);
+  });
+
+  it('is stable while nothing is written', async () => {
+    await seedIndex();
+    expect((await indexFingerprint()).fingerprint).toBe((await indexFingerprint()).fingerprint);
+  });
+
+  it('changes when a document is re-indexed with the same number of entries', async () => {
+    const engine = await seedIndex();
+    const before = (await indexFingerprint()).fingerprint;
+    await engine.indexDocument({
+      id: 'doc-1',
+      type: 'document',
+      title: 'Project Budget',
+      content: 'quarterly budget planning for the modesto office',
+      updatedAt: 1_700_000_900_000,
+    });
+    expect((await indexFingerprint()).fingerprint).not.toBe(before);
+  });
+
+  it('changes when a document is removed', async () => {
+    const engine = await seedIndex();
+    const before = (await indexFingerprint()).fingerprint;
+    await engine.removeDocument('file-1');
+    expect((await indexFingerprint()).fingerprint).not.toBe(before);
+  });
+
+  it('changes when a snapshot is imported', async () => {
+    await seedIndex();
+    const snapshot = await exportSnapshot();
+    const before = (await indexFingerprint()).fingerprint;
+    await importSnapshot(snapshot);
+    expect((await indexFingerprint()).fingerprint).not.toBe(before);
   });
 });
 
