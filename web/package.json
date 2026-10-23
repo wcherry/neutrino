@@ -5,7 +5,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint:css": "stylelint \"apps/web/src/**/*.css\" \"packages/*/src/**/*.css\""
+    "lint:css": "stylelint \"apps/web/src/**/*.css\" \"packages/*/src/**/*.css\"",
+    "lint:colours": "node scripts/check-inline-colours.mjs"
   },
   "devDependencies": {
     "@storybook/addon-themes": "^10.4.1",

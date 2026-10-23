@@ -26,7 +26,7 @@
 }
 
 .noteBlockCode {
-  background: var(--color-surface-sunken, #0d0d0d);
+  background: var(--color-surface-sunken, var(--palette-gray-5));
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -38,7 +38,7 @@
 }
 
 .noteBlockQuote {
-  border-left: 3px solid var(--color-border-strong, #9ca3af);
+  border-left: 3px solid var(--color-border-strong);
   margin: 0 0 var(--space-2);
   padding: var(--space-2) var(--space-4);
   color: var(--color-text-muted);
@@ -49,8 +49,8 @@
   flex-shrink: 0;
   width: 14px;
   height: 14px;
-  border: 1.5px solid var(--color-border-strong, #9ca3af);
-  border-radius: 3px;
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: calc(3px * var(--radius-scale));
   margin-top: 4px;
   background: transparent;
 }

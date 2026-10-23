@@ -84,7 +84,7 @@
   gap: var(--space-3);
   min-height: 40px;
   padding: 6px 12px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   font-size: var(--text-sm);
   cursor: pointer;
 }
@@ -139,7 +139,7 @@
   justify-content: center;
   padding: 1px 6px;
   margin-right: 2px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   border: 1px solid var(--kbd-border);
   color: var(--text-3);
 }

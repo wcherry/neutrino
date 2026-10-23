@@ -31,7 +31,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-sunken, #0a0a0a);
+  background: var(--color-surface-sunken, var(--palette-gray-4));
   overflow: hidden;
   position: relative;
 }

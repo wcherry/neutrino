@@ -21,7 +21,7 @@ export function PresenceBar({ users, connected }: PresenceBarProps) {
     <div className={styles.bar}>
       {connected && (
         <div className={styles.youBadge} title="You">
-          <span className={styles.dot} style={{ background: '#22c55e' }} />
+          <span className={styles.dot} style={{ background: 'var(--palette-green-45-2)' }} />
           <span>You</span>
         </div>
       )}

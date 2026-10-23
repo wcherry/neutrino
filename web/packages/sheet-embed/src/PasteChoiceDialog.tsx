@@ -48,7 +48,7 @@ export function PasteChoiceDialog({
                       </td>
                     ))}
                     {row.length > 6 && (
-                      <td style={{ ...styles.previewCell, color: 'var(--color-text-secondary, #999)' }}>
+                      <td style={{ ...styles.previewCell, color: 'var(--color-text-secondary, var(--palette-gray-60))' }}>
                         …
                       </td>
                     )}
@@ -58,7 +58,7 @@ export function PasteChoiceDialog({
                   <tr>
                     <td
                       colSpan={Math.min(previewData[0]?.length ?? 1, 7)}
-                      style={{ ...styles.previewCell, textAlign: 'center', color: 'var(--color-text-secondary, #999)' }}
+                      style={{ ...styles.previewCell, textAlign: 'center', color: 'var(--color-text-secondary, var(--palette-gray-60))' }}
                     >
                       {previewData.length - 5} more row{previewData.length - 5 !== 1 ? 's' : ''}…
                     </td>

@@ -140,18 +140,18 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
             }}
         >
             <div style={{
-                background: '#fff', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+                background: 'var(--palette-gray-100)', borderRadius: 'calc(10px * var(--radius-scale))', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
                 width: 380, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-                overflow: 'hidden', fontFamily: 'sans-serif', fontSize: 13, color: '#222',
+                overflow: 'hidden', fontFamily: 'sans-serif', fontSize: 13, color: 'var(--palette-gray-13-2)',
             }}>
                 {/* Header */}
-                <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--palette-gray-93)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontWeight: 600, fontSize: 14 }}>Custom Format</span>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888', lineHeight: 1, padding: '0 2px' }}>×</button>
+                    <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--palette-gray-53)', lineHeight: 1, padding: '0 2px' }}>×</button>
                 </div>
 
                 {/* Category tabs */}
-                <div style={{ display: 'flex', borderBottom: '1px solid #eee', padding: '0 18px' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--palette-gray-93)', padding: '0 18px' }}>
                     {(['number', 'currency', 'percent', 'datetime'] as Category[]).map(c => (
                         <button
                             key={c}
@@ -159,7 +159,7 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
                             style={{
                                 background: 'none', border: 'none', cursor: 'pointer',
                                 padding: '8px 12px', fontSize: 12, fontWeight: category === c ? 600 : 400,
-                                color: category === c ? 'rgb(0,90,220)' : '#555',
+                                color: category === c ? 'rgb(0,90,220)' : 'var(--palette-gray-33)',
                                 borderBottom: category === c ? '2px solid rgb(0,90,220)' : '2px solid transparent',
                                 marginBottom: -1,
                             }}
@@ -176,26 +176,26 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
                             style={{
                                 padding: '7px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
                                 background: selectedPreset === preset.customFormat ? 'rgba(0,100,255,0.07)' : 'transparent',
-                                color: selectedPreset === preset.customFormat ? 'rgb(0,90,220)' : '#222',
+                                color: selectedPreset === preset.customFormat ? 'rgb(0,90,220)' : 'var(--palette-gray-13-2)',
                                 fontWeight: selectedPreset === preset.customFormat ? 500 : 400,
                             }}
                         >
                             <span>{preset.label}</span>
-                            <span style={{ color: '#999', fontSize: 11, fontFamily: 'monospace' }}>{preset.customFormat}</span>
+                            <span style={{ color: 'var(--palette-gray-60)', fontSize: 11, fontFamily: 'monospace' }}>{preset.customFormat}</span>
                         </div>
                     ))}
                 </div>
 
                 {/* Custom format input */}
-                <div style={{ padding: '10px 18px', borderTop: '1px solid #eee' }}>
-                    <label style={{ display: 'block', fontSize: 11, color: '#666', marginBottom: 4 }}>Custom format string</label>
+                <div style={{ padding: '10px 18px', borderTop: '1px solid var(--palette-gray-93)' }}>
+                    <label style={{ display: 'block', fontSize: 11, color: 'var(--palette-gray-40)', marginBottom: 4 }}>Custom format string</label>
                     <input
                         value={customInput}
                         onChange={e => handleCustomInputChange(e.target.value)}
                         placeholder='e.g. #,##0.00 or mmm yyyy'
                         style={{
                             width: '100%', boxSizing: 'border-box', padding: '6px 8px',
-                            border: '1px solid #d0d0d0', borderRadius: 5, fontSize: 12,
+                            border: '1px solid var(--palette-gray-82)', borderRadius: 'calc(5px * var(--radius-scale))', fontSize: 12,
                             fontFamily: 'monospace', outline: 'none',
                         }}
                     />
@@ -203,19 +203,19 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
 
                 {/* Preview */}
                 <div style={{ padding: '6px 18px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: '#666' }}>Preview:</span>
+                    <span style={{ fontSize: 11, color: 'var(--palette-gray-40)' }}>Preview:</span>
                     <span style={{ fontSize: 13, fontWeight: 500 }}>{preview}</span>
                 </div>
 
                 {/* Footer */}
-                <div style={{ padding: '10px 18px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <div style={{ padding: '10px 18px', borderTop: '1px solid var(--palette-gray-93)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button
                         onClick={onClose}
-                        style={{ padding: '6px 16px', border: '1px solid #d0d0d0', borderRadius: 6, background: '#f5f5f7', cursor: 'pointer', fontSize: 12 }}
+                        style={{ padding: '6px 16px', border: '1px solid var(--palette-gray-82)', borderRadius: 'calc(6px * var(--radius-scale))', background: 'var(--palette-gray-96)', cursor: 'pointer', fontSize: 12 }}
                     >Cancel</button>
                     <button
                         onClick={handleApply}
-                        style={{ padding: '6px 16px', border: 'none', borderRadius: 6, background: 'rgb(0,90,220)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}
+                        style={{ padding: '6px 16px', border: 'none', borderRadius: 'calc(6px * var(--radius-scale))', background: 'rgb(0,90,220)', color: 'var(--palette-gray-100)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}
                     >Apply</button>
                 </div>
             </div>

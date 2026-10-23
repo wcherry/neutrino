@@ -48,7 +48,7 @@ function MirrorContent() {
   if (!presentation) {
     return (
       <div style={{
-        background: '#000',
+        background: 'var(--palette-gray-0)',
         width: '100vw',
         height: '100vh',
         display: 'flex',
@@ -68,7 +68,7 @@ function MirrorContent() {
 
   return (
     <div style={{
-      background: '#000',
+      background: 'var(--palette-gray-0)',
       width: '100vw',
       height: '100vh',
       display: 'flex',

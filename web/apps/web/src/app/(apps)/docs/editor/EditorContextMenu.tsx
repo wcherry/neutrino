@@ -227,7 +227,7 @@ export function EditorContextMenu({
       {/* ── Grammar suggestion (top of menu, when grammar check is active) ── */}
       {grammarMessage && (
         <>
-          <div className={styles.checking} style={{ color: '#1e8e3e', fontStyle: 'normal', fontWeight: 500 }}>
+          <div className={styles.checking} style={{ color: 'var(--palette-green-34-2)', fontStyle: 'normal', fontWeight: 500 }}>
             {grammarMessage}
           </div>
           {grammarSuggestion && grammarRange && onApplyGrammarFix && (

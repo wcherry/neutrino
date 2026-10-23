@@ -31,7 +31,7 @@ const DIALOG_OVERLAY: React.CSSProperties = {
 };
 
 const DIALOG_BOX: React.CSSProperties = {
-  background: '#fff', borderRadius: 10, padding: 24, minWidth: 340,
+  background: 'var(--palette-gray-100)', borderRadius: 'calc(10px * var(--radius-scale))', padding: 24, minWidth: 340,
   boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
   fontFamily: 'system-ui, -apple-system, sans-serif',
 };
@@ -131,13 +131,13 @@ function PropertiesDialog({
   return (
     <div style={DIALOG_OVERLAY} onMouseDown={onClose}>
       <div style={DIALOG_BOX} onMouseDown={e => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 600, color: '#0f172a' }}>
+        <h3 style={{ margin: '0 0 18px', fontSize: 15, fontWeight: 600, color: 'var(--palette-blue-11)' }}>
           Diagram Properties
         </h3>
 
         {/* Size row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#374151' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: 'var(--color-neutral-700)' }}>
             Width (px)
             <input
               type="number" step={10}
@@ -147,7 +147,7 @@ function PropertiesDialog({
               style={inputStyle()}
             />
           </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#374151' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: 'var(--color-neutral-700)' }}>
             Height (px)
             <input
               type="number" step={10}
@@ -162,7 +162,7 @@ function PropertiesDialog({
         {/* Proportional checkbox */}
         <label style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          fontSize: 13, color: '#374151', marginBottom: 16, cursor: 'pointer',
+          fontSize: 13, color: 'var(--color-neutral-700)', marginBottom: 16, cursor: 'pointer',
         }}>
           <input
             type="checkbox"
@@ -175,7 +175,7 @@ function PropertiesDialog({
 
         {/* Background color */}
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 13, color: '#374151', marginBottom: 5 }}>Background color</div>
+          <div style={{ fontSize: 13, color: 'var(--color-neutral-700)', marginBottom: 5 }}>Background color</div>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <button
               ref={swatchRef}
@@ -183,12 +183,12 @@ function PropertiesDialog({
               onClick={openColorPicker}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '4px 10px', border: '1px solid #e2e8f0', borderRadius: 5,
-                fontSize: 13, cursor: 'pointer', background: '#fff', color: '#374151',
+                padding: '4px 10px', border: '1px solid var(--palette-sky-91)', borderRadius: 'calc(5px * var(--radius-scale))',
+                fontSize: 13, cursor: 'pointer', background: 'var(--palette-gray-100)', color: 'var(--color-neutral-700)',
               }}
             >
               <span style={{
-                display: 'inline-block', width: 16, height: 16, borderRadius: 3,
+                display: 'inline-block', width: 16, height: 16, borderRadius: 'calc(3px * var(--radius-scale))',
                 background: bgColor, border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0,
               }} />
               {bgColor}
@@ -198,7 +198,7 @@ function PropertiesDialog({
                 ref={pickerRef}
                 style={{
                   position: 'absolute', top: 'calc(100% + 4px)', left: 0,
-                  zIndex: 1, borderRadius: 8,
+                  zIndex: 1, borderRadius: 'calc(8px * var(--radius-scale))',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
                   overflow: 'hidden',
                 }}
@@ -207,15 +207,15 @@ function PropertiesDialog({
                 <div style={{
                   display: 'flex', justifyContent: 'flex-end', gap: 6,
                   padding: '8px 10px',
-                  background: '#fff',
-                  borderTop: '1px solid #e2e8f0',
+                  background: 'var(--palette-gray-100)',
+                  borderTop: '1px solid var(--palette-sky-91)',
                 }}>
                   <button
                     type="button"
                     onClick={handleColorCancel}
                     style={{
-                      padding: '4px 14px', border: '1px solid #e2e8f0', borderRadius: 5,
-                      background: '#fff', fontSize: 12, cursor: 'pointer', color: '#374151',
+                      padding: '4px 14px', border: '1px solid var(--palette-sky-91)', borderRadius: 'calc(5px * var(--radius-scale))',
+                      background: 'var(--palette-gray-100)', fontSize: 12, cursor: 'pointer', color: 'var(--color-neutral-700)',
                     }}
                   >
                     Cancel
@@ -224,8 +224,8 @@ function PropertiesDialog({
                     type="button"
                     onClick={handleColorSelect}
                     style={{
-                      padding: '4px 14px', border: 'none', borderRadius: 5,
-                      background: '#2563eb', color: '#fff', fontSize: 12,
+                      padding: '4px 14px', border: 'none', borderRadius: 'calc(5px * var(--radius-scale))',
+                      background: 'var(--palette-blue-53)', color: 'var(--palette-gray-100)', fontSize: 12,
                       cursor: 'pointer', fontWeight: 500,
                     }}
                   >
@@ -240,7 +240,7 @@ function PropertiesDialog({
         {/* Grid toggle */}
         <label style={{
           display: 'flex', alignItems: 'center', gap: 8,
-          fontSize: 13, color: '#374151', marginBottom: 22, cursor: 'pointer',
+          fontSize: 13, color: 'var(--color-neutral-700)', marginBottom: 22, cursor: 'pointer',
         }}>
           <input
             type="checkbox"
@@ -256,8 +256,8 @@ function PropertiesDialog({
           <button
             onClick={onClose}
             style={{
-              padding: '6px 16px', border: '1px solid #e2e8f0', borderRadius: 5,
-              background: '#fff', fontSize: 13, cursor: 'pointer', color: '#374151',
+              padding: '6px 16px', border: '1px solid var(--palette-sky-91)', borderRadius: 'calc(5px * var(--radius-scale))',
+              background: 'var(--palette-gray-100)', fontSize: 13, cursor: 'pointer', color: 'var(--color-neutral-700)',
             }}
           >
             Cancel
@@ -265,8 +265,8 @@ function PropertiesDialog({
           <button
             onClick={handleApply}
             style={{
-              padding: '6px 16px', border: 'none', borderRadius: 5,
-              background: '#2563eb', color: '#fff', fontSize: 13, cursor: 'pointer',
+              padding: '6px 16px', border: 'none', borderRadius: 'calc(5px * var(--radius-scale))',
+              background: 'var(--palette-blue-53)', color: 'var(--palette-gray-100)', fontSize: 13, cursor: 'pointer',
               fontWeight: 500,
             }}
           >
@@ -361,7 +361,7 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
         onContextMenu={handleContextMenu}
       >
         {error ? (
-          <div style={{ padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#64748b' }}>
+          <div style={{ padding: '12px 16px', border: '1px solid var(--palette-sky-91)', borderRadius: 'calc(6px * var(--radius-scale))', fontSize: 13, color: 'var(--palette-blue-47)' }}>
             {error}
           </div>
         ) : page ? (
@@ -374,7 +374,7 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
             showGrid={showGrid}
           />
         ) : (
-          <div style={{ padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#94a3b8' }}>
+          <div style={{ padding: '12px 16px', border: '1px solid var(--palette-sky-91)', borderRadius: 'calc(6px * var(--radius-scale))', fontSize: 13, color: 'var(--palette-blue-65)' }}>
             {title ? `Loading diagram: ${title}…` : 'Loading diagram…'}
           </div>
         )}
@@ -384,8 +384,8 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
           onClick={deleteNode}
           style={{
             position: 'absolute', top: 4, right: 4,
-            background: 'rgba(255,255,255,0.9)', border: '1px solid #e2e8f0',
-            borderRadius: 4, padding: '2px 6px', fontSize: 11, cursor: 'pointer', color: '#64748b',
+            background: 'rgba(255,255,255,0.9)', border: '1px solid var(--palette-sky-91)',
+            borderRadius: 'calc(4px * var(--radius-scale))', padding: '2px 6px', fontSize: 11, cursor: 'pointer', color: 'var(--palette-blue-47)',
           }}
           title="Remove"
         >
@@ -399,7 +399,7 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
             onMouseDown={e => e.stopPropagation()}
             style={{
               position: 'fixed', top: contextMenu.y, left: contextMenu.x,
-              background: '#fff', border: '1px solid #e2e8f0', borderRadius: 7,
+              background: 'var(--palette-gray-100)', border: '1px solid var(--palette-sky-91)', borderRadius: 'calc(7px * var(--radius-scale))',
               boxShadow: '0 4px 16px rgba(0,0,0,0.13)', padding: '4px 0',
               zIndex: 9999, minWidth: 150,
               fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -409,7 +409,7 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
               style={{
                 display: 'block', width: '100%', textAlign: 'left',
                 padding: '7px 16px', border: 'none', background: 'none',
-                fontSize: 13, cursor: 'pointer', color: '#1e293b',
+                fontSize: 13, cursor: 'pointer', color: 'var(--palette-blue-17)',
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f1f5f9'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none'; }}

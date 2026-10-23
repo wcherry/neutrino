@@ -151,7 +151,7 @@ export function DocPropertiesModal({
           <button className={styles.exportBtn} onClick={onClose}>Cancel</button>
           <button
             className={styles.exportBtn}
-            style={{ background: '#1a73e8', color: 'white', border: 'none' }}
+            style={{ background: 'var(--palette-sky-51)', color: 'white', border: 'none' }}
             onClick={handleSave}
           >
             Apply

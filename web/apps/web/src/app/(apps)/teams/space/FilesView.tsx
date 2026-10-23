@@ -20,13 +20,20 @@
  * The chips filter **client-side** here, unlike My Drive, which sends its chip to the server as
  * `?type=`: the library endpoint takes no type parameter and returns the folder in one response, so
  * there is nothing to page and `FileGrid`'s own pass over the items is the whole answer.
+ *
+ * A file the caller has no key to — they joined after it was added — opens a dialog asking for one
+ * instead of an editor that cannot decrypt it. The team's Owners and Admins, and a file's owner, see
+ * the pending requests above the listing and answer them here (`lib/teamKeyRequests.ts`).
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { usePreference } from '@neutrino/preferences';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { ChevronRight, Folder, FolderPlus, Trash2, Upload, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { TEAM_LIBRARY_NAME } from '@/lib/teamResources';
+import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
+import { approveKeyRequest, describeKeyApproval } from '@/lib/teamKeyRequests';
+import { ChevronRight, Folder, FolderPlus, KeyRound, Trash2, Upload, X } from 'lucide-react';
 import {
   AlertDialog,
   Button,
@@ -38,12 +45,14 @@ import {
   ModalFooter,
   ModalHeader,
   Text,
+  Textarea,
   TextInput,
   useToast,
   type GridItem,
   type SortDir,
   type SortField,
 } from '@neutrino/ui';
+import { ApiClientError } from '@neutrino/api-core';
 import {
   authApi,
   isMissingEncryptionKey,
@@ -52,6 +61,7 @@ import {
   type Team,
   type TeamFile,
   type TeamFolder,
+  type TeamKeyRequest,
   type TeamSharedFile,
 } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
@@ -148,13 +158,23 @@ export function FilesView({ team }: { team: Team }) {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   /** The path from the team root to the folder being shown. Empty means the root. */
-  const [trail, setTrail] = useState<TeamFolder[]>([]);
+  // A pinned folder (T5) opens the view inside it: `?folder=&folderName=` from `pinHref`.
+  const pinnedFolder = useSearchParams();
+  const [trail, setTrail] = useState<TeamFolder[]>(() => {
+    const id = pinnedFolder.get('folder');
+    return id ? [{ id, name: pinnedFolder.get('folderName') ?? 'Folder' } as TeamFolder] : [];
+  });
   const folderId = trail.length > 0 ? trail[trail.length - 1].id : undefined;
 
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [pendingDelete, setPendingDelete] = useState<TeamFile | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  /** A file the caller has no key to, and the note they are writing to ask for one. */
+  const [keyAsk, setKeyAsk] = useState<{ fileId: string; name: string } | null>(null);
+  const [keyMessage, setKeyMessage] = useState('');
+  const [denying, setDenying] = useState<TeamKeyRequest | null>(null);
+  const [denyReason, setDenyReason] = useState('');
 
   // The library endpoint takes no sort parameters, so the order is decided here — as it is on
   // Recent, Starred and Shared with me, which are in the same position. The view and the order
@@ -190,11 +210,16 @@ export function FilesView({ team }: { team: Team }) {
           .then((u) => u.id)
           .catch(() => null));
       const uploaded = await uploadDriveFile(file, userId, {});
-      return teamsApi.claimFile(team.id, uploaded.id, folderId);
+      const claimed = await teamsApi.claimFile(team.id, uploaded.id, folderId);
+      // Claiming gives the members access; only this browser can give them the key. Without this
+      // step every other member saw the file and could not open it.
+      const keys = await handFileKeyToTeam(team.id, uploaded.id, userId ?? undefined);
+      return { claimed, keys };
     },
-    onSuccess: () => {
+    onSuccess: ({ keys }) => {
       invalidate();
-      success('File added to the team.');
+      const note = describeKeyHandover(keys);
+      success(note ? `File added to the team. ${note}` : 'File added to the team.');
     },
     onError: (err: unknown) => {
       toastError(
@@ -247,6 +272,60 @@ export function FilesView({ team }: { team: Team }) {
     onError: () => toastError('Could not remove that file.'),
   });
 
+  const requestKey = useMutation({
+    mutationFn: (ask: { fileId: string; message: string }) =>
+      teamsApi.requestFileKey(team.id, ask.fileId, ask.message.trim() || undefined),
+    onSuccess: () => {
+      setKeyAsk(null);
+      setKeyMessage('');
+      success('Request sent. You will be notified when it is answered.');
+    },
+    onError: (err: unknown) => {
+      if (err instanceof ApiClientError && err.statusCode === 409) {
+        setKeyAsk(null);
+        success(err.message || 'You have already asked for this key.');
+        return;
+      }
+      toastError('Could not send the request.');
+    },
+  });
+
+  // Requests this person can answer. Everyone may list; only an answerer's rows have `canDecide`.
+  const { data: keyRequestData } = useQuery({
+    queryKey: ['team-key-requests', team.id],
+    queryFn: () => teamsApi.listKeyRequests(team.id),
+  });
+  const keyRequests = useMemo(
+    () => (keyRequestData?.requests ?? []).filter((r) => r.canDecide),
+    [keyRequestData]
+  );
+  const refreshKeyRequests = () => qc.invalidateQueries({ queryKey: ['team-key-requests', team.id] });
+
+  const approve = useMutation({
+    mutationFn: (r: TeamKeyRequest) => approveKeyRequest(r, currentUser?.id),
+    onSuccess: (result, r) => {
+      const message = describeKeyApproval(result, r.requesterName || r.requesterEmail);
+      if (result === 'approved') {
+        refreshKeyRequests();
+        success(message);
+      } else {
+        toastError(message);
+      }
+    },
+    onError: () => toastError('Could not share the key.'),
+  });
+
+  const deny = useMutation({
+    mutationFn: (r: TeamKeyRequest) => teamsApi.denyKeyRequest(team.id, r.id, denyReason.trim() || undefined),
+    onSuccess: () => {
+      setDenying(null);
+      setDenyReason('');
+      refreshKeyRequests();
+      success('Request denied.');
+    },
+    onError: () => toastError('Could not deny the request.'),
+  });
+
   const canUpload = teamCan(team, 'uploadFile');
   const canDelete = teamCan(team, 'deleteFile');
   // `roleCan` rather than `teamCan`: archiving a team pauses its own content, and must not lock
@@ -254,7 +333,8 @@ export function FilesView({ team }: { team: Team }) {
   const canManageShares = roleCan(team.userRole, 'managePermissions');
 
   const folders = useMemo(() => data?.folders ?? [], [data]);
-  const files = useMemo(() => data?.files ?? [], [data]);
+  // The team's shared library (T4) is a file here too, but not one to list beside the others.
+  const files = useMemo(() => (data?.files ?? []).filter((f) => f.name !== TEAM_LIBRARY_NAME), [data]);
   const shared = useMemo(() => sharedData?.files ?? [], [sharedData]);
 
   // Folders first, as on My Drive; each group ordered by the current sort.
@@ -285,6 +365,10 @@ export function FilesView({ team }: { team: Team }) {
       return;
     }
     const file = files.find((f) => f.id === item.id);
+    if (file?.keyMissing) {
+      setKeyAsk({ fileId: file.id, name: file.name });
+      return;
+    }
     // No preview fallback: `PreviewModal` takes a `FileItem`, which a team row is not, and a file
     // with no editor is reached from the team's Drive listing like any other.
     if (file) routeForFile(file, router, { onPreviewFallback: () => {} });
@@ -292,6 +376,10 @@ export function FilesView({ team }: { team: Team }) {
 
   function openSharedItem(item: GridItem) {
     const file = shared.find((f) => f.fileId === item.id);
+    if (file?.keyMissing) {
+      setKeyAsk({ fileId: file.fileId, name: file.name });
+      return;
+    }
     if (file) {
       routeForFile({ id: file.fileId, name: file.name, mimeType: file.mimeType }, router, {
         onPreviewFallback: () => {},
@@ -347,6 +435,49 @@ export function FilesView({ team }: { team: Team }) {
           </div>
         )}
       </div>
+
+      {keyRequests.length > 0 && (
+        <div className={styles.storageSection}>
+          <Heading level={2} size="sm">
+            Key requests
+          </Heading>
+          <Text size="sm" color="secondary">
+            Members who joined after these files were added and cannot open them yet. Approving
+            shares the file&rsquo;s key with them from this device.
+          </Text>
+          <ul className={styles.sharingList} aria-label="Key requests">
+            {keyRequests.map((r) => {
+              const who = r.requesterName || r.requesterEmail;
+              return (
+                <li key={r.id} className={styles.sharingRow}>
+                  <KeyRound size={14} aria-hidden="true" />
+                  <span className={styles.sharingName}>
+                    {who} &middot; {r.fileName}
+                    {r.message ? <Text size="sm" color="secondary">&ldquo;{r.message}&rdquo;</Text> : null}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label={`Approve ${who}'s request for ${r.fileName}`}
+                    loading={approve.isPending && approve.variables?.id === r.id}
+                    onClick={() => approve.mutate(r)}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Deny ${who}'s request for ${r.fileName}`}
+                    onClick={() => setDenying(r)}
+                  >
+                    Deny
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {trail.length > 0 && (
         <div className={styles.breadcrumbs}>
@@ -473,6 +604,67 @@ export function FilesView({ team }: { team: Team }) {
             loading={createFolder.isPending}
           >
             Create
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal open={!!keyAsk} onClose={() => setKeyAsk(null)} title="Ask for the key" size="sm">
+        <ModalHeader title="Ask for the key" onClose={() => setKeyAsk(null)} />
+        <ModalBody>
+          <Text size="sm">
+            &ldquo;{keyAsk?.name}&rdquo; is encrypted, and it was added before you joined, so you do
+            not have its key yet. The team&rsquo;s owners and admins, and the file&rsquo;s owner, can
+            share it with you.
+          </Text>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="key-request-message">
+              Message (optional)
+            </label>
+            <Textarea
+              id="key-request-message"
+              value={keyMessage}
+              maxLength={500}
+              onChange={(e) => setKeyMessage(e.target.value)}
+            />
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setKeyAsk(null)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => keyAsk && requestKey.mutate({ fileId: keyAsk.fileId, message: keyMessage })}
+            loading={requestKey.isPending}
+          >
+            Request key
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal open={!!denying} onClose={() => setDenying(null)} title="Deny the request" size="sm">
+        <ModalHeader title="Deny the request" onClose={() => setDenying(null)} />
+        <ModalBody>
+          <Text size="sm">
+            {denying ? `${denying.requesterName || denying.requesterEmail} will be told their request for “${denying.fileName}” was denied.` : ''}
+          </Text>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="key-request-reason">
+              Reason (optional)
+            </label>
+            <Textarea
+              id="key-request-reason"
+              value={denyReason}
+              maxLength={500}
+              onChange={(e) => setDenyReason(e.target.value)}
+            />
+          </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setDenying(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={() => denying && deny.mutate(denying)} loading={deny.isPending}>
+            Deny
           </Button>
         </ModalFooter>
       </Modal>

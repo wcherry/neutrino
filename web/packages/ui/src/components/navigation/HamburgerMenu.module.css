@@ -30,10 +30,10 @@
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 300;
+  z-index: var(--z-modal-backdrop);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
   width: 200px;
   padding: 6px 0;
@@ -57,7 +57,7 @@
   padding: 7px 14px;
   border: none;
   background: none;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   cursor: pointer;
   text-align: left;
@@ -75,16 +75,16 @@
 }
 
 .item.danger {
-  color: #dc2626;
+  color: var(--palette-red-51);
 }
 
 .item.danger:hover:not(:disabled) {
-  background: #fef2f2;
+  background: var(--palette-red-97-2);
 }
 
 /* ── Shortcut label ── */
 .shortcut {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-muted);
   flex-shrink: 0;
 }
@@ -105,10 +105,10 @@
   position: absolute;
   top: -6px;
   left: calc(100% + 2px);
-  z-index: 310;
+  z-index: var(--z-layer-310);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
   min-width: 220px;
   padding: 6px 0;

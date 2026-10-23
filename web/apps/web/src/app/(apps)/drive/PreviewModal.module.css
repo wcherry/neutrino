@@ -1,7 +1,7 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: var(--z-sticky);
   background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
@@ -93,7 +93,7 @@
   justify-content: center;
   padding: var(--space-4);
   overflow: auto;
-  background: var(--color-surface-sunken, #0a0a0a);
+  background: var(--color-surface-sunken, var(--palette-gray-4));
 }
 
 .image {
@@ -118,7 +118,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: #000;
+  background: var(--palette-gray-0);
 }
 
 .video {
@@ -139,7 +139,7 @@
   font-size: 0.8125rem;
   line-height: 1.6;
   color: var(--color-text);
-  background: var(--color-surface-sunken, #0d0d0d);
+  background: var(--color-surface-sunken, var(--palette-gray-5));
   min-height: 100%;
   tab-size: 2;
 }
@@ -155,23 +155,23 @@
   color: var(--color-text);
 }
 .pre :global(.hljs-keyword),
-.pre :global(.hljs-selector-tag) { color: #c792ea; }
+.pre :global(.hljs-selector-tag) { color: var(--palette-purple-75); }
 .pre :global(.hljs-string),
-.pre :global(.hljs-attr) { color: #c3e88d; }
+.pre :global(.hljs-attr) { color: var(--palette-lime-73); }
 .pre :global(.hljs-number),
-.pre :global(.hljs-literal) { color: #f78c6c; }
+.pre :global(.hljs-literal) { color: var(--palette-red-70); }
 .pre :global(.hljs-comment),
-.pre :global(.hljs-quote) { color: #546e7a; font-style: italic; }
+.pre :global(.hljs-quote) { color: var(--palette-cyan-40); font-style: italic; }
 .pre :global(.hljs-title),
-.pre :global(.hljs-section) { color: #82aaff; }
+.pre :global(.hljs-section) { color: var(--palette-blue-75); }
 .pre :global(.hljs-type),
-.pre :global(.hljs-built_in) { color: #ffcb6b; }
+.pre :global(.hljs-built_in) { color: var(--palette-orange-71); }
 .pre :global(.hljs-variable),
-.pre :global(.hljs-template-variable) { color: #f07178; }
-.pre :global(.hljs-tag) { color: #f07178; }
-.pre :global(.hljs-name) { color: #f07178; }
-.pre :global(.hljs-attribute) { color: #c792ea; }
+.pre :global(.hljs-template-variable) { color: var(--palette-red-69); }
+.pre :global(.hljs-tag) { color: var(--palette-red-69); }
+.pre :global(.hljs-name) { color: var(--palette-red-69); }
+.pre :global(.hljs-attribute) { color: var(--palette-purple-75); }
 .pre :global(.hljs-symbol),
-.pre :global(.hljs-bullet) { color: #89ddff; }
-.pre :global(.hljs-addition) { color: #c3e88d; background: rgba(195, 232, 141, 0.08); }
-.pre :global(.hljs-deletion) { color: #f07178; background: rgba(240, 113, 120, 0.08); }
+.pre :global(.hljs-bullet) { color: var(--palette-cyan-77); }
+.pre :global(.hljs-addition) { color: var(--palette-lime-73); background: rgba(195, 232, 141, 0.08); }
+.pre :global(.hljs-deletion) { color: var(--palette-red-69); background: rgba(240, 113, 120, 0.08); }

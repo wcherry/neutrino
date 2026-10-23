@@ -1,5 +1,32 @@
 {
   "extends": "next/core-web-vitals",
   "plugins": ["@typescript-eslint"],
-  "ignorePatterns": [".next/**", "node_modules/**", "out/**"]
+  "ignorePatterns": [".next/**", "node_modules/**", "out/**"],
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "JSXAttribute[name.name='style'] Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "A literal colour in a style: use a token from @neutrino/tokens (a semantic one, or the matching --palette-* entry), so looks and themes can reach it."
+      },
+      {
+        "selector": "JSXAttribute[name.name='style'] TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "A literal colour in a style: use a token from @neutrino/tokens (a semantic one, or the matching --palette-* entry), so looks and themes can reach it."
+      },
+      {
+        "selector": "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.right.name='CSSProperties'] Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "A literal colour in a style object: use a token from @neutrino/tokens."
+      },
+      {
+        "selector": "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.name='CSSProperties'] Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "A literal colour in a style object: use a token from @neutrino/tokens."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/__tests__/**", "**/*.stories.tsx"],
+      "rules": { "no-restricted-syntax": "off" }
+    }
+  ]
 }

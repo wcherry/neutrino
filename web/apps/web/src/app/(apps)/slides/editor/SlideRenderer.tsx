@@ -184,7 +184,7 @@ export function SlideRenderer({
                 width: `${el.w}%`,
                 height: `${el.h}%`,
                 overflow: 'hidden',
-                background: '#000',
+                background: 'var(--palette-gray-0)',
                 ...animStyle,
               }}
             >

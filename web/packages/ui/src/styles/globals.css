@@ -1,7 +1,7 @@
 /* Global body defaults using design tokens */
 
 html {
-  font-size: 16px;
+  font-size: var(--text-base);
 }
 
 body {

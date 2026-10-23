@@ -3850,3 +3850,373 @@ fn a_team_colour_is_a_colour_and_nothing_else() {
     req.avatar_color = Some(None);
     assert!(f.service.update_team(&team.id, req, &owner).is_ok());
 }
+
+// ── Key requests ─────────────────────────────────────────────────────────────
+
+mod key_requests {
+    use super::*;
+    use crate::drive::teams::key_requests::{
+        CreateKeyRequestRequest, DenyKeyRequestRequest, EVENT_APPROVED, EVENT_DENIED,
+        EVENT_REQUESTED,
+    };
+    use crate::schema::file_key_refs;
+
+    fn seal(f: &Fixture, file_id: &str, user_id: &str) {
+        diesel::insert_into(file_key_refs::table)
+            .values((
+                file_key_refs::id.eq(format!("{file_id}-{user_id}")),
+                file_key_refs::file_id.eq(file_id),
+                file_key_refs::user_id.eq(user_id),
+                file_key_refs::encrypted_file_key.eq("sealed"),
+                file_key_refs::created_at.eq(chrono::Local::now().naive_local()),
+                file_key_refs::key_version.eq(1),
+            ))
+            .execute(&mut f.pool.get().expect("conn"))
+            .expect("insert key ref");
+    }
+
+    fn join(
+        f: &Fixture,
+        team_id: &str,
+        id: &str,
+        role: &str,
+        by: &AuthenticatedUser,
+    ) -> AuthenticatedUser {
+        let who = f.outsider(id);
+        f.service
+            .add_member(
+                team_id,
+                AddMemberRequest {
+                    email: who.email.clone(),
+                    role: role.into(),
+                },
+                by,
+            )
+            .expect("add member");
+        who
+    }
+
+    /// A team owned by `owner` with an encrypted file in it, an admin, a contributor who uploaded
+    /// nothing, and a late joiner with no key.
+    struct Setup {
+        f: Fixture,
+        team: String,
+        owner: AuthenticatedUser,
+        admin: AuthenticatedUser,
+        contributor: AuthenticatedUser,
+        late: AuthenticatedUser,
+    }
+
+    fn setup() -> Setup {
+        let f = Fixture::new();
+        let owner = user("owner", "owner@example.com");
+        let team = f.create_team("Ops", &owner).id;
+        f.add_file("file-1", "owner", "Plan.docx", 10);
+        f.service
+            .claim_file(
+                &team,
+                ClaimFileRequest {
+                    file_id: "file-1".into(),
+                    folder_id: None,
+                },
+                &owner,
+            )
+            .expect("claim");
+        seal(&f, "file-1", "owner");
+        let admin = join(&f, &team, "admin", "admin", &owner);
+        let contributor = join(&f, &team, "contrib", "contributor", &owner);
+        let late = join(&f, &team, "late", "viewer", &owner);
+        Setup {
+            f,
+            team,
+            owner,
+            admin,
+            contributor,
+            late,
+        }
+    }
+
+    fn ask(s: &Setup, who: &AuthenticatedUser) -> String {
+        let (r, _) =
+            s.f.service
+                .create_key_request(
+                    &s.team,
+                    CreateKeyRequestRequest {
+                        file_id: "file-1".into(),
+                        message: Some("  please ".into()),
+                    },
+                    who,
+                )
+                .expect("request");
+        r.id
+    }
+
+    #[test]
+    fn a_request_notifies_the_owners_and_admins_and_not_the_requester() {
+        let s = setup();
+        let (r, notice) =
+            s.f.service
+                .create_key_request(
+                    &s.team,
+                    CreateKeyRequestRequest {
+                        file_id: "file-1".into(),
+                        message: Some(" please ".into()),
+                    },
+                    &s.late,
+                )
+                .expect("request");
+        assert_eq!(r.status, "pending");
+        assert_eq!(r.message.as_deref(), Some("please"));
+        assert_eq!(r.file_name, "Plan.docx");
+        assert_eq!(notice.event_type, EVENT_REQUESTED);
+        let mut to = notice.recipients.clone();
+        to.sort();
+        assert_eq!(to, vec!["admin".to_string(), "owner".to_string()]);
+    }
+
+    #[test]
+    fn a_second_pending_request_or_one_for_a_key_already_held_is_refused() {
+        let s = setup();
+        ask(&s, &s.late);
+        let again = s.f.service.create_key_request(
+            &s.team,
+            CreateKeyRequestRequest {
+                file_id: "file-1".into(),
+                message: None,
+            },
+            &s.late,
+        );
+        assert_eq!(again.expect_err("duplicate").status, 409);
+        let held = s.f.service.create_key_request(
+            &s.team,
+            CreateKeyRequestRequest {
+                file_id: "file-1".into(),
+                message: None,
+            },
+            &s.owner,
+        );
+        assert_eq!(held.expect_err("already held").status, 409);
+    }
+
+    #[test]
+    fn a_file_outside_the_team_or_a_plaintext_one_cannot_be_asked_for() {
+        let s = setup();
+        s.f.add_file("mine", "late", "Mine.txt", 1);
+        let outside = s.f.service.create_key_request(
+            &s.team,
+            CreateKeyRequestRequest {
+                file_id: "mine".into(),
+                message: None,
+            },
+            &s.late,
+        );
+        assert_eq!(outside.expect_err("not a team file").status, 404);
+
+        s.f.add_file("plain", "owner", "Plain.txt", 1);
+        s.f.service
+            .claim_file(
+                &s.team,
+                ClaimFileRequest {
+                    file_id: "plain".into(),
+                    folder_id: None,
+                },
+                &s.owner,
+            )
+            .expect("claim");
+        let plain = s.f.service.create_key_request(
+            &s.team,
+            CreateKeyRequestRequest {
+                file_id: "plain".into(),
+                message: None,
+            },
+            &s.late,
+        );
+        assert_eq!(plain.expect_err("plaintext").status, 400);
+    }
+
+    #[test]
+    fn a_stranger_gets_the_teams_404() {
+        let s = setup();
+        let stranger = s.f.outsider("stranger");
+        let err = s.f.service.create_key_request(
+            &s.team,
+            CreateKeyRequestRequest {
+                file_id: "file-1".into(),
+                message: None,
+            },
+            &stranger,
+        );
+        assert_eq!(err.expect_err("stranger").status, 404);
+    }
+
+    #[test]
+    fn approval_waits_for_the_key_and_then_tells_the_requester() {
+        let s = setup();
+        let id = ask(&s, &s.late);
+
+        let early =
+            s.f.service
+                .approve_key_request(&s.team, &id, &s.admin)
+                .expect_err("no key yet");
+        assert_eq!(early.status, 409);
+        assert_eq!(early.code, "KEY_NOT_SHARED");
+
+        seal(&s.f, "file-1", "late");
+        let (r, notice) =
+            s.f.service
+                .approve_key_request(&s.team, &id, &s.admin)
+                .expect("approve");
+        assert_eq!(r.status, "approved");
+        assert_eq!(r.decided_by.as_deref(), Some("admin"));
+        assert_eq!(notice.event_type, EVENT_APPROVED);
+        assert_eq!(notice.recipients, vec!["late".to_string()]);
+
+        let twice =
+            s.f.service
+                .approve_key_request(&s.team, &id, &s.owner)
+                .expect_err("answered");
+        assert_eq!(twice.status, 409);
+    }
+
+    #[test]
+    fn a_denial_carries_its_reason_to_the_requester() {
+        let s = setup();
+        let id = ask(&s, &s.late);
+        let (r, notice) =
+            s.f.service
+                .deny_key_request(
+                    &s.team,
+                    &id,
+                    DenyKeyRequestRequest {
+                        reason: Some("Ask Sam first".into()),
+                    },
+                    &s.owner,
+                )
+                .expect("deny");
+        assert_eq!(r.status, "denied");
+        assert_eq!(r.reason.as_deref(), Some("Ask Sam first"));
+        assert_eq!(notice.event_type, EVENT_DENIED);
+        assert_eq!(notice.payload["reason"], "Ask Sam first");
+
+        let none = ask(&s, &s.late);
+        let (r, _) =
+            s.f.service
+                .deny_key_request(&s.team, &none, DenyKeyRequestRequest::default(), &s.owner)
+                .expect("deny");
+        assert!(r.reason.is_none());
+    }
+
+    #[test]
+    fn only_managers_and_the_files_owner_can_answer_and_never_the_requester() {
+        let s = setup();
+        let id = ask(&s, &s.late);
+        let err =
+            s.f.service
+                .deny_key_request(
+                    &s.team,
+                    &id,
+                    DenyKeyRequestRequest::default(),
+                    &s.contributor,
+                )
+                .expect_err("contributor");
+        assert_eq!(err.status, 403);
+        let err =
+            s.f.service
+                .deny_key_request(&s.team, &id, DenyKeyRequestRequest::default(), &s.late)
+                .expect_err("requester");
+        assert_eq!(err.status, 403);
+
+        // A contributor who owns the file may answer requests for it.
+        s.f.add_file("theirs", "contrib", "Theirs.txt", 1);
+        s.f.service
+            .claim_file(
+                &s.team,
+                ClaimFileRequest {
+                    file_id: "theirs".into(),
+                    folder_id: None,
+                },
+                &s.contributor,
+            )
+            .expect("claim");
+        seal(&s.f, "theirs", "contrib");
+        let (r, notice) =
+            s.f.service
+                .create_key_request(
+                    &s.team,
+                    CreateKeyRequestRequest {
+                        file_id: "theirs".into(),
+                        message: None,
+                    },
+                    &s.late,
+                )
+                .expect("request");
+        assert!(notice.recipients.contains(&"contrib".to_string()));
+        let listed =
+            s.f.service
+                .list_key_requests(&s.team, None, &s.contributor)
+                .expect("list");
+        assert_eq!(
+            listed.total, 1,
+            "a non-manager sees only requests on their files"
+        );
+        assert!(listed.requests[0].can_decide);
+        s.f.service
+            .deny_key_request(
+                &s.team,
+                &r.id,
+                DenyKeyRequestRequest::default(),
+                &s.contributor,
+            )
+            .expect("owner denies");
+    }
+
+    #[test]
+    fn the_library_says_which_files_the_caller_has_no_key_to() {
+        let s = setup();
+        let listed = |who: &AuthenticatedUser| {
+            s.f.service
+                .list_library(&s.team, None, who)
+                .expect("library")
+                .files
+                .into_iter()
+                .find(|f| f.id == "file-1")
+                .expect("file-1")
+                .key_missing
+        };
+        assert!(!listed(&s.owner));
+        assert!(listed(&s.late));
+        seal(&s.f, "file-1", "late");
+        assert!(!listed(&s.late));
+    }
+
+    #[test]
+    fn the_list_shows_managers_everything_and_requesters_their_own() {
+        let s = setup();
+        ask(&s, &s.late);
+        let admin =
+            s.f.service
+                .list_key_requests(&s.team, None, &s.admin)
+                .expect("admin list");
+        assert_eq!(admin.total, 1);
+        assert!(admin.requests[0].can_decide);
+        assert_eq!(admin.requests[0].requester_name, "late");
+
+        let mine =
+            s.f.service
+                .list_key_requests(&s.team, None, &s.late)
+                .expect("own list");
+        assert_eq!(mine.total, 1);
+        assert!(!mine.requests[0].can_decide);
+
+        let other =
+            s.f.service
+                .list_key_requests(&s.team, None, &s.contributor)
+                .expect("other list");
+        assert_eq!(other.total, 0);
+
+        let bad =
+            s.f.service
+                .list_key_requests(&s.team, Some("declined"), &s.admin);
+        assert_eq!(bad.expect_err("bad status").status, 400);
+    }
+}

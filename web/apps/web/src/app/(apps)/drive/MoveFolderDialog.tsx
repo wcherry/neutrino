@@ -178,7 +178,7 @@ export function MoveFolderDialog({
                   <Folder
                     size={16}
                     className={styles.folderIcon}
-                    style={{ color: folder.color ?? 'var(--color-amber, #d97706)' }}
+                    style={{ color: folder.color ?? 'var(--color-amber, var(--palette-orange-44))' }}
                   />
                   <Text size="sm" truncate>{folder.name}</Text>
                   <ChevronRight size={14} className={styles.folderChevron} />

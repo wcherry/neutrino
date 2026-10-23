@@ -31,6 +31,7 @@ import {
 import { roleCan, teamCan } from '../permissions';
 import { AVATAR_COLORS } from '../teamColors';
 import { formatBytes, formatLimit, usagePercent } from '../../admin/bytes';
+import { TeamSharingSection } from './TeamSharingSection';
 import styles from './space.module.css';
 
 /**
@@ -201,6 +202,7 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
       )}
 
       {canManage && <MemberDefaultsSection team={team} />}
+      {canManage && <TeamSharingSection team={team} />}
 
       <StorageSection team={team} />
 

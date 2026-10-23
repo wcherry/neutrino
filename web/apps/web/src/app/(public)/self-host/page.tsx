@@ -23,9 +23,9 @@ function Code({ children, title = 'Terminal' }: { children: string; title?: stri
   return (
     <div className={styles.codeWindow}>
       <div className={styles.codeWindowBar}>
-        <span className={styles.dot} style={{ background: '#ff5f57' }} />
-        <span className={styles.dot} style={{ background: '#febc2e' }} />
-        <span className={styles.dot} style={{ background: '#28c840' }} />
+        <span className={styles.dot} style={{ background: 'var(--palette-red-67)' }} />
+        <span className={styles.dot} style={{ background: 'var(--palette-amber-59)' }} />
+        <span className={styles.dot} style={{ background: 'var(--palette-green-47)' }} />
         <span className={styles.codeWindowTitle}>{title}</span>
       </div>
       <pre className={styles.code}><code>{children}</code></pre>

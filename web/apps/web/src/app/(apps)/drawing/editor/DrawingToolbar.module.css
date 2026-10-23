@@ -7,8 +7,8 @@
   align-items: center;
   padding: 8px 0;
   gap: 2px;
-  background: var(--editor-panel-bg, #ffffff);
-  border-right: var(--editor-panel-rule, 1px solid #e5e7eb);
+  background: var(--editor-panel-bg, var(--palette-gray-100));
+  border-right: var(--editor-panel-rule, 1px solid var(--color-neutral-200));
   flex-shrink: 0;
   overflow-y: auto;
 }
@@ -23,24 +23,24 @@
   border-radius: var(--editor-tool-radius, 6px);
   cursor: pointer;
   background: transparent;
-  color: var(--editor-tool-fg, #374151);
+  color: var(--editor-tool-fg, var(--color-neutral-700));
   transition: background 0.1s;
 }
 
 .btn:not(.active):hover {
   background: var(--editor-tool-hover-bg, transparent);
-  color: var(--editor-tool-hover-fg, #374151);
+  color: var(--editor-tool-hover-fg, var(--color-neutral-700));
 }
 
 .active {
-  background: var(--editor-rail-active-bg, var(--color-primary, #2563eb));
-  color: var(--editor-rail-active-fg, #ffffff);
+  background: var(--editor-rail-active-bg, var(--color-primary, var(--palette-blue-53)));
+  color: var(--editor-rail-active-fg, var(--palette-gray-100));
 }
 
 .divider {
   width: 24px;
   height: 1px;
-  background: var(--editor-divider, #e5e7eb);
+  background: var(--editor-divider, var(--color-neutral-200));
   margin: 4px auto;
   flex-shrink: 0;
 }

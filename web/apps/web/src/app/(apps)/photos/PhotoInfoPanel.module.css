@@ -11,7 +11,7 @@
   gap: var(--space-5);
   padding: var(--space-4);
   overflow-y: auto;
-  z-index: 100;
+  z-index: var(--z-dropdown);
   box-shadow: var(--shadow-lg);
 }
 
@@ -139,8 +139,8 @@
   padding: 0 var(--space-1);
   border-radius: 999px;
   background-color: var(--color-accent);
-  color: #fff;
-  font-size: 10px;
+  color: var(--palette-gray-100);
+  font-size: var(--font-size-10);
   font-weight: 600;
   line-height: 1;
 }

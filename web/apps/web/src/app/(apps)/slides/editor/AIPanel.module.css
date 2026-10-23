@@ -109,11 +109,11 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3);
-  background: color-mix(in srgb, var(--color-danger, #dc2626) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-danger, #dc2626) 30%, transparent);
+  background: color-mix(in srgb, var(--color-danger, var(--palette-red-51)) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger, var(--palette-red-51)) 30%, transparent);
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
-  color: var(--color-danger, #dc2626);
+  color: var(--color-danger, var(--palette-red-51));
 }
 
 /* Smart Compose */

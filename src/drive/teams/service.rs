@@ -136,9 +136,9 @@ fn parse_visibility(value: &str) -> Result<Visibility, ApiError> {
 }
 
 pub struct TeamsService {
-    repo: Arc<TeamsRepository>,
+    pub(super) repo: Arc<TeamsRepository>,
     activity: Arc<ActivityService>,
-    gate: FeatureGate,
+    pub(super) gate: FeatureGate,
 }
 
 impl TeamsService {
@@ -154,7 +154,7 @@ impl TeamsService {
         }
     }
 
-    fn now() -> NaiveDateTime {
+    pub(super) fn now() -> NaiveDateTime {
         chrono::Local::now().naive_local()
     }
 
@@ -166,7 +166,7 @@ impl TeamsService {
     /// deployment, not membership of every team on it, and a team's wiki is exactly the kind of
     /// content where the difference matters. Administration reaches team content through the admin
     /// surfaces, which log the access.
-    fn resolve(&self, team_id: &str, user: &AuthenticatedUser) -> Result<(Team, Role), ApiError> {
+    pub(super) fn resolve(&self, team_id: &str, user: &AuthenticatedUser) -> Result<(Team, Role), ApiError> {
         let team = self
             .repo
             .find(team_id)?
@@ -192,7 +192,7 @@ impl TeamsService {
     }
 
     /// Resolve, then check one action against the caller's role and the team's archived state.
-    fn authorize(
+    pub(super) fn authorize(
         &self,
         team_id: &str,
         user: &AuthenticatedUser,
@@ -238,7 +238,7 @@ impl TeamsService {
         ))
     }
 
-    fn log(&self, team: &Team, user: &AuthenticatedUser, action: &str, detail: serde_json::Value) {
+    pub(super) fn log(&self, team: &Team, user: &AuthenticatedUser, action: &str, detail: serde_json::Value) {
         // Logged against the team's id in the shared activity table with `resource_type` set to
         // `team`, so the existing retention, export and admin tooling covers team activity without
         // learning about a second table.
@@ -947,7 +947,7 @@ impl TeamsService {
     /// the display name, which the token does not carry and which a member list needs — a row
     /// showing an email where every other row shows a name reads as a bug. The email stands in when
     /// there is no row, the same fallback `create_team` uses.
-    fn identify(&self, user: &AuthenticatedUser) -> Result<(String, String, String), ApiError> {
+    pub(super) fn identify(&self, user: &AuthenticatedUser) -> Result<(String, String, String), ApiError> {
         let email = user.email.trim().to_lowercase();
         let name = self
             .repo
@@ -1625,6 +1625,8 @@ impl TeamsService {
 
         let folders = self.repo.list_team_folders(team_id, folder_id)?;
         let files = self.repo.list_team_files(team_id, folder_id)?;
+        let ids: Vec<String> = files.iter().map(|f| f.id.clone()).collect();
+        let missing = self.repo.files_missing_key(&ids, &user.user_id)?;
 
         Ok(TeamLibraryResponse {
             folders: folders
@@ -1637,7 +1639,16 @@ impl TeamsService {
                     updated_at: f.updated_at.to_string(),
                 })
                 .collect(),
-            files: files.into_iter().map(Self::team_file_response).collect(),
+            files: files
+                .into_iter()
+                .map(|f| {
+                    let key_missing = missing.contains(&f.id);
+                    TeamFileResponse {
+                        key_missing,
+                        ..Self::team_file_response(f)
+                    }
+                })
+                .collect(),
             storage_used_bytes: team.storage_used_bytes,
         })
     }
@@ -1966,6 +1977,8 @@ impl TeamsService {
             shared_by: share.shared_by,
             shared_by_name: name,
             shared_at: share.created_at.to_string(),
+            // The sharer is the owner, who holds the key.
+            key_missing: false,
         })
     }
 
@@ -1983,11 +1996,13 @@ impl TeamsService {
         self.require_transfers()?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
-        let files: Vec<TeamSharedFileResponse> = self
-            .repo
-            .list_team_file_shares(team_id)?
+        let shares = self.repo.list_team_file_shares(team_id)?;
+        let ids: Vec<String> = shares.iter().map(|(_, f, _)| f.id.clone()).collect();
+        let missing = self.repo.files_missing_key(&ids, &user.user_id)?;
+        let files: Vec<TeamSharedFileResponse> = shares
             .into_iter()
             .map(|(share, file, sharer_name)| TeamSharedFileResponse {
+                key_missing: missing.contains(&file.id),
                 file_id: file.id,
                 name: file.name,
                 size_bytes: file.size_bytes,
@@ -2475,6 +2490,7 @@ impl TeamsService {
             uploaded_by: file.user_id,
             created_at: file.created_at.to_string(),
             updated_at: file.updated_at.to_string(),
+            key_missing: false,
         }
     }
 }

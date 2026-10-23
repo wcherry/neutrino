@@ -22,7 +22,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s;
@@ -33,7 +33,7 @@
 }
 
 .heading {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
@@ -41,7 +41,7 @@
 
 .subheading {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   max-width: 640px;
 }
@@ -71,22 +71,22 @@
   padding: 40px;
   justify-content: center;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-sm);
   border: 1px dashed var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 /* ── Help ────────────────────────────────────────────────────────────────── */
 .helpBox {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   padding: 16px 20px;
   background: var(--color-bg-subtle);
 }
 
 .helpHeading {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text);
 }
@@ -94,20 +94,20 @@
 .helpList {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.7;
   color: var(--color-text-secondary);
 }
 
 .helpNote {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
 .mono {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* ── Selected archive ────────────────────────────────────────────────────── */
@@ -116,7 +116,7 @@
   align-items: center;
   gap: 12px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   padding: 14px 16px;
 }
 
@@ -126,14 +126,14 @@
 }
 
 .archiveName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text);
   word-break: break-all;
 }
 
 .archiveMeta {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   margin-top: 2px;
 }
@@ -145,7 +145,7 @@
   color: var(--color-text-secondary);
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   display: inline-flex;
   align-self: flex-start;
   transition: background-color 0.15s, color 0.15s;
@@ -168,7 +168,7 @@
   align-items: center;
   gap: 12px;
   border: 1px solid var(--color-primary);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   padding: 14px 16px;
   background: var(--color-primary-subtle, rgb(37 99 235 / 6%));
 }
@@ -202,13 +202,13 @@
 }
 
 .productName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text);
 }
 
 .productDest {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }
 
@@ -226,7 +226,7 @@
 
 .caveat {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
@@ -244,7 +244,7 @@
   gap: 12px;
   align-items: flex-start;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   padding: 20px;
 }
 
@@ -253,7 +253,7 @@
 }
 
 .progressCurrent {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   min-height: 18px;
   overflow-wrap: anywhere;
@@ -272,13 +272,13 @@
 }
 
 .resultTitle {
-  font-size: 16px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--color-text);
 }
 
 .resultCounts {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   margin-top: 2px;
 }
@@ -287,7 +287,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
 }
 
@@ -305,7 +305,7 @@
 
 .listHeading {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -318,7 +318,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -345,11 +345,11 @@
   gap: 4px;
   flex-shrink: 0;
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
 }
 
@@ -360,13 +360,13 @@
 
 .details {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
 }
 
 .detailsSummary {
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text);
   cursor: pointer;

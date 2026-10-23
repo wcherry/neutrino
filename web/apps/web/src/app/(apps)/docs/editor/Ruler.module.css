@@ -1,6 +1,6 @@
 .hRuler {
   height: 20px;
-  background: #ffffff;
+  background: var(--palette-gray-100);
   position: relative;
   flex-shrink: 0;
   overflow: hidden;
@@ -12,12 +12,12 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  background: #e8eaed;
+  background: var(--palette-blue-92);
   pointer-events: none;
 }
 
 .vRulerOuter {
-  background: #f1f3f4;
+  background: var(--palette-sky-95);
   user-select: none;
   cursor: default;
 }

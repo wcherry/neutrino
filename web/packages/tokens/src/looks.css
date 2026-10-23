@@ -50,7 +50,7 @@
 
   --paper-bg: #ffffff;
   --paper-shadow: var(--shadow-md);
-  --paper-radius: 0px;
+  --paper-radius: calc(0px * var(--radius-scale));
 
   --glass-bg: var(--color-surface-overlay);
   --glass-border: var(--color-border);
@@ -65,7 +65,7 @@
   --surface-ground: #ffffff;
   --surface-region: transparent;
   --region-border: 0;
-  --region-radius: 0px;
+  --region-radius: calc(0px * var(--radius-scale));
   --region-shadow: none;
   --region-gap: 0px;
 
@@ -82,7 +82,7 @@
 
   --paper-bg: #ffffff;
   --paper-shadow: none;
-  --paper-radius: 0px;
+  --paper-radius: calc(0px * var(--radius-scale));
 
   --glass-bg: rgb(255 255 255 / 0.74);
   --glass-border: rgb(22 24 29 / 0.08);
@@ -97,7 +97,7 @@
   --surface-ground: #eef0f3;
   --surface-region: #ffffff;
   --region-border: 1px solid #e3e6eb;
-  --region-radius: 14px;
+  --region-radius: calc(14px * var(--radius-scale));
   --region-shadow: 0 1px 2px rgb(22 24 29 / 0.04), 0 6px 20px rgb(22 24 29 / 0.05);
   --region-gap: 10px;
 
@@ -114,7 +114,7 @@
 
   --paper-bg: #ffffff;
   --paper-shadow: 0 1px 2px rgb(22 24 29 / 0.05), 0 10px 30px rgb(22 24 29 / 0.07);
-  --paper-radius: 8px 8px 0 0;
+  --paper-radius: calc(8px * var(--radius-scale)) calc(8px * var(--radius-scale)) 0 0;
 
   --glass-bg: rgb(255 255 255 / 0.82);
   --glass-border: rgb(22 24 29 / 0.08);
@@ -129,7 +129,7 @@
   --surface-ground: linear-gradient(180deg, var(--app-wash-from) 0px, var(--app-wash-to) 700px);
   --surface-region: transparent;
   --region-border: 0;
-  --region-radius: 0px;
+  --region-radius: calc(0px * var(--radius-scale));
   --region-shadow: none;
   --region-gap: 0px;
 
@@ -146,7 +146,7 @@
 
   --paper-bg: transparent;
   --paper-shadow: none;
-  --paper-radius: 0px;
+  --paper-radius: calc(0px * var(--radius-scale));
 
   --glass-bg: rgb(246 247 255 / 0.7);
   --glass-border: color-mix(in srgb, var(--app-color) 16%, transparent);
@@ -279,10 +279,10 @@
 [data-look="lightflow"],
 [data-look="precision"],
 [data-look="blended"] {
-  --control-radius: 10px;
+  --control-radius: calc(10px * var(--radius-scale));
   --accent-ui: var(--brand-accent);
-  --menu-radius: 12px;
-  --dialog-radius: 16px;
+  --menu-radius: calc(12px * var(--radius-scale));
+  --dialog-radius: calc(16px * var(--radius-scale));
 
   --button-fg: var(--color-text-primary);
   --ghost-fg: var(--color-text-secondary);
@@ -515,7 +515,7 @@
   --list-row-rule: 1px solid var(--color-border);
   --list-row-pad: var(--space-3) var(--space-4);
   --list-row-height: auto;
-  --list-row-radius: 0px;
+  --list-row-radius: calc(0px * var(--radius-scale));
   --list-row-hover: var(--color-bg-subtle);
   --list-row-selected: color-mix(in srgb, var(--color-accent) 8%, transparent);
   --file-tile-bg: var(--color-bg-subtle);
@@ -568,13 +568,13 @@
 [data-look="blended"] {
   --list-frame-border: 0;
   --list-frame-bg: transparent;
-  --list-frame-radius: 0px;
+  --list-frame-radius: calc(0px * var(--radius-scale));
   --list-header-bg: transparent;
   --list-header-rule: var(--rule);
   --list-row-rule: var(--row-rule);
   --list-row-pad: 0 10px;
   --list-row-height: var(--row-height);
-  --list-row-radius: 8px;
+  --list-row-radius: calc(8px * var(--radius-scale));
   --list-row-hover: var(--button-bg-hover);
   --list-row-selected: var(--selected-bg);
   --file-tile-bg: transparent;
@@ -584,10 +584,10 @@
   --card-frame-border-hover: var(--button-border-hover);
   --card-frame-shadow-hover: none;
   --card-frame-lift: 0px;
-  --card-frame-radius: 12px;
+  --card-frame-radius: calc(12px * var(--radius-scale));
   --card-frame-pad: 6px;
   --card-preview-bg: #f4f5f7;
-  --card-preview-radius: 8px;
+  --card-preview-radius: calc(8px * var(--radius-scale));
   --view-toggle-bg: transparent;
   --view-toggle-border: 0;
   --view-btn-active-bg: var(--chip-bg-active);
@@ -672,12 +672,12 @@
   --editor-toolbar-bg: rgb(22 24 29 / 0.035);
   --editor-toolbar-border: 0;
   --editor-toolbar-rule: none;
-  --editor-toolbar-radius: 10px;
+  --editor-toolbar-radius: calc(10px * var(--radius-scale));
   --editor-toolbar-shadow: none;
   --editor-toolbar-filter: none;
   --editor-toolbar-margin: 2px 12px 6px;
   --editor-toolbar-padding: 3px 6px;
-  --editor-tool-radius: 7px;
+  --editor-tool-radius: calc(7px * var(--radius-scale));
   --editor-tool-fg: #4a5160;
   --editor-tool-hover-bg: rgb(22 24 29 / 0.06);
   --editor-tool-hover-fg: #16181d;
@@ -688,7 +688,7 @@
   --editor-divider: rgb(22 24 29 / 0.09);
   --editor-field-bg: transparent;
   --editor-field-border: rgb(22 24 29 / 0.12);
-  --editor-field-radius: 7px;
+  --editor-field-radius: calc(7px * var(--radius-scale));
   --editor-ground: #f5f6f8;
   --editor-status-bg: transparent;
   --editor-status-rule: none;
@@ -707,7 +707,7 @@
   --editor-primary-border: 1px solid var(--button-border-rest);
   --editor-primary-hover-bg: var(--button-bg-hover);
   --editor-paper-shadow: 0 0 0 1px rgb(22 24 29 / 0.06), 0 2px 10px rgb(22 24 29 / 0.04);
-  --editor-paper-radius: 4px;
+  --editor-paper-radius: calc(4px * var(--radius-scale));
   /* A secondary bar under the toolbar (Docs' editing mode): quiet, not a yellow band. */
   --editor-subbar-bg: transparent;
   --editor-subbar-rule: none;
@@ -719,14 +719,14 @@
   --editor-formula-bg: transparent;
   --editor-formula-border: 1px solid rgb(22 24 29 / 0.1);
   --editor-formula-rule: 1px solid rgb(22 24 29 / 0.1);
-  --editor-formula-radius: 8px;
+  --editor-formula-radius: calc(8px * var(--radius-scale));
   --editor-formula-margin: 0 12px 8px;
   --editor-formula-overflow: hidden;
   --editor-name-box-weight: 600;
   --editor-name-box-fg: var(--text-1, #16181d);
   --editor-grid-line: #e8eaee;
   --editor-tab-rule: 0;
-  --editor-tab-radius: 0 0 8px 8px;
+  --editor-tab-radius: 0 0 calc(8px * var(--radius-scale)) calc(8px * var(--radius-scale));
   --editor-tab-active-bg: #ffffff;
   --editor-tab-active-fg: var(--brand-accent);
   --editor-tab-active-weight: 600;
@@ -735,13 +735,13 @@
 
 [data-look="precision"] {
   --editor-paper-shadow: var(--paper-shadow);
-  --editor-paper-radius: 8px;
+  --editor-paper-radius: calc(8px * var(--radius-scale));
   --editor-primary-border: 1px solid transparent;
   --editor-primary-hover-bg: var(--brand-accent-hover);
   --editor-toolbar-bg: #ffffff;
   --editor-toolbar-border: 1px solid #e3e6eb;
   --editor-toolbar-rule: 1px solid #e3e6eb;
-  --editor-toolbar-radius: 12px;
+  --editor-toolbar-radius: calc(12px * var(--radius-scale));
   --editor-toolbar-shadow: 0 1px 2px rgb(22 24 29 / 0.04), 0 4px 14px rgb(22 24 29 / 0.04);
   --editor-toolbar-margin: 2px 10px 8px;
   --editor-ground: #eef0f3;
@@ -792,6 +792,43 @@
 [data-look="blended"][data-theme="dark"] {
   --editor-toolbar-bg: var(--glass-bg);
   --editor-ground: transparent;
+}
+
+/* ── Screens outside the shell's regions (look-and-feel roadmap phase 6, LF6) ─
+ * Primary actions, selected states and the sign-in card on the remaining
+ * screens — Settings, admin, profile, Calendar, dialogs, the public pages.
+ * New looks only, read as `var(--screen-…, <classic value>)` like the editor
+ * group above: the classic look keeps what it drew.
+ */
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  /* The flows draw no filled buttons (§2): a primary action is accent text on a quiet ring. */
+  --screen-primary-bg: transparent;
+  --screen-primary-fg: var(--brand-accent);
+  --screen-primary-ring: inset 0 0 0 1px color-mix(in srgb, var(--brand-accent) 35%, transparent);
+  --screen-primary-hover-bg: color-mix(in srgb, var(--brand-accent) 8%, transparent);
+  /* Selection is a pale accent tint in every new look, as in the toolbars. */
+  --screen-selected-bg: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  --screen-selected-fg: var(--brand-accent);
+  --screen-selected-border: color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  --screen-ground: var(--surface-ground);
+  --screen-card-bg: var(--glass-bg);
+  --screen-card-border: 1px solid var(--glass-border);
+  --screen-card-shadow: var(--glass-shadow);
+  --screen-card-filter: var(--glass-filter);
+}
+
+[data-look="precision"] {
+  /* Precision fills its primary actions (§3). */
+  --screen-primary-bg: var(--brand-accent);
+  --screen-primary-fg: #ffffff;
+  --screen-primary-ring: none;
+  --screen-primary-hover-bg: var(--brand-accent-hover);
+  --screen-card-bg: var(--surface-region);
+  --screen-card-border: var(--region-border);
+  --screen-card-shadow: var(--region-shadow);
+  --screen-card-filter: none;
 }
 
 /* Translucency is a preference too: with it reduced, every frosted surface

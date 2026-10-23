@@ -26,20 +26,20 @@ export function ThemePreview({ theme }: { theme: SlideTheme }) {
       {/* Title bar */}
       <div style={{
         position: 'absolute', top: '22%', left: '10%', right: '10%', height: '14%',
-        background: theme.primaryColor, borderRadius: 2,
+        background: theme.primaryColor, borderRadius: 'calc(2px * var(--radius-scale))',
       }} />
       {/* Content lines */}
       <div style={{
         position: 'absolute', top: '44%', left: '10%', right: '22%', height: '9%',
-        background: theme.accentColor, opacity: 0.75, borderRadius: 1,
+        background: theme.accentColor, opacity: 0.75, borderRadius: 'calc(1px * var(--radius-scale))',
       }} />
       <div style={{
         position: 'absolute', top: '58%', left: '10%', right: '32%', height: '9%',
-        background: theme.accentColor, opacity: 0.5, borderRadius: 1,
+        background: theme.accentColor, opacity: 0.5, borderRadius: 'calc(1px * var(--radius-scale))',
       }} />
       <div style={{
         position: 'absolute', top: '72%', left: '10%', right: '27%', height: '9%',
-        background: theme.accentColor, opacity: 0.35, borderRadius: 1,
+        background: theme.accentColor, opacity: 0.35, borderRadius: 'calc(1px * var(--radius-scale))',
       }} />
     </div>
   );

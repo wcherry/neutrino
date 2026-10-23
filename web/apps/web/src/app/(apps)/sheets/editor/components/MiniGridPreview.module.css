@@ -2,7 +2,7 @@
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 11px;
+    font-size: var(--font-size-11);
 }
 
 .headerCell {
@@ -27,7 +27,7 @@
 }
 
 :global([data-theme="dark"]) .headerCell {
-    background: var(--color-bg-secondary, #1e293b);
+    background: var(--color-bg-secondary, var(--palette-blue-17));
     color: var(--color-text);
     border-color: var(--color-border);
 }

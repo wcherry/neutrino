@@ -47,6 +47,7 @@ const USER_ORG: Scopes = Scopes { user: true, org: true, team: false };
 const USER_ORG_TEAM: Scopes = Scopes { user: true, org: true, team: true };
 const USER_TEAM: Scopes = Scopes { user: true, org: false, team: true };
 const ORG: Scopes = Scopes { user: false, org: true, team: false };
+const TEAM: Scopes = Scopes { user: false, org: false, team: true };
 
 #[derive(Debug, Clone, Copy)]
 pub struct Spec {
@@ -67,6 +68,8 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "appearance.theme", kind: Kind::Str { max_length: 80, pattern: Some(THEME_PATTERN) }, scopes: USER_ORG },
     Spec { key: "appearance.look", kind: Kind::Enum(&["classic", "lightflow", "precision", "blended"]), scopes: USER_ORG },
     Spec { key: "appearance.density", kind: Kind::Enum(&["compact", "comfortable", "spacious"]), scopes: USER_ORG_TEAM },
+    Spec { key: "appearance.shape", kind: Kind::Enum(&["sharper", "default", "rounder"]), scopes: USER_ORG_TEAM },
+    Spec { key: "appearance.font", kind: Kind::Str { max_length: 80, pattern: Some(r#"^[^'"<>;{}\\]{0,80}$"#) }, scopes: USER_ORG_TEAM },
     Spec { key: "appearance.textSize", kind: Kind::Enum(&["sm", "md", "lg"]), scopes: USER_ORG },
     Spec { key: "appearance.accent", kind: Kind::Str { max_length: 7, pattern: Some(ACCENT_PATTERN) }, scopes: USER_ORG },
     Spec { key: "a11y.reduceMotion", kind: Kind::Enum(&["system", "on", "off"]), scopes: USER },
@@ -89,6 +92,9 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "teamSpace.sortDirection", kind: Kind::Enum(&["asc", "desc"]), scopes: USER_TEAM },
     Spec { key: "listing.views", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
     Spec { key: "editor.toolbars", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
+    Spec { key: "team.pins", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
+    Spec { key: "team.commands", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
+    Spec { key: "team.library", kind: Kind::Object { max_bytes: 1024 }, scopes: TEAM },
     Spec { key: "drive.landing", kind: Kind::Enum(&["drive", "recent", "starred"]), scopes: USER_ORG },
 ];
 

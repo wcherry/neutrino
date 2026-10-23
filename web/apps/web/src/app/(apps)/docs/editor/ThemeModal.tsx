@@ -52,11 +52,11 @@ export function ThemeModal({ currentTheme, onSave, onClose }: ThemeModalProps) {
               key={theme.id}
               onClick={() => setSelected(theme.id)}
               style={{
-                border: selected === theme.id ? '2px solid #1a73e8' : '2px solid var(--color-border, #e0e0e0)',
-                borderRadius: 8,
+                border: selected === theme.id ? '2px solid var(--palette-sky-51)' : '2px solid var(--color-border, var(--palette-gray-88))',
+                borderRadius: 'calc(8px * var(--radius-scale))',
                 padding: 12,
                 cursor: 'pointer',
-                background: selected === theme.id ? '#e8f0fe' : 'var(--color-bg, #ffffff)',
+                background: selected === theme.id ? 'var(--palette-blue-95)' : 'var(--color-bg, var(--palette-gray-100))',
                 textAlign: 'left',
                 transition: 'border-color 0.15s, background 0.15s',
               }}
@@ -64,10 +64,10 @@ export function ThemeModal({ currentTheme, onSave, onClose }: ThemeModalProps) {
               <div style={{ ...theme.previewStyle, fontSize: 14, marginBottom: 4 }}>
                 Heading
               </div>
-              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text, #202124)', marginBottom: 2 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text, var(--palette-gray-13))', marginBottom: 2 }}>
                 {theme.label}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted, #5f6368)' }}>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted, var(--palette-gray-39))' }}>
                 {theme.description}
               </div>
             </button>
@@ -78,7 +78,7 @@ export function ThemeModal({ currentTheme, onSave, onClose }: ThemeModalProps) {
           <button className={styles.exportBtn} onClick={onClose}>Cancel</button>
           <button
             className={styles.exportBtn}
-            style={{ background: '#1a73e8', color: 'white', border: 'none' }}
+            style={{ background: 'var(--palette-sky-51)', color: 'white', border: 'none' }}
             onClick={() => { onSave(selected); onClose(); }}
           >
             Apply

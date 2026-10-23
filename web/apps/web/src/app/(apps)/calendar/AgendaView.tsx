@@ -42,7 +42,7 @@ export default function AgendaView({
 
   if (daysWithEvents.length === 0) {
     return (
-      <div style={{ textAlign: 'center', paddingTop: 60, color: 'var(--color-text-tertiary, #9ca3af)' }}>
+      <div style={{ textAlign: 'center', paddingTop: 60, color: 'var(--color-text-tertiary, var(--color-neutral-400))' }}>
         <CalendarDays size={40} strokeWidth={1.5} style={{ margin: '0 auto 12px' }} />
         <p>No events this month.</p>
       </div>

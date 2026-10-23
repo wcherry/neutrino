@@ -6,6 +6,20 @@ export function notificationLabel(n: TopbarNotification): string {
   const type = payload.resourceType === 'folder' ? 'folder' : 'file';
   const name = payload.resourceName;
 
+  // Team key requests (a member who joined after a file was added asks for its key).
+  const file = name ? `"${name}"` : 'a file';
+  const team = payload.teamName ? ` in ${payload.teamName}` : '';
+  if (n.eventType === 'team_key_requested') {
+    return `Someone${team} asked for the key to ${file}`;
+  }
+  if (n.eventType === 'team_key_approved') {
+    return `You can now open ${file}${team}`;
+  }
+  if (n.eventType === 'team_key_denied') {
+    const reason = payload.reason ? `: ${payload.reason}` : '';
+    return `Your request for the key to ${file}${team} was denied${reason}`;
+  }
+
   if (n.eventType === 'file_access_revoked' || n.eventType === 'folder_access_revoked') {
     if (name) {
       return `Your access to the ${type} "${name}" has been revoked`;

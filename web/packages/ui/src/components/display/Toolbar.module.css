@@ -41,7 +41,7 @@
   cursor: pointer;
   color: var(--editor-tool-fg, var(--color-text-muted));
   transition: background 0.1s, color 0.1s;
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
@@ -59,14 +59,14 @@
   composes: toolBtn;
   width: auto;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 400;
 }
 
 .colorSwatch {
   width: 18px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   margin-top: 2px;
 }
 
@@ -75,7 +75,7 @@
   padding: 0 6px;
   border: 1px solid var(--editor-field-border, var(--color-border));
   border-radius: var(--editor-field-radius, 4px);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   background: var(--editor-field-bg, var(--color-bg));
   color: var(--color-text);
   cursor: pointer;

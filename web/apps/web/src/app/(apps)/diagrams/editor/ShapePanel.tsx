@@ -3,10 +3,13 @@
 import React, { useState, useRef } from 'react';
 import { ChevronDown, ChevronRight, Settings, GripVertical, Loader, AlertCircle } from 'lucide-react';
 import type { ShapeType } from '../types';
-import { getShapesByCategory, getShapePath } from './shapes/ShapeLibrary';
+import { SHAPE_CATEGORIES, getShapesByCategory, getShapePath } from './shapes/ShapeLibrary';
+
+const KNOWN_SHAPE_TYPES = new Set<string>(SHAPE_CATEGORIES.flatMap((c) => getShapesByCategory(c).map((s) => s.type)));
 import { useShapeLibraries } from './shapes/useShapeLibraries';
 import type { CustomShapeLibrary, ThirdPartyLibrary } from './shapes/useShapeLibraries';
 import { ShapeLibraryConfigPanel } from './shapes/ShapeLibraryConfigPanel';
+import { useTeamLibraries, useTeamNames } from '@/lib/teamResources';
 import styles from './ShapePanel.module.css';
 
 interface ShapePanelProps {
@@ -53,6 +56,20 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
   const [dragOver, setDragOver] = useState<DragOver>(null);
 
   const libs = useShapeLibraries();
+  const teamLibraries = useTeamLibraries();
+  const teamNames = useTeamNames(teamLibraries.length > 0);
+  // A team's file is another member's writing: only shapes this editor knows are drawn.
+  const teamShapeLibraries = teamLibraries.flatMap(({ teamId, library }) =>
+    library.shapeLibraries.map((lib) => ({
+      key: `team:${teamId}:${lib.id}`,
+      label: `${lib.name} · ${teamNames[teamId] ?? 'Team'}`,
+      lib: {
+        ...lib,
+        shapes: lib.shapes.flatMap((sh) =>
+          KNOWN_SHAPE_TYPES.has(sh.type) ? [{ ...sh, type: sh.type as ShapeType }] : []),
+      },
+    })),
+  );
   // Prevents the section wrapper's dragstart from firing when a shape item is dragged
   const draggingSection = useRef(false);
 
@@ -401,6 +418,36 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
             </div>
           );
         })}
+
+        {/* Libraries the user's teams share (T4) — the team's to edit, here to use. */}
+        {teamShapeLibraries.map(({ key, label, lib }) => (
+          <div key={key} className={styles.category}>
+            {renderSectionHeader(key, label, lib.shapes.length)}
+            {expanded.has(key) && (
+              <div className={styles.grid}>
+                {lib.shapes.map((item) => (
+                  <button
+                    key={item.id}
+                    className={styles.shapeItem}
+                    title={item.label}
+                    onClick={() => onAddShape(item.type, item.label)}
+                    draggable
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      e.dataTransfer.setData('shape-type', item.type);
+                      e.dataTransfer.setData('shape-label', item.label);
+                      const preview = e.currentTarget.querySelector('svg');
+                      if (preview) setShapeDragImage(e, preview);
+                    }}
+                  >
+                    <ShapePreview type={item.type} />
+                    <span className={styles.shapeLabel}>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

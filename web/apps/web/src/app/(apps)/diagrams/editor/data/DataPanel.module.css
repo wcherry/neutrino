@@ -13,7 +13,7 @@
   align-items: center;
   gap: 6px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-border);
@@ -29,7 +29,7 @@
 .tab {
   flex: 1;
   padding: 6px 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   background: none;
   border: none;
   cursor: pointer;
@@ -55,7 +55,7 @@
 }
 
 .sectionTitle {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -69,14 +69,14 @@
 }
 
 .hint {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   margin: 0;
   line-height: 1.5;
 }
 
 .empty {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   padding: 12px;
   text-align: center;
@@ -90,27 +90,27 @@
 }
 
 .label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
   min-width: 64px;
 }
 
 .select {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
 
 .textInput {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
@@ -120,10 +120,10 @@
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-primary);
 }
@@ -134,12 +134,12 @@
 
 .importBtn {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   background: var(--color-primary);
-  color: white;
+  color: var(--palette-gray-100);
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
 }
 
@@ -156,36 +156,36 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   padding: 4px 8px;
   background: none;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-secondary);
 }
 
 .clearBtn:hover {
-  color: var(--color-danger, #dc2626);
-  border-color: var(--color-danger, #dc2626);
+  color: var(--color-danger, var(--palette-red-51));
+  border-color: var(--color-danger, var(--palette-red-51));
 }
 
 .error {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  color: #dc2626;
-  background: #fee2e2;
+  font-size: var(--text-xs);
+  color: var(--palette-red-51);
+  background: var(--palette-red-94);
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
 }
 
 .previewTable {
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--font-size-11);
 }
 
 .previewHeader {
@@ -228,9 +228,9 @@
   align-items: center;
   gap: 6px;
   background: var(--color-surface-elevated);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
 }
 
 .ruleText {
@@ -244,7 +244,7 @@
 .ruleSwatch {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   flex-shrink: 0;
 }
 
@@ -259,7 +259,7 @@
 }
 
 .ruleRemove:hover {
-  color: #dc2626;
+  color: var(--palette-red-51);
 }
 
 .addRule {

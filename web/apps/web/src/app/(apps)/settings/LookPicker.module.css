@@ -108,7 +108,7 @@
 .line {
   height: 4px;
   width: 70%;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   background: color-mix(in srgb, var(--text-1) 14%, transparent);
 }
 
@@ -125,7 +125,7 @@
   margin-top: auto;
   width: 34%;
   height: 8px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: var(--primary-bg);
   border: 1px solid var(--primary-border-rest);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-accent) 35%, transparent);

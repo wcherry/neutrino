@@ -247,7 +247,7 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
         })}
 
         <button type="button" className={styles.card} onClick={openCreate}>
-          <span className={styles.swatch} style={{ background: 'var(--color-surface-raised, #f3f4f6)' }}>
+          <span className={styles.swatch} style={{ background: 'var(--color-surface-raised, var(--color-neutral-100))' }}>
             <Plus size={18} />
           </span>
           <span className={styles.cardLabel}>Create custom theme</span>

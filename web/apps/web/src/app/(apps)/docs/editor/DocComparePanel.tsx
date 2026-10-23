@@ -139,14 +139,14 @@ export function DocComparePanel({ fileId, baseVersion, compareVersion, onClose, 
 
       <div className={styles.versionLabels}>
         <div className={styles.versionLabel}>
-          <span className={styles.versionDot} style={{ background: '#e53935' }} />
+          <span className={styles.versionDot} style={{ background: 'var(--palette-red-55)' }} />
           <span>{formatVersion(baseVersion)}</span>
           <span className={styles.versionDate}>
             {new Date(baseVersion.createdAt).toLocaleString()}
           </span>
         </div>
         <div className={styles.versionLabel}>
-          <span className={styles.versionDot} style={{ background: '#43a047' }} />
+          <span className={styles.versionDot} style={{ background: 'var(--palette-green-45)' }} />
           <span>{formatVersion(compareVersion)}</span>
           <span className={styles.versionDate}>
             {new Date(compareVersion.createdAt).toLocaleString()}

@@ -302,7 +302,7 @@ function InitialTab({ name, onPreview }: InitialTabProps) {
                 className={`${styles.swatch} ${textColor === c ? styles.swatchActive : ''}`}
                 style={{
                   background: c,
-                  border: c === '#FFFFFF' ? '1px solid #e5e7eb' : undefined,
+                  border: c === 'var(--palette-gray-100)' ? '1px solid var(--color-neutral-200)' : undefined,
                 }}
                 onClick={() => setTextColor(c)}
               />
