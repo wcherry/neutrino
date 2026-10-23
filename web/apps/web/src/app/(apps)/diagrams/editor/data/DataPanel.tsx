@@ -80,10 +80,6 @@ export function DataPanel({ selectedShape, onImport, onUpdateBinding, onUpdateRu
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <Database size={14} />
-        <span>Data</span>
-      </div>
 
       <div className={styles.tabs}>
         <button className={`${styles.tab} ${tab === 'import' ? styles.activeTab : ''}`} onClick={() => setTab('import')}>Import</button>

@@ -50,13 +50,6 @@ export function CommentsPanel({ diagramId }: CommentsPanelProps) {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <MessageSquare size={14} />
-        Comments
-        {comments.length > 0 && (
-          <span className={styles.badge}>{comments.length}</span>
-        )}
-      </div>
 
       {/* New top-level comment */}
       <div className={styles.compose}>

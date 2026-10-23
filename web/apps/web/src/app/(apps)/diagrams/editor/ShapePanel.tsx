@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { ChevronDown, ChevronRight, Settings, GripVertical, Loader, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, Loader, AlertCircle } from 'lucide-react';
 import type { ShapeType } from '../types';
 import { SHAPE_CATEGORIES, getShapesByCategory, getShapePath } from './shapes/ShapeLibrary';
 
@@ -13,6 +13,12 @@ import { useTeamLibraries, useTeamNames } from '@/lib/teamResources';
 import styles from './ShapePanel.module.css';
 
 interface ShapePanelProps {
+  /**
+   * Whether the library settings replace the shape list. Held by the editor, because the button
+   * that opens them is in the panel's header, which the rail draws.
+   */
+  configOpen: boolean;
+  onConfigOpenChange: (open: boolean) => void;
   onAddShape: (type: ShapeType, label: string, dataUrl?: string) => void;
 }
 
@@ -48,9 +54,8 @@ function setShapeDragImage(e: React.DragEvent, preview: SVGSVGElement | HTMLImag
   setTimeout(() => { document.body.removeChild(host); }, 0);
 }
 
-export function ShapePanel({ onAddShape }: ShapePanelProps) {
+export function ShapePanel({ onAddShape, configOpen, onConfigOpenChange }: ShapePanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['builtin:Basic', 'builtin:Flowchart']));
-  const [configOpen, setConfigOpen] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<DragOver>(null);
@@ -86,7 +91,7 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
   if (configOpen) {
     return (
       <ShapeLibraryConfigPanel
-        onClose={() => setConfigOpen(false)}
+        onClose={() => onConfigOpenChange(false)}
         isBuiltinVisible={libs.isBuiltinVisible}
         setBuiltinVisible={libs.setBuiltinVisible}
         isThirdPartyVisible={libs.isThirdPartyVisible}
@@ -215,18 +220,6 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.headerRow}>
-        <span className={styles.headerTitle}>Shapes</span>
-        <button
-          className={styles.gearBtn}
-          onClick={() => setConfigOpen(true)}
-          type="button"
-          aria-label="Configure shape libraries"
-          title="Configure libraries"
-        >
-          <Settings size={13} />
-        </button>
-      </div>
       <div className={styles.scroll}>
         {orderedSections.map((section) => {
           if (section.kind === 'builtin') {

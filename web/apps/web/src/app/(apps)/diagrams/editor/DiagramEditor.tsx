@@ -11,7 +11,9 @@ import { RASTER_SIZE_SCALE } from './io/ExportDialog';
 import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload, withDiagramSource } from './io/exportUtils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button } from '@neutrino/ui';
+import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button, PanelRail, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
+import { Code2, Database, MessageSquare, Settings, Shapes, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { useRailState } from '@/lib/panelLayouts';
 import {
   diagramsApi,
   extractDiagramText,
@@ -205,6 +207,21 @@ function ExportRegionOverlay({ onRegionSelected, onCancel }: ExportRegionOverlay
 // Component
 // ---------------------------------------------------------------------------
 
+/** Diagrams' panels and the rails they start in — today's places. */
+const DIAGRAM_SIDES: RailSide[] = ['left', 'right'];
+const DIAGRAM_PANEL_SPEC: RailSpec = {
+  sides: DIAGRAM_SIDES,
+  panels: [
+    { id: 'shapes', side: 'left' },
+    { id: 'properties', side: 'right' },
+    { id: 'data', side: 'right' },
+    { id: 'comments', side: 'right' },
+    { id: 'developer', side: 'right' },
+    { id: 'ai', side: 'right' },
+  ],
+};
+const DIAGRAM_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'shapes', right: 'properties' };
+
 export function DiagramEditor() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -218,10 +235,10 @@ export function DiagramEditor() {
     connectorIds: new Set(),
   });
   const [mode, setMode] = useState<SelectionMode>('select');
-  const [showComments, setShowComments] = useState(false);
-  const [showData, setShowData] = useState(false);
-  const [showDeveloper, setShowDeveloper] = useState(false);
-  const [showAi, setShowAi] = useState(false);
+  // Shapes on the left; properties, data, comments, developer and AI on the right, one at a time
+  // as before — now tabs in rails (lib/panelLayouts.ts).
+  const panels = useRailState('diagrams-editor', DIAGRAM_PANEL_SPEC, DIAGRAM_PANELS_OPEN);
+  const [shapeConfigOpen, setShapeConfigOpen] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -851,6 +868,109 @@ export function DiagramEditor() {
     );
   }
 
+  const railPanels: RailPanel[] = [
+    {
+      id: 'shapes',
+      title: 'Shapes',
+      icon: <Shapes size={14} />,
+      side: 'left',
+      actions: (
+        <button type="button" className={styles.panelAction} onClick={() => setShapeConfigOpen(true)} aria-label="Configure shape libraries" title="Configure libraries">
+          <Settings size={13} />
+        </button>
+      ),
+      content: (
+        <ShapePanel
+          configOpen={shapeConfigOpen}
+          onConfigOpenChange={setShapeConfigOpen}
+          onAddShape={(type, label, dataUrl) => {
+            const { x: vx, y: vy, zoom } = editor.document.viewport;
+            // Place at visible center (assumes ~900×600 canvas area)
+            const cx = 450 / zoom - vx;
+            const cy = 300 / zoom - vy;
+            const extraData = dataUrl ? { imageUrl: dataUrl } : undefined;
+            const id = editor.addShape(type, cx, cy, undefined, undefined, extraData);
+            if (label) editor.updateShape(id, { label });
+            setSelection({ shapeIds: new Set([id]), connectorIds: new Set() });
+            setMode('select');
+          }}
+        />
+      ),
+    },
+    {
+      id: 'properties',
+      title: 'Properties',
+      icon: <SlidersHorizontal size={14} />,
+      side: 'right',
+      content: (
+        <PropertiesPanel
+          selection={selection}
+          page={activePage}
+          onShapeUpdate={(id, changes) => editor.updateShape(id, changes)}
+          onConnectorUpdate={(id, changes) => editor.updateConnector(id, changes)}
+        />
+      ),
+    },
+    {
+      id: 'data',
+      title: 'Data',
+      icon: <Database size={14} />,
+      side: 'right',
+      content: (
+        <DataPanel
+          selectedShape={selectedShape}
+          onImport={(rows, labelField) => editor.importData(rows, labelField)}
+          onUpdateBinding={(id, binding) => editor.updateDataBinding(id, binding)}
+          onUpdateRules={(id, rules) => editor.updateConditionalRules(id, rules)}
+        />
+      ),
+    },
+    { id: 'comments', title: 'Comments', icon: <MessageSquare size={14} />, side: 'right', content: <CommentsPanel diagramId={diagramId} /> },
+    {
+      id: 'developer',
+      title: 'Developer',
+      icon: <Code2 size={14} />,
+      side: 'right',
+      content: activePage ? (
+        <MermaidPanel
+          page={activePage}
+          onApplyShapes={(shapes, connectors) => {
+            editor.removeShapes(activePage.shapes.map((s) => s.id));
+            editor.removeConnectors(activePage.connectors.map((c) => c.id));
+            shapes.forEach((s) => editor.addShape(s.type, s.x, s.y, s.width, s.height));
+            const pageAfter = editor.document.pages[editor.activePageIndex] ?? editor.document.pages[0];
+            pageAfter.shapes.forEach((s, i) => {
+              if (shapes[i]) editor.updateShape(s.id, { label: shapes[i].label, style: shapes[i].style });
+            });
+          }}
+          onRunLayout={() => editor.runLayout('hierarchical')}
+        />
+      ) : null,
+    },
+    {
+      id: 'ai',
+      title: 'AI',
+      icon: <Sparkles size={14} />,
+      side: 'right',
+      content: activePage ? (
+        <AiDiagramPanel
+          activePage={activePage}
+          // One call, so the connectors land with the shapes they name and the whole
+          // generated diagram comes back off a single undo.
+          onInsertGenerated={(shapes, connectors) => editor.insertElements(shapes, connectors)}
+          onAddShapes={(shapes) => {
+            shapes.forEach((s) => {
+              const id = editor.addShape(s.type, s.x, s.y, s.width, s.height);
+              editor.updateShape(id, { label: s.label, style: s.style });
+            });
+          }}
+          onSetSelection={(ids) => setSelection({ shapeIds: new Set(ids), connectorIds: new Set() })}
+          onRunLayout={() => editor.runLayout('hierarchical')}
+        />
+      ) : null,
+    },
+  ];
+
   return (
     <div className={styles.root}>
       {/* Top toolbar */}
@@ -871,14 +991,14 @@ export function DiagramEditor() {
         onRedo={editor.redo}
         onSave={() => saveMutation.mutate()}
         isSaving={saveMutation.isPending}
-        onToggleComments={() => { setShowComments((v) => !v); setShowData(false); setShowDeveloper(false); setShowAi(false); }}
-        showComments={showComments}
-        onToggleData={() => { setShowData((v) => !v); setShowComments(false); setShowDeveloper(false); setShowAi(false); }}
-        showData={showData}
-        onToggleDeveloper={() => { setShowDeveloper((v) => !v); setShowData(false); setShowComments(false); setShowAi(false); }}
-        showDeveloper={showDeveloper}
-        onToggleAi={() => { setShowAi((v) => !v); setShowData(false); setShowComments(false); setShowDeveloper(false); }}
-        showAi={showAi}
+        onToggleComments={() => panels.toggle('comments')}
+        showComments={panels.isOpen('comments')}
+        onToggleData={() => panels.toggle('data')}
+        showData={panels.isOpen('data')}
+        onToggleDeveloper={() => panels.toggle('developer')}
+        showDeveloper={panels.isOpen('developer')}
+        onToggleAi={() => panels.toggle('ai')}
+        showAi={panels.isOpen('ai')}
         onExport={() => setShowExport(true)}
         onImport={() => setShowImport(true)}
         onRunLayout={(alg) => editor.runLayout(alg)}
@@ -905,132 +1025,78 @@ export function DiagramEditor() {
       />
 
       <div className={styles.workspace}>
-        {/* Left: shape library panel */}
-        <ShapePanel
-          onAddShape={(type, label, dataUrl) => {
-            const { x: vx, y: vy, zoom } = editor.document.viewport;
-            // Place at visible center (assumes ~900×600 canvas area)
-            const cx = 450 / zoom - vx;
-            const cy = 300 / zoom - vy;
-            const extraData = dataUrl ? { imageUrl: dataUrl } : undefined;
-            const id = editor.addShape(type, cx, cy, undefined, undefined, extraData);
-            if (label) editor.updateShape(id, { label });
-            setSelection({ shapeIds: new Set([id]), connectorIds: new Set() });
-            setMode('select');
-          }}
-        />
-
-        {/* Center: infinite canvas */}
-        <div className={styles.canvasWrapper} ref={canvasWrapperRef}>
-          {pendingExport && (
-            <ExportRegionOverlay
-              onRegionSelected={async (rect) => {
-                const container = canvasWrapperRef.current;
-                const { format, filename, size, showGrid, bgColor } = pendingExport;
-                setPendingExport(null);
-                if (!container) return;
-                const scale = RASTER_SIZE_SCALE[size];
-                if (format === 'png') {
-                  const blob = await exportPNGCropped(container, rect.x, rect.y, rect.width, rect.height, scale, showGrid, bgColor);
-                  triggerDownload(blob, `${filename}.png`);
-                } else if (format === 'jpeg') {
-                  const blob = await exportJPEGCropped(container, rect.x, rect.y, rect.width, rect.height, scale, showGrid, bgColor);
-                  triggerDownload(blob, `${filename}.jpeg`);
-                } else if (format === 'svg') {
-                  const svg = exportSVGCropped(container, rect.x, rect.y, rect.width, rect.height, bgColor, showGrid);
-                  triggerDownload(
-                    new Blob([withDiagramSource(svg, editor.document)], { type: 'image/svg+xml' }),
-                    `${filename}.svg`,
-                  );
+        <PanelRail
+          panels={railPanels}
+          sides={DIAGRAM_SIDES}
+          layout={panels.layout}
+          onLayoutChange={panels.setLayout}
+          defaultExpanded={DIAGRAM_PANELS_OPEN}
+          className={styles.panelHost}
+        >
+          {/* Center: infinite canvas */}
+          <div className={styles.canvasWrapper} ref={canvasWrapperRef}>
+            {pendingExport && (
+              <ExportRegionOverlay
+                onRegionSelected={async (rect) => {
+                  const container = canvasWrapperRef.current;
+                  const { format, filename, size, showGrid, bgColor } = pendingExport;
+                  setPendingExport(null);
+                  if (!container) return;
+                  const scale = RASTER_SIZE_SCALE[size];
+                  if (format === 'png') {
+                    const blob = await exportPNGCropped(container, rect.x, rect.y, rect.width, rect.height, scale, showGrid, bgColor);
+                    triggerDownload(blob, `${filename}.png`);
+                  } else if (format === 'jpeg') {
+                    const blob = await exportJPEGCropped(container, rect.x, rect.y, rect.width, rect.height, scale, showGrid, bgColor);
+                    triggerDownload(blob, `${filename}.jpeg`);
+                  } else if (format === 'svg') {
+                    const svg = exportSVGCropped(container, rect.x, rect.y, rect.width, rect.height, bgColor, showGrid);
+                    triggerDownload(
+                      new Blob([withDiagramSource(svg, editor.document)], { type: 'image/svg+xml' }),
+                      `${filename}.svg`,
+                    );
+                  }
+                }}
+                onCancel={() => setPendingExport(null)}
+              />
+            )}
+            {activePage && (
+              <DiagramCanvas
+                page={activePage}
+                viewport={editor.document.viewport}
+                selection={selection}
+                mode={mode}
+                remoteUsers={collab.remoteUsers}
+                onSelect={(sel) => setSelection(sel)}
+                onModeChange={setMode}
+                onViewportChange={(v) => editor.setViewport(v)}
+                onShapeMove={(id, x, y) => editor.updateShape(id, { x, y })}
+                onShapeResize={(id, x, y, w, h) =>
+                  editor.updateShape(id, { x, y, width: w, height: h })
                 }
-              }}
-              onCancel={() => setPendingExport(null)}
-            />
-          )}
-          {activePage && (
-            <DiagramCanvas
-              page={activePage}
-              viewport={editor.document.viewport}
-              selection={selection}
-              mode={mode}
-              remoteUsers={collab.remoteUsers}
-              onSelect={(sel) => setSelection(sel)}
-              onModeChange={setMode}
-              onViewportChange={(v) => editor.setViewport(v)}
-              onShapeMove={(id, x, y) => editor.updateShape(id, { x, y })}
-              onShapeResize={(id, x, y, w, h) =>
-                editor.updateShape(id, { x, y, width: w, height: h })
-              }
-              onShapeLabel={(id, label) => editor.updateShape(id, { label })}
-              onAddShape={(type, x, y, extraData) => {
-                const styleOverride = type === 'text'
-                  ? { fontSize: textDefaults.fontSize, fontFamily: textDefaults.fontFamily, textColor: textDefaults.textColor }
-                  : undefined;
-                const id = editor.addShape(type, x, y, undefined, undefined, extraData, styleOverride);
-                setSelection({ shapeIds: new Set([id]), connectorIds: new Set() });
-                setMode('select');
-                return id;
-              }}
-              onConnectorUpdate={(id, changes) => editor.updateConnector(id, changes)}
-              onAddConnector={(sourceId, targetId, startX, startY, endX, endY, sourcePort, targetPort) => {
-                const id = editor.addConnector('straight', sourceId, targetId, startX, startY, endX, endY, sourcePort, targetPort);
-                setSelection({ shapeIds: new Set(), connectorIds: new Set([id]) });
-              }}
-              onCanvasMouseMove={(pos) => collab.sendCursor(pos)}
-              onAddStroke={(stroke: FreehandStroke) => editor.addStroke(stroke)}
-              onRemoveStrokesUnder={handleRemoveStrokesUnder}
-              drawColor={drawColor}
-            />
-          )}
-        </div>
-
-        {/* Right: properties / comments / data / developer / ai panel */}
-        {showData ? (
-          <DataPanel
-            selectedShape={selectedShape}
-            onImport={(rows, labelField) => editor.importData(rows, labelField)}
-            onUpdateBinding={(id, binding) => editor.updateDataBinding(id, binding)}
-            onUpdateRules={(id, rules) => editor.updateConditionalRules(id, rules)}
-          />
-        ) : showComments ? (
-          <CommentsPanel diagramId={diagramId} />
-        ) : showDeveloper && activePage ? (
-          <MermaidPanel
-            page={activePage}
-            onApplyShapes={(shapes, connectors) => {
-              editor.removeShapes(activePage.shapes.map((s) => s.id));
-              editor.removeConnectors(activePage.connectors.map((c) => c.id));
-              shapes.forEach((s) => editor.addShape(s.type, s.x, s.y, s.width, s.height));
-              const pageAfter = editor.document.pages[editor.activePageIndex] ?? editor.document.pages[0];
-              pageAfter.shapes.forEach((s, i) => {
-                if (shapes[i]) editor.updateShape(s.id, { label: shapes[i].label, style: shapes[i].style });
-              });
-            }}
-            onRunLayout={() => editor.runLayout('hierarchical')}
-          />
-        ) : showAi && activePage ? (
-          <AiDiagramPanel
-            activePage={activePage}
-            // One call, so the connectors land with the shapes they name and the whole
-            // generated diagram comes back off a single undo.
-            onInsertGenerated={(shapes, connectors) => editor.insertElements(shapes, connectors)}
-            onAddShapes={(shapes) => {
-              shapes.forEach((s) => {
-                const id = editor.addShape(s.type, s.x, s.y, s.width, s.height);
-                editor.updateShape(id, { label: s.label, style: s.style });
-              });
-            }}
-            onSetSelection={(ids) => setSelection({ shapeIds: new Set(ids), connectorIds: new Set() })}
-            onRunLayout={() => editor.runLayout('hierarchical')}
-          />
-        ) : (
-          <PropertiesPanel
-            selection={selection}
-            page={activePage}
-            onShapeUpdate={(id, changes) => editor.updateShape(id, changes)}
-            onConnectorUpdate={(id, changes) => editor.updateConnector(id, changes)}
-          />
-        )}
+                onShapeLabel={(id, label) => editor.updateShape(id, { label })}
+                onAddShape={(type, x, y, extraData) => {
+                  const styleOverride = type === 'text'
+                    ? { fontSize: textDefaults.fontSize, fontFamily: textDefaults.fontFamily, textColor: textDefaults.textColor }
+                    : undefined;
+                  const id = editor.addShape(type, x, y, undefined, undefined, extraData, styleOverride);
+                  setSelection({ shapeIds: new Set([id]), connectorIds: new Set() });
+                  setMode('select');
+                  return id;
+                }}
+                onConnectorUpdate={(id, changes) => editor.updateConnector(id, changes)}
+                onAddConnector={(sourceId, targetId, startX, startY, endX, endY, sourcePort, targetPort) => {
+                  const id = editor.addConnector('straight', sourceId, targetId, startX, startY, endX, endY, sourcePort, targetPort);
+                  setSelection({ shapeIds: new Set(), connectorIds: new Set([id]) });
+                }}
+                onCanvasMouseMove={(pos) => collab.sendCursor(pos)}
+                onAddStroke={(stroke: FreehandStroke) => editor.addStroke(stroke)}
+                onRemoveStrokesUnder={handleRemoveStrokesUnder}
+                drawColor={drawColor}
+              />
+            )}
+          </div>
+        </PanelRail>
       </div>
 
       {/* Bottom: page tabs + zoom */}

@@ -27,7 +27,6 @@ export function PropertiesPanel({
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>Properties</div>
       <div className={styles.scroll}>
         {!singleShape && !singleConnector && (
           <div className={styles.empty}>

@@ -76,10 +76,6 @@ export function AiDiagramPanel({
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <Sparkles size={13} className={styles.headerIcon} />
-        AI Diagrams
-      </div>
 
       <div className={styles.tabs}>
         {(['generate', 'analyze', 'refactor'] as Tab[]).map((t) => (
