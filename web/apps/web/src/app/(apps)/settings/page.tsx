@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
-import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
+import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest, type CalendarResponse } from '@/lib/api';
 import { initSodium, loadKeyPair, hasKeyPair, subscribeToLockState, toBase64, fromBase64, toBase64url, fingerprintFor, keyPairMatches, clearSession } from '@neutrino/e2e-crypto';
 import { clearSearchIndex } from '@neutrino/search';
 import { clearDriveImageCache } from '@/lib/driveImages';
@@ -156,19 +156,33 @@ function AppleConnectModal({
 }
 
 function ConnectionRow({
-  provider, connection, onConnect, onDisconnect, onSync, isSyncing, isDisconnecting,
+  provider, connection, calendar, onConnect, onDisconnect, onSync, onRecolor, isSyncing, isDisconnecting,
 }: {
   provider: ConnectionProvider;
   connection: ConnectionResponse | undefined;
+  /** The calendar the provider's events sync into; there is none until the first sync. */
+  calendar: CalendarResponse | undefined;
   onConnect: () => void;
   onDisconnect: () => void;
   onSync: () => void;
+  onRecolor: (color: string) => void;
   isSyncing: boolean;
   isDisconnecting: boolean;
 }) {
   const connected = !!connection;
   return (
     <div className={styles.connectionRow}>
+      {connected && calendar && (
+        // The swatch is the colour input, as in the calendar sidebar: the synced events take it.
+        <label className={styles.connectionSwatch} style={{ background: calendar.color }} title="Change colour of synced events">
+          <input
+            type="color"
+            value={calendar.color}
+            onChange={(e) => onRecolor(e.target.value)}
+            aria-label={`Colour of ${PROVIDER_LABELS[provider]} events`}
+          />
+        </label>
+      )}
       <div className={styles.connectionInfo}>
         <div className={styles.connectionName}>{PROVIDER_LABELS[provider]}</div>
         <div className={styles.connectionDesc}>
@@ -456,6 +470,21 @@ const qc = useQueryClient();
   });
   const connections = connectionsData?.connections ?? [];
 
+  // Each provider's synced events land in a calendar of its own, whose colour they're drawn in.
+  const { data: calendarsData } = useQuery({
+    queryKey: ['calendars'],
+    queryFn: () => calendarApi.listCalendars(),
+    enabled: activeTab === 'calendar',
+  });
+  const providerCalendar = (provider: ConnectionProvider) =>
+    calendarsData?.calendars.find((c) => c.kind === 'connection' && c.source === provider);
+
+  const recolor = useMutation({
+    mutationFn: ({ id, color }: { id: string; color: string }) => calendarApi.updateCalendar(id, { color }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['calendars'] }),
+    onError: () => toastError('Could not change the colour. Please try again.'),
+  });
+
   const connectGoogle = useMutation({
     mutationFn: () => calendarApi.connectGoogle(),
     onSuccess: ({ authUrl }) => { window.location.href = authUrl; },
@@ -472,6 +501,8 @@ const qc = useQueryClient();
     mutationFn: (req: CreateAppleConnectionRequest) => calendarApi.connectApple(req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['calendar-connections'] });
+      // Connecting makes the account's calendar, and with it the colour swatch.
+      qc.invalidateQueries({ queryKey: ['calendars'] });
       setShowAppleModal(false);
     },
     onError: (err) => toastError(connectFailureMessage('apple', err)),
@@ -487,8 +518,13 @@ const qc = useQueryClient();
     onSuccess: ({ eventsSynced }) => {
       toastSuccess(`Synced ${eventsSynced} event${eventsSynced === 1 ? '' : 's'}`);
       qc.invalidateQueries({ queryKey: ['events'] });
+      // A first sync makes the provider's calendar, and with it the colour swatch.
+      qc.invalidateQueries({ queryKey: ['calendars'] });
     },
-    onError: () => toastError('Sync failed. Please try again.'),
+    // The server says why (a refused password, an unreachable server), so pass it on.
+    onError: (err) => toastError(
+      err instanceof Error && err.message.trim() ? `Sync failed: ${err.message.trim()}` : 'Sync failed. Please try again.',
+    ),
   });
 
   // ── Populate form when data arrives ───────────────────────────────────────
@@ -859,11 +895,13 @@ const qc = useQueryClient();
               <div className={styles.connectionList}>
                 {(['google', 'outlook', 'apple'] as ConnectionProvider[]).map((provider) => {
                   const conn = connections.find((c) => c.provider === provider);
+                  const calendar = providerCalendar(provider);
                   return (
                     <ConnectionRow
                       key={provider}
                       provider={provider}
                       connection={conn}
+                      calendar={calendar}
                       onConnect={() => {
                         if (provider === 'google') connectGoogle.mutate();
                         else if (provider === 'outlook') connectOutlook.mutate();
@@ -871,6 +909,7 @@ const qc = useQueryClient();
                       }}
                       onDisconnect={() => conn && disconnect.mutate(conn.id)}
                       onSync={() => conn && syncCal.mutate(conn.id)}
+                      onRecolor={(color) => calendar && recolor.mutate({ id: calendar.id, color })}
                       isSyncing={syncCal.isPending}
                       isDisconnecting={disconnect.isPending}
                     />
