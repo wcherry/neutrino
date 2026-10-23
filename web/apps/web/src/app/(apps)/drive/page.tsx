@@ -806,7 +806,7 @@ function DriveContent() {
           {!starredData
             ? Array.from({ length: 4 }, (_, i) => (
                 <div key={i} className={styles['quick-card-skeleton']}>
-                  <Skeleton shape="rect" width={32} height={32} />
+                  <Skeleton shape="rect" width={36} height={36} />
                   <div style={{ flex: 1 }}>
                     <Skeleton shape="text" width="80%" height="0.875rem" />
                     <div style={{ marginTop: '4px' }}><Skeleton shape="text" width="50%" height="0.75rem" /></div>

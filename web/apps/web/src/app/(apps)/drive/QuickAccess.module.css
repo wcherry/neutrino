@@ -127,14 +127,23 @@
   color: var(--text-3);
 }
 
-.skeleton {
+/* The row's height while loading, and kept when it turns out empty, so the files below do not
+   jump up once the request settles. */
+.skeleton,
+.empty {
   height: calc(100px * var(--density) + 52px);
+}
+
+.skeleton {
   border-radius: calc(12px * var(--radius-scale));
   background: var(--card-preview-bg);
 }
 
 .empty {
   grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 0;
   font-size: var(--text-sm);
   color: var(--text-3);

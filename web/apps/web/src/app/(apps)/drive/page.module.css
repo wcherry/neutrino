@@ -130,6 +130,10 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: var(--space-3);
+  /* One card's height (icon, padding, border) whether it holds placeholders, cards or the
+     one-line empty message, so the files below do not jump when starred items arrive. */
+  min-height: calc(2.25rem + 2 * var(--space-3) + 2px);
+  align-content: center;
 }
 
 .quick-card {
