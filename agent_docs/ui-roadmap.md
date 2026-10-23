@@ -408,7 +408,7 @@ apart from a 0.02 px rounding.
 - **Key requests for late joiners.** A file's key is sealed to the members there when it is added,
   so someone who joins later sees the file and cannot open it. The listings now mark such a file
   (`keyMissing`), and clicking it asks for the key, with an optional message
-  (`POST /drive/teams/{id}/key-requests`, migration 00146). The team's Owners and Admins, and the
+  (`POST /drive/teams/{id}/key-requests`, migration 00147). The team's Owners and Admins, and the
   file's owner, are notified and see the request above the team's Files. Approving seals the key to
   the requester in the approver's browser first (`lib/teamKeyRequests.ts`) — the server refuses an
   approval until the requester holds a key — and denying takes an optional reason. The requester
