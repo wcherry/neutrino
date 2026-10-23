@@ -7,8 +7,12 @@ const DB_NAME = 'neutrino_search';
  * prefix queries can range over it. A v1 database holds HMACs that cannot be
  * turned back into terms, so the upgrade drops both stores and the next sync
  * rebuilds them (see `CONTENT_VERSION` in the web app's `searchIndexer`).
+ *
+ * v3 adds `byUpdatedAt` on `docs`, so the snapshot sync can read the newest
+ * revision from one index key instead of every document (`indexFingerprint`).
+ * It is added in place: a v2 index keeps its entries.
  */
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export interface TokenEntry {
   /** The indexed word itself, lowercased and stripped of punctuation. */
@@ -46,6 +50,11 @@ export function openSearchDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
+      if (e.oldVersion === 2) {
+        // Only the new index; the entries themselves are already current.
+        req.transaction!.objectStore('docs').createIndex('byUpdatedAt', 'updatedAt', { unique: false });
+        return;
+      }
       // Nothing in a v1 database survives the move off hashed keys, so start
       // clean rather than trying to migrate records whose terms are one-way.
       if (db.objectStoreNames.contains('tokens')) db.deleteObjectStore('tokens');
@@ -57,7 +66,8 @@ export function openSearchDb(): Promise<IDBDatabase> {
       tokenStore.createIndex('byTerm', 'term', { unique: false });
       tokenStore.createIndex('byDocumentId', 'documentId', { unique: false });
 
-      db.createObjectStore('docs', { keyPath: 'documentId' });
+      const docStore = db.createObjectStore('docs', { keyPath: 'documentId' });
+      docStore.createIndex('byUpdatedAt', 'updatedAt', { unique: false });
     };
     req.onsuccess = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;

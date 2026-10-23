@@ -17,11 +17,10 @@
 import {
   openSearchDb,
   clearSearchIndex,
-  countDocEntries,
   type DocEntry,
   type TokenEntry,
 } from './db';
-import { emitSearchIndexUpdate, indexRevision } from './events';
+import { emitSearchIndexUpdate } from './events';
 
 /**
  * Bumped when the snapshot's shape changes. A device reading a snapshot it does
@@ -81,22 +80,32 @@ function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
 }
 
 /**
- * A cheap identity for the local index: its document and entry counts, which IndexedDB answers from
- * its own metadata, and the revision every write bumps. Equal fingerprints mean nothing was written
- * in between, so the sync can skip `exportSnapshot` — which deserialises every entry on the main
- * thread — when there is nothing new to upload.
+ * A cheap identity for the local index: how many documents and entries it
+ * holds, and its newest document revision. Counts come from IndexedDB's own
+ * metadata and the revision from one key of `byUpdatedAt`, so nothing is
+ * deserialised: the snapshot sync can skip `exportSnapshot`, which reads every
+ * entry on the main thread, whenever there is nothing new to upload.
+ *
+ * It describes the contents, not the writes. Saving a document unchanged (Docs
+ * autosaves when one opens) or re-indexing one the sync found current rewrites
+ * entries without changing any of the three, so it does not count as a change;
+ * a revision marker bumped on every write did, and re-uploaded the whole index
+ * on nearly every load.
  */
 export async function indexFingerprint(): Promise<{ documents: number; fingerprint: string }> {
   const db = await openSearchDb();
-  const [documents, tokens] = await Promise.all([
-    countDocEntries(db),
-    new Promise<number>((resolve, reject) => {
-      const req = db.transaction('tokens', 'readonly').objectStore('tokens').count();
-      req.onsuccess = () => resolve(req.result ?? 0);
+  const tx = db.transaction(['docs', 'tokens'], 'readonly');
+  const request = <T>(req: IDBRequest<T>) =>
+    new Promise<T>((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
-    }),
+    });
+  const [documents, tokens, newest] = await Promise.all([
+    request(tx.objectStore('docs').count()),
+    request(tx.objectStore('tokens').count()),
+    request(tx.objectStore('docs').index('byUpdatedAt').openKeyCursor(null, 'prev')),
   ]);
-  return { documents, fingerprint: `${documents}:${tokens}:${indexRevision()}` };
+  return { documents, fingerprint: `${documents}:${tokens}:${newest ? Number(newest.key) : 0}` };
 }
 
 /** The whole local index, ready to be encrypted and uploaded. */

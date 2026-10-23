@@ -80,25 +80,38 @@ describe('exportSnapshot', () => {
 });
 
 describe('indexFingerprint', () => {
-  // The sync skips reading the whole index when this is unchanged, so every kind of write must
-  // move it — or a device would silently stop sharing its index.
-  it('counts the index without reading it', async () => {
+  // The sync skips reading the whole index when this is unchanged, so it must move with the
+  // contents — and only with them, or every load re-uploads the index.
+  it('counts the index and takes its newest revision', async () => {
     await seedIndex();
     const { documents, fingerprint } = await indexFingerprint();
     const snapshot = await exportSnapshot();
     expect(documents).toBe(2);
-    expect(fingerprint.startsWith(`2:${snapshot.tokens.length}:`)).toBe(true);
+    expect(fingerprint).toBe(`2:${snapshot.tokens.length}:1700000500000`);
   });
 
-  it('is stable while nothing is written', async () => {
-    await seedIndex();
-    expect((await indexFingerprint()).fingerprint).toBe((await indexFingerprint()).fingerprint);
+  it('is empty for an index that has never been built', async () => {
+    expect(await indexFingerprint()).toEqual({ documents: 0, fingerprint: '0:0:0' });
   });
 
-  it('changes when a document is re-indexed with the same number of entries', async () => {
+  it('does not change when a document is saved again unchanged', async () => {
+    // Docs autosaves as a document opens, and the sync re-indexes items it finds current.
     const engine = await seedIndex();
     const before = (await indexFingerprint()).fingerprint;
     await engine.indexDocument({
+      id: 'doc-1',
+      type: 'document',
+      title: 'Project Budget',
+      content: 'quarterly budget planning for the modesto office',
+      updatedAt: 1_700_000_000_000,
+    });
+    expect((await indexFingerprint()).fingerprint).toBe(before);
+  });
+
+  it('changes when a document is re-indexed with a newer revision', async () => {
+    const engine = await seedIndex();
+    const before = (await indexFingerprint()).fingerprint;
+    await engine.updateDocument({
       id: 'doc-1',
       type: 'document',
       title: 'Project Budget',
@@ -115,12 +128,12 @@ describe('indexFingerprint', () => {
     expect((await indexFingerprint()).fingerprint).not.toBe(before);
   });
 
-  it('changes when a snapshot is imported', async () => {
+  it('is the same after importing a snapshot of the same index', async () => {
+    // What lets a pull be recorded so the push after it does not echo it back.
     await seedIndex();
-    const snapshot = await exportSnapshot();
     const before = (await indexFingerprint()).fingerprint;
-    await importSnapshot(snapshot);
-    expect((await indexFingerprint()).fingerprint).not.toBe(before);
+    await importSnapshot(await exportSnapshot());
+    expect((await indexFingerprint()).fingerprint).toBe(before);
   });
 });
 

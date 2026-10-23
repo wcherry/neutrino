@@ -759,6 +759,15 @@ export function DocEditor() {
   // autosave without re-creating the editor. Page setup needs no ref of its
   // own: it rides in `layoutMetaRef` with the rest of the layout metadata.
   const titleRef = useRef<string>('');
+  /**
+   * The body as the server last had it — read from the stored file, or written
+   * by this editor's last save — in `doc.toJSON()` form. The body load fires an
+   * editor update like any edit (the collab room syncing in the stored text is a
+   * `y-sync$` transaction), and without this every open saved the document
+   * unchanged: a new server revision and edit time for nothing, which in turn
+   * made the next page load re-upload the whole search index.
+   */
+  const persistedBodyRef = useRef<string | null>(null);
 
   // Rejects a save that would overwrite a revision written elsewhere since this
   // document was loaded. See `useContentVersionGuard`.
@@ -875,6 +884,7 @@ export function DocEditor() {
       if (!ed) throw new Error('editor-not-ready');
       const dek = await awaitDek();
       if (!dek) throw new Error('no-dek');
+      const body = JSON.stringify(ed.getJSON());
       const bytes = await buildDocxPackage();
       const filename = officeFileMeta?.name
         ?? withOoxmlExtension(titleRef.current || 'document', 'docs', { template: isTemplateRef.current });
@@ -890,6 +900,7 @@ export function DocEditor() {
         title: titleRef.current,
         content: ed.getText(),
       });
+      persistedBodyRef.current = body;
       return saved;
     },
     onMutate: () => setSaveStatus('saving'),
@@ -1071,6 +1082,12 @@ export function DocEditor() {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
         if (officeModeRef.current) {
+          // Checked when the save is due rather than on the update: the collab
+          // room can sync the body in before the stored file has been read.
+          if (persistedBodyRef.current === JSON.stringify(editor.getJSON())) {
+            setSaveStatus('saved');
+            return;
+          }
           officeAutosaveRef.current();
         } else {
           // The stable ref gives fresh metadata without re-creating the editor when it changes.
@@ -1345,6 +1362,15 @@ export function DocEditor() {
     // Layout metadata rides on the stored file, never in the Y.Doc, so it is
     // applied whether or not the body load below happens.
     applyLayoutMeta(officeContent.kind === 'doc' ? officeContent.meta : null);
+
+    if (officeContent.kind === 'doc') {
+      try {
+        // Through the schema, so defaults are filled in exactly as the editor's own copy has them.
+        persistedBodyRef.current = JSON.stringify(editor.schema.nodeFromJSON(officeContent.doc).toJSON());
+      } catch {
+        persistedBodyRef.current = null;
+      }
+    }
 
     if (officeContent.kind === 'empty') {
       // Created here and never saved. The blank editor is already what it

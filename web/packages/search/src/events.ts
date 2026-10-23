@@ -60,22 +60,6 @@ const CHANNEL_NAME = 'neutrino:search-index';
  */
 const COALESCE_MS = 250;
 
-/**
- * Changes on every write to the index, in any tab (localStorage is shared across the origin). The
- * snapshot sync compares it to tell whether the index changed since its last upload without reading
- * the index itself, which on a large library blocked the page for ~300 ms at every load.
- */
-const REVISION_KEY = 'neutrino:search:revision';
-
-/** The index's current revision marker, or '' if none has been recorded on this device. */
-export function indexRevision(): string {
-  try {
-    return localStorage.getItem(REVISION_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-
 const listeners = new Set<SearchIndexListener>();
 
 let channel: BroadcastChannel | null = null;
@@ -167,13 +151,6 @@ export function emitSearchIndexUpdate(change: {
   /** The whole index was dropped or replaced. */
   wholesale?: boolean;
 }): void {
-  // Bumped here rather than at flush: the write has landed, and a sync that checks right after
-  // (an import followed by a push) must already see the new revision.
-  try {
-    localStorage.setItem(REVISION_KEY, `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`);
-  } catch {
-    // Without storage every check reads '', so a change is noticed only by its counts.
-  }
   pending ??= { documentIds: new Set<string>(), wholesale: false };
   if (change.wholesale) pending.wholesale = true;
   for (const id of change.documentIds ?? []) pending.documentIds.add(id);
