@@ -5,7 +5,7 @@ import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMe
 import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, BarChart3, History } from 'lucide-react';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import {
     sheetsApi, filesystemApi, driveAutosaveEncryptedBytes,
@@ -53,7 +53,8 @@ import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
 import { SheetTabBar } from './components/SheetTabBar';
 import { SheetZoomProvider } from './zoom';
-import { ShareButton, ZoomSlider } from '@neutrino/ui';
+import { PanelRail, ShareButton, ZoomSlider, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
+import { useRailState } from '@/lib/panelLayouts';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import type { FileItem } from '@/lib/api';
 import { useCharts } from './charts/useCharts';
@@ -146,6 +147,16 @@ async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
     });
 }
 
+/** Sheets' panels: both start in a right rail, collapsed. */
+const SHEET_SIDES: RailSide[] = ['right'];
+const SHEET_PANEL_SPEC: RailSpec = {
+    sides: SHEET_SIDES,
+    panels: [
+        { id: 'history', side: 'right' },
+        { id: 'chart', side: 'right' },
+    ],
+};
+
 export function SheetEditor() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -231,7 +242,8 @@ export function SheetEditor() {
 
     const [hamburgerDialog, setHamburgerDialog] = useState<string | null>(null);
     const [hamburgerDeleteConfirm, setHamburgerDeleteConfirm] = useState(false);
-    const [showHistory, setShowHistory] = useState(false);
+    // Version history and the chart editor on the right — tabs in a rail (lib/panelLayouts.ts).
+    const panels = useRailState('sheets-editor', SHEET_PANEL_SPEC);
     const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
     const [showShareDialog, setShowShareDialog] = useState(false);
 
@@ -248,6 +260,12 @@ export function SheetEditor() {
 
     // ── Chart state ────────────────────────────────────────
     const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+    // The chart editor comes with a selected chart and goes with it, as it always has.
+    useEffect(() => {
+        if (selectedChartId) panels.open('chart');
+        else panels.close('chart');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedChartId]);
     const [showChartDialog, setShowChartDialog] = useState(false);
     const queryClient = useQueryClient();
     const suppressNextFormulaFocusModeRef = useRef(false);
@@ -1633,6 +1651,42 @@ export function SheetEditor() {
             : (currentCell?.id ?? ''));
 
     // ── Render ───────────────────────────────────────────────────────────────
+    const selectedChart = selectedChartId ? charts.charts.find(c => c.id === selectedChartId) : undefined;
+    const railPanels: RailPanel[] = [
+        {
+            id: 'history',
+            title: 'Version history',
+            icon: <History size={14} />,
+            side: 'right',
+            content: (
+                <VersionHistoryPanel
+                    fileId={sheetId}
+                    framed={false}
+                    onRestore={() => {
+                        persist.load();
+                        panels.close('history');
+                    }}
+                />
+            ),
+        },
+        {
+            id: 'chart',
+            title: 'Chart',
+            icon: <BarChart3 size={14} />,
+            side: 'right',
+            content: selectedChart && selectedChartId ? (
+                <ChartEditorPanel
+                    def={selectedChart}
+                    data={data}
+                    onUpdate={(patch) => { charts.updateChart(selectedChartId, patch); dirtyRef.current = true; }}
+                    onDelete={() => { charts.removeChart(selectedChartId); setSelectedChartId(null); dirtyRef.current = true; }}
+                />
+            ) : (
+                <p className={styles.panelEmpty}>Select a chart on the sheet to edit it here.</p>
+            ),
+        },
+    ];
+
     return (
         <div
             className={styles.editorWrapper}
@@ -1644,7 +1698,7 @@ export function SheetEditor() {
                     onOpenHtmlExport={exports.openHtmlExportDialog}
                     onOpenPrint={exports.openPrintDialog}
                     onSave={handleManualSave}
-                    onToggleHistory={() => setShowHistory(v => !v)}
+                    onToggleHistory={() => panels.toggle('history')}
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
                     isViewer={isViewer}
@@ -1755,95 +1809,86 @@ export function SheetEditor() {
             />
 
             <div className={styles.mainArea}>
-                <div
-                    className={styles.editorScrollArea}
-                    // CSS zoom relayouts, so zooming out shows more cells rather
-                    // than painting the same ones smaller, and every pixel the
-                    // grid computes stays in its own unzoomed space.
-                    style={{
-                        zoom: `${zoom}%`,
-                        ...(formatPainterSource ? { cursor: 'crosshair' } : {}),
+                <PanelRail
+                    panels={railPanels}
+                    sides={SHEET_SIDES}
+                    layout={panels.layout}
+                    onLayoutChange={(next) => {
+                        panels.setLayout(next);
+                        // Collapsing the chart editor deselects the chart, as closing it always did.
+                        const chartOpen = !!next.floating.chart || next.rails.right?.expanded === 'chart';
+                        if (selectedChartId && !chartOpen) setSelectedChartId(null);
                     }}
-                    onMouseUp={() => {
-                        if (didApplyPaintRef.current) {
-                            // Already applied in handleCellActivate (single-cell click)
-                            didApplyPaintRef.current = false;
-                            return;
-                        }
-                        if (formatPainterSourceRef.current && selectionAnchorRef.current) {
-                            const anchor = selectionAnchorRef.current;
-                            const active = selectionActiveRef.current;
-                            if (active && active !== anchor) {
-                                applyFormatPaintRef.current(anchor, active);
-                            }
-                        }
-                    }}
+                    className={styles.panelHost}
                 >
-                    <SheetZoomProvider scale={zoom / 100}>
-                        <SheetGrid
-                            data={data}
-                            selectedCells={selectedCells}
-                            cutCells={clipboard.cutCells}
-                            onCellActivate={handleCellActivate}
-                            onSelectionExtend={handleSelectionExtend}
-                            colWidths={colWidths}
-                            rowHeights={rowHeights}
-                            onColResize={handleColResize}
-                            onRowResize={handleRowResize}
-                            onColHeaderSelect={handleColHeaderSelect}
-                            onRowHeaderSelect={handleRowHeaderSelect}
-                            onColHeaderExtendTo={handleColHeaderExtendTo}
-                            onRowHeaderExtendTo={handleRowHeaderExtendTo}
-                            headerSelection={gridHeaderSelection}
-                            formulaPickMode={editing.formulaPickMode}
-                            onFormulaPickMouseDown={editing.handleFormulaPickMouseDown}
-                            onFormulaPickMouseMove={editing.handleFormulaPickMouseMove}
-                            formulaPickCells={editing.formulaPickMode ? selectedCells : undefined}
-                            formulaRefHighlights={editing.formulaRefHighlights}
-                            onCellContextMenu={handleCellContextMenu}
-                            onColHeaderContextMenu={handleColHeaderContextMenu}
-                            onRowHeaderContextMenu={handleRowHeaderContextMenu}
-                            columnFilters={columnFilters.size > 0 ? columnFilters : undefined}
-                            scrollBodyRef={scrollBodyRef}
-                            conditionalFormats={cf.conditionalFormats}
-                            cfVariables={cfVariables}
-                            remotePresence={remoteUsers.filter(u => u.cellId != null).map(u => ({ clientId: u.clientId, cellId: u.cellId!, color: u.color, name: u.name }))}
-                            overlay={(
-                                <ChartLayer
-                                    charts={charts.charts}
-                                    data={data}
-                                    selectedChartId={selectedChartId}
-                                    onSelectChart={setSelectedChartId}
-                                    onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
-                                    onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
-                                    containerRef={scrollBodyRef}
-                                />
-                            )}
-                        />
-                    </SheetZoomProvider>
-                </div>
-                {showHistory && (
-                    <VersionHistoryPanel
-                        fileId={sheetId}
-                        onRestore={() => {
-                            persist.load();
-                            setShowHistory(false);
+                    <div
+                        className={styles.editorScrollArea}
+                        // CSS zoom relayouts, so zooming out shows more cells rather
+                        // than painting the same ones smaller, and every pixel the
+                        // grid computes stays in its own unzoomed space.
+                        style={{
+                            zoom: `${zoom}%`,
+                            ...(formatPainterSource ? { cursor: 'crosshair' } : {}),
                         }}
-                        onClose={() => setShowHistory(false)}
-                    />
-                )}
-                {selectedChartId && (() => {
-                    const def = charts.charts.find(c => c.id === selectedChartId);
-                    return def ? (
-                        <ChartEditorPanel
-                            def={def}
-                            data={data}
-                            onUpdate={(patch) => { charts.updateChart(selectedChartId, patch); dirtyRef.current = true; }}
-                            onDelete={() => { charts.removeChart(selectedChartId); setSelectedChartId(null); dirtyRef.current = true; }}
-                            onClose={() => setSelectedChartId(null)}
-                        />
-                    ) : null;
-                })()}
+                        onMouseUp={() => {
+                            if (didApplyPaintRef.current) {
+                                // Already applied in handleCellActivate (single-cell click)
+                                didApplyPaintRef.current = false;
+                                return;
+                            }
+                            if (formatPainterSourceRef.current && selectionAnchorRef.current) {
+                                const anchor = selectionAnchorRef.current;
+                                const active = selectionActiveRef.current;
+                                if (active && active !== anchor) {
+                                    applyFormatPaintRef.current(anchor, active);
+                                }
+                            }
+                        }}
+                    >
+                        <SheetZoomProvider scale={zoom / 100}>
+                            <SheetGrid
+                                data={data}
+                                selectedCells={selectedCells}
+                                cutCells={clipboard.cutCells}
+                                onCellActivate={handleCellActivate}
+                                onSelectionExtend={handleSelectionExtend}
+                                colWidths={colWidths}
+                                rowHeights={rowHeights}
+                                onColResize={handleColResize}
+                                onRowResize={handleRowResize}
+                                onColHeaderSelect={handleColHeaderSelect}
+                                onRowHeaderSelect={handleRowHeaderSelect}
+                                onColHeaderExtendTo={handleColHeaderExtendTo}
+                                onRowHeaderExtendTo={handleRowHeaderExtendTo}
+                                headerSelection={gridHeaderSelection}
+                                formulaPickMode={editing.formulaPickMode}
+                                onFormulaPickMouseDown={editing.handleFormulaPickMouseDown}
+                                onFormulaPickMouseMove={editing.handleFormulaPickMouseMove}
+                                formulaPickCells={editing.formulaPickMode ? selectedCells : undefined}
+                                formulaRefHighlights={editing.formulaRefHighlights}
+                                onCellContextMenu={handleCellContextMenu}
+                                onColHeaderContextMenu={handleColHeaderContextMenu}
+                                onRowHeaderContextMenu={handleRowHeaderContextMenu}
+                                columnFilters={columnFilters.size > 0 ? columnFilters : undefined}
+                                scrollBodyRef={scrollBodyRef}
+                                conditionalFormats={cf.conditionalFormats}
+                                cfVariables={cfVariables}
+                                remotePresence={remoteUsers.filter(u => u.cellId != null).map(u => ({ clientId: u.clientId, cellId: u.cellId!, color: u.color, name: u.name }))}
+                                overlay={(
+                                    <ChartLayer
+                                        charts={charts.charts}
+                                        data={data}
+                                        selectedChartId={selectedChartId}
+                                        onSelectChart={setSelectedChartId}
+                                        onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
+                                        onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
+                                        containerRef={scrollBodyRef}
+                                    />
+                                )}
+                            />
+                        </SheetZoomProvider>
+                    </div>
+                </PanelRail>
             </div>
 
             <div className={styles.bottomBar}>

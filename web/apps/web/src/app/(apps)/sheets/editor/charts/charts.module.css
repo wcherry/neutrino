@@ -275,45 +275,14 @@
 /* ── ChartEditorPanel ── */
 
 .editorPanel {
-    width: 240px;
-    flex-shrink: 0;
-    border-left: 1px solid var(--color-border);
-    background: var(--color-surface-raised);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    min-height: 100%;
 }
 
-.editorPanelHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--color-border);
-    flex-shrink: 0;
-}
 
-.editorPanelTitle {
-    font-size: var(--font-size-13);
-    font-weight: 600;
-    color: var(--color-text);
-}
 
-.editorPanelClose {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-text-muted);
-    padding: 2px;
-    display: flex;
-    align-items: center;
-    border-radius: calc(4px * var(--radius-scale));
-}
 
-.editorPanelClose:hover {
-    background: var(--color-surface-hover, rgb(240, 240, 248));
-    color: var(--color-text);
-}
 
 .editorPanelBody {
     flex: 1;

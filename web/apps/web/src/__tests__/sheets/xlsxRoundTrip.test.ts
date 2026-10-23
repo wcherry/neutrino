@@ -63,7 +63,9 @@ vi.mock('@/hooks/useContentVersionGuard', () => ({
     observe: vi.fn(), check: () => undefined, handleError: () => false,
   }),
 }));
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 vi.mock('@/hooks/useEncryptedDocumentContent', () => ({

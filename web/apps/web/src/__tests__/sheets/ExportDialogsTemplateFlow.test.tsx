@@ -35,7 +35,9 @@ import { SHEET_TEMPLATES } from '../../app/(apps)/sheets/editor/templates/sheetT
 // mock it (see EventDetail.test.tsx) so the SheetTemplatePickerModal rendered
 // inside the 'new-template-gallery' dialog state doesn't depend on
 // framer-motion/portal timing in jsdom.
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
     Modal: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
         open ? <div data-testid="modal">{children}</div> : null,
     ModalHeader: ({ title, onClose }: { title?: string; onClose?: () => void }) => (

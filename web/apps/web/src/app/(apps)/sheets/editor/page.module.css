@@ -18,8 +18,22 @@
   overflow: hidden;
 }
 
+/* The grid inside its panel rail. */
+.panelHost {
+  flex: 1;
+  min-width: 0;
+}
+
+.panelEmpty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted);
+}
+
 .editorScrollArea {
   flex: 1;
+  height: 100%;
   overflow: hidden;
   position: relative;
 }

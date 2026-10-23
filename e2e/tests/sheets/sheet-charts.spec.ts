@@ -174,7 +174,7 @@ test.describe('Sheets charts', () => {
     await expect(page.getByRole('button', { name: 'Delete Chart' })).toBeVisible({ timeout: 5_000 });
   });
 
-  test('closing the chart editor panel via X deselects the chart', async ({ page, request }) => {
+  test('collapsing the chart editor panel deselects the chart', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openNewSheet(page);
 
@@ -184,8 +184,8 @@ test.describe('Sheets charts', () => {
     await page.locator('[class*="chartFrame"]').first().click();
     await expect(page.getByRole('button', { name: 'Delete Chart' })).toBeVisible({ timeout: 5_000 });
 
-    // Close the panel
-    await page.getByRole('button', { name: 'Close chart editor' }).click();
+    // Collapse the Chart tab in the right rail
+    await page.getByRole('button', { name: 'Collapse Chart' }).click();
 
     // The editor panel must be gone (no Delete Chart button)
     await expect(page.getByRole('button', { name: 'Delete Chart' })).not.toBeVisible({ timeout: 3_000 });
