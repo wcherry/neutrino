@@ -6,7 +6,6 @@ export type { TokenEntry, DocEntry } from './db';
 export { IndexEngine } from './engine';
 export {
   emitSearchIndexUpdate,
-  indexRevision,
   subscribeToSearchIndexUpdates,
   resetSearchIndexEvents,
 } from './events';
