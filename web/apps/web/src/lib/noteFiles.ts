@@ -37,11 +37,17 @@ export async function createNote(title: string, folderId?: string | null): Promi
  * `notesApi.listNotes()` returned. Paged with a hard cap so a huge drive
  * can't stall the caller (same cap `searchIndexer.ts` uses for its own
  * whole-drive listing).
+ *
+ * The server filters to notes (`type=note`, the same `text/markdown` match).
+ * Listing every file and filtering here took five requests in a row on a
+ * 1,000-file drive, every time the editor opened, to find a handful of notes,
+ * and the cap counted files rather than notes, so a note past the first 1,000
+ * files was never found. The MIME check below stays as a guard.
  */
 export async function listAllNotes(): Promise<NoteMeta[]> {
   const notes: NoteMeta[] = [];
   for (let page = 0; page < LIST_MAX_PAGES; page++) {
-    const res = await storageApi.listFiles({ limit: LIST_PAGE_SIZE, offset: page * LIST_PAGE_SIZE });
+    const res = await storageApi.listFiles({ type: 'note', limit: LIST_PAGE_SIZE, offset: page * LIST_PAGE_SIZE });
     for (const f of res.items) {
       if (f.mimeType === NOTE_MIME) {
         notes.push({ id: f.id, title: f.name, createdAt: f.createdAt, updatedAt: f.updatedAt });
