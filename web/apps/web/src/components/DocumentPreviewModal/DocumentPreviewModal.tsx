@@ -28,11 +28,7 @@ import {
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { readStoredDocumentBody } from '@/lib/documentContent';
 
-import {
-  parseBlocks,
-  renderInline,
-} from '@/app/(apps)/notes/editor/blockEditorHelpers';
-import type { Block } from '@/app/(apps)/notes/editor/blockEditorTypes';
+import { NoteBlocks } from '@/app/(apps)/notes/NoteBlocks';
 
 import {
   slideBackgroundStyle,
@@ -463,59 +459,7 @@ function NotePreview({ id }: { id: string }) {
     );
   }
 
-  const blocks: Block[] = parseBlocks(content);
-
-  return (
-    <div className={styles.noteContent}>
-      {blocks.map((block, idx) => {
-        switch (block.type) {
-          case 'bullet':
-            return (
-              <div key={block.id ?? idx} className={styles.noteBlockBullet}>
-                <span className={styles.noteBulletDot} aria-hidden />
-                <span>{renderInline(block.content, [], () => {})}</span>
-              </div>
-            );
-          case 'numbered':
-            return (
-              <div key={block.id ?? idx} style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ flexShrink: 0, color: 'var(--color-text-muted)' }}>{idx + 1}.</span>
-                <span>{renderInline(block.content, [], () => {})}</span>
-              </div>
-            );
-          case 'code':
-            return (
-              <pre key={block.id ?? idx} className={styles.noteBlockCode}>{block.content}</pre>
-            );
-          case 'blockquote':
-            return (
-              <blockquote key={block.id ?? idx} className={styles.noteBlockQuote}>
-                {renderInline(block.content, [], () => {})}
-              </blockquote>
-            );
-          case 'task':
-            return (
-              <div key={block.id ?? idx} className={styles.noteTaskRow}>
-                <span
-                  className={[styles.noteTaskCheck, block.checked ? styles.noteTaskChecked : ''].filter(Boolean).join(' ')}
-                  aria-label={block.checked ? 'Completed task' : 'Incomplete task'}
-                />
-                <span className={block.checked ? styles.noteTaskTextDone : styles.noteTaskText}>
-                  {renderInline(block.content, [], () => {})}
-                </span>
-              </div>
-            );
-          default:
-            // paragraph (and any unrecognised type)
-            return (
-              <div key={block.id ?? idx} className={styles.noteBlock}>
-                {renderInline(block.content, [], () => {})}
-              </div>
-            );
-        }
-      })}
-    </div>
-  );
+  return <NoteBlocks content={content} className={styles.noteContent} />;
 }
 
 // ── Diagram preview ───────────────────────────────────────────────────────────

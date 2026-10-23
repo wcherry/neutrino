@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatDateTime, formatFriendlyDate } from '@neutrino/utils';
 import { Card, Text, FileListSkeleton, Badge } from '../../index';
+import { ZoomablePreview } from './ZoomablePreview';
 import styles from './FileGrid.module.css';
 import { useWindowedItems } from './useWindowedItems';
 
@@ -79,6 +80,14 @@ export interface GridItem {
    * this with `driveApi.getThumbnailUrl(file.coverThumbnailUrl)`.
    */
   thumbnailUrl?: string | null;
+  /**
+   * A live rendering of the item's content — a note's text, say — shown in
+   * the large card in place of the thumbnail or icon, inside a
+   * `ZoomablePreview` so it carries a zoom slider. Any file type that can
+   * render itself gets the slider by setting this; small cards and list rows
+   * keep the icon, since they are too small to read a preview in.
+   */
+  preview?: React.ReactNode;
 }
 
 const FILTER_CHIPS: { key: FilterType; label: string }[] = [
@@ -267,9 +276,11 @@ const LargeCard = React.memo(function LargeCard(props: ItemProps) {
       onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
     >
       <div className={styles['preview-large']} style={{ color: item.iconColor }}>
-        {thumbSrc
-          ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
-          : <item.icon size={48} strokeWidth={1} />
+        {item.preview
+          ? <ZoomablePreview label={item.name}>{item.preview}</ZoomablePreview>
+          : thumbSrc
+            ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
+            : <item.icon size={48} strokeWidth={1} />
         }
         <StarBadge item={item} onToggleStar={onToggleStar} size={14} />
       </div>

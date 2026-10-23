@@ -163,3 +163,33 @@ export async function readDocumentText(
     return '';
   }
 }
+
+/**
+ * The decrypted body of a document, for *showing* — or `null` when this
+ * session cannot read it.
+ *
+ * `readDocumentText` is built for the indexer and treats "no key" as "not
+ * encrypted", so a locked session gets the ciphertext back as text; indexing
+ * that is harmless noise, rendering it on a card is not. This asks the server
+ * whether the file has a key ref first, so an encrypted body is decrypted or
+ * withheld and never displayed. Like the indexer's reader it never mints a key.
+ */
+export async function readDocumentTextForDisplay(
+  userId: string,
+  fileId: string,
+  app?: OoxmlApp,
+): Promise<string | null> {
+  await initSodium();
+  const keyRef = await encryptionApi.getFileKey(fileId);
+  // Nothing to decrypt it with: don't download bytes there is no showing.
+  if (keyRef && !loadKeyPair(userId)) return null;
+  const blob = await storageApi.downloadFile(fileId);
+  const stored = new Uint8Array(await blob.arrayBuffer());
+  if (!keyRef) return bodyTextFromStored(stored, app);
+  try {
+    const dek = await openFileKey(userId, fileId, keyRef);
+    return await bodyTextFromStored(decryptStored(stored, dek), app);
+  } catch {
+    return null;
+  }
+}

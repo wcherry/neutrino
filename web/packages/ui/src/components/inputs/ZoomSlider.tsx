@@ -11,6 +11,8 @@ export interface ZoomSliderProps {
   step?: number;
   sliderStep?: number;
   showHandle?: boolean;
+  /** `sm` is the compact form, for overlaying on something as small as a grid card. */
+  size?: 'md' | 'sm';
   className?: string;
 }
 
@@ -22,6 +24,7 @@ export function ZoomSlider({
   step = 25,
   sliderStep,
   showHandle = false,
+  size = 'md',
   className = '',
 }: ZoomSliderProps) {
   const sliderId = useId();
@@ -45,7 +48,7 @@ export function ZoomSlider({
   const trackFill = ((value - min) / (max - min)) * 100;
 
   return (
-    <div className={[styles.root, className].filter(Boolean).join(' ')}>
+    <div className={[styles.root, size === 'sm' ? styles.sm : '', className].filter(Boolean).join(' ')}>
       <button
         type="button"
         className={styles.stepBtn}

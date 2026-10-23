@@ -148,13 +148,13 @@ impl EventsRepository {
 
     /// Insert-or-update an event coming from an external sync source.
     /// Lookup key is (user_id, source, external_id). If found, updates mutable fields;
-    /// otherwise inserts a new row.
+    /// otherwise inserts a new row. Returns the row's id, which a series' exceptions point at.
     pub fn upsert_from_sync(
         &self,
         user_id: &str,
         source: &str,
         record: NewEventRecord,
-    ) -> Result<(), ApiError> {
+    ) -> Result<String, ApiError> {
         let mut conn = self.get_conn()?;
 
         let existing: Option<(String, Option<String>)> = events::table
@@ -189,6 +189,10 @@ impl EventsRepository {
                 // Into the provider's calendar only if it is in none; one the user moved it to
                 // stays.
                 calendar_id: calendar_id.is_none().then_some(record.calendar_id),
+                // An occurrence the provider deleted and then restored, or the reverse.
+                cancelled: Some(record.cancelled),
+                recurring_event_id: Some(record.recurring_event_id),
+                original_start_time: Some(record.original_start_time),
                 ..Default::default()
             };
             diesel::update(events::table.filter(events::id.eq(&existing)))
@@ -198,6 +202,7 @@ impl EventsRepository {
                     tracing::error!("DB upsert_from_sync update error: {:?}", e);
                     ApiError::internal("Database error")
                 })?;
+            Ok(existing)
         } else {
             diesel::insert_into(events::table)
                 .values(&record)
@@ -206,9 +211,8 @@ impl EventsRepository {
                     tracing::error!("DB upsert_from_sync insert error: {:?}", e);
                     ApiError::internal("Database error")
                 })?;
+            Ok(record.id)
         }
-
-        Ok(())
     }
 
     /// Soft-deletes an externally-sourced event by its external ID, when the provider reports it
