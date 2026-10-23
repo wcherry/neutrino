@@ -3,7 +3,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  X,
   Image as ImageIcon,
   Video,
   Calendar,
@@ -55,7 +54,6 @@ interface Props {
   isMotionPhoto?: boolean;
   /** Which flavour it is, so the panel can name it the way its platform does. */
   subtype?: MotionPhotoSubtype | null;
-  onClose: () => void;
 }
 
 export function PhotoInfoPanel({
@@ -63,7 +61,6 @@ export function PhotoInfoPanel({
   motion = null,
   isMotionPhoto = false,
   subtype = null,
-  onClose,
 }: Props) {
   const meta = photo.metadata;
   const exif = meta?.exif;
@@ -87,18 +84,7 @@ export function PhotoInfoPanel({
     : 'Unknown';
 
   return (
-    <aside className={styles.panel} aria-label="Photo information">
-      <div className={styles.header}>
-        <Heading level={3} size="sm">Photo info</Heading>
-        <button
-          type="button"
-          className={styles.closeBtn}
-          onClick={onClose}
-          aria-label="Close photo info"
-        >
-          <X size={16} />
-        </button>
-      </div>
+    <div className={styles.panel}>
 
       <div className={styles.preview}>
         {thumbnailSrc ? (
@@ -269,6 +255,6 @@ export function PhotoInfoPanel({
         <Text size="xs" color="muted" weight="semibold">MIME type</Text>
         <Text size="xs" color="muted">{photo.mimeType}</Text>
       </div>
-    </aside>
+    </div>
   );
 }

@@ -6,7 +6,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Heading, Spinner, Modal, ModalHeader, ModalBody } from '@neutrino/ui';
+import { Button, Heading, Spinner, Modal, ModalHeader, ModalBody, PanelRail, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
+import { useRailState } from '@/lib/panelLayouts';
 import {
   Image as ImageIcon,
   Upload,
@@ -221,6 +222,17 @@ function PersonCard({ person, onClick }: { person: PersonResponse; onClick: () =
   );
 }
 
+/** The library's panels, in a right rail: photo info, a person's photos, face suggestions. */
+const PHOTO_SIDES: RailSide[] = ['right'];
+const PHOTO_PANEL_SPEC: RailSpec = {
+  sides: PHOTO_SIDES,
+  panels: [
+    { id: 'info', side: 'right' },
+    { id: 'person', side: 'right' },
+    { id: 'suggestions', side: 'right' },
+  ],
+};
+
 export default function PhotosPage() {
   const queryClient = useQueryClient();
   const currentUser = useUser();
@@ -233,7 +245,19 @@ export default function PhotosPage() {
   const [selectedPerson, setSelectedPerson] = useState<PersonResponse | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  // Photo info, a person's photos and face suggestions are tabs in a right rail
+  // (lib/panelLayouts.ts). Info and person follow their selection, as the panels used to.
+  const panels = useRailState('photos-library', PHOTO_PANEL_SPEC);
+  useEffect(() => {
+    if (selectedItem) panels.open('info');
+    else panels.close('info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItem?.photo.id]);
+  useEffect(() => {
+    if (selectedPerson) panels.open('person');
+    else panels.close('person');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPerson?.id]);
   const [includePersonIds, setIncludePersonIds] = useState<string[]>([]);
   const [excludePersonIds, setExcludePersonIds] = useState<string[]>([]);
   const [personFilterOpen, setPersonFilterOpen] = useState(false);
@@ -443,7 +467,63 @@ export default function PhotosPage() {
     );
   });
 
+
+  const railPanels: RailPanel[] = [
+    {
+      id: 'info',
+      title: 'Photo info',
+      icon: <Info size={14} />,
+      side: 'right',
+      content: selectedItem ? (
+        <PhotoInfoPanel
+          photo={selectedItem.photo}
+          motion={selectedItem.motion}
+          isMotionPhoto={selectedItem.isMotionPhoto}
+          subtype={selectedItem.subtype}
+        />
+      ) : (
+        <p className={styles.panelEmpty}>Choose Info on a photo to see its details here.</p>
+      ),
+    },
+    {
+      id: 'person',
+      title: selectedPerson?.name || 'Person',
+      icon: <Users size={14} />,
+      side: 'right',
+      content: selectedPerson ? (
+        <PersonPhotosPanel
+          person={selectedPerson}
+          allPersons={persons}
+          onPersonUpdated={(updated) => {
+            setSelectedPerson(updated);
+            queryClient.invalidateQueries({ queryKey: ['persons'] });
+          }}
+          onPersonDeleted={() => {
+            setSelectedPerson(null);
+            queryClient.invalidateQueries({ queryKey: ['persons'] });
+          }}
+        />
+      ) : (
+        <p className={styles.panelEmpty}>Pick a person under People to see their photos here.</p>
+      ),
+    },
+    { id: 'suggestions', title: 'Suggestions', icon: <Sparkles size={14} />, side: 'right', content: <SuggestionsPanel /> },
+  ];
   return (
+    <PanelRail
+      panels={railPanels}
+      sides={PHOTO_SIDES}
+      layout={panels.layout}
+      onLayoutChange={(next) => {
+        panels.setLayout(next);
+        // Collapsing info or a person clears that selection, as closing the panel did.
+        const open = (id: string) => !!next.floating[id] || next.rails.right?.expanded === id;
+        if (selectedItem && !open('info')) setSelectedItem(null);
+        if (selectedPerson && !open('person')) setSelectedPerson(null);
+      }}
+      className={styles.panelHost}
+    >
+    <div className={styles.scroller}>
     <div className={styles.page}>
       <input
         ref={uploadInputRef}
@@ -465,7 +545,7 @@ export default function PhotosPage() {
           <div style={{ position: 'relative', display: 'inline-flex' }}>
             <Button
               variant="secondary"
-              onClick={() => setShowSuggestions((v) => !v)}
+              onClick={() => panels.toggle('suggestions')}
               icon={<Sparkles size={16} />}
             >
               Suggestions
@@ -767,35 +847,6 @@ export default function PhotosPage() {
         </div>
       )}
 
-      {selectedItem && (
-        <PhotoInfoPanel
-          photo={selectedItem.photo}
-          motion={selectedItem.motion}
-          isMotionPhoto={selectedItem.isMotionPhoto}
-          subtype={selectedItem.subtype}
-          onClose={() => setSelectedItem(null)}
-        />
-      )}
-
-      {selectedPerson && (
-        <PersonPhotosPanel
-          person={selectedPerson}
-          allPersons={persons}
-          onClose={() => setSelectedPerson(null)}
-          onPersonUpdated={(updated) => {
-            setSelectedPerson(updated);
-            queryClient.invalidateQueries({ queryKey: ['persons'] });
-          }}
-          onPersonDeleted={() => {
-            setSelectedPerson(null);
-            queryClient.invalidateQueries({ queryKey: ['persons'] });
-          }}
-        />
-      )}
-
-      {showSuggestions && (
-        <SuggestionsPanel onClose={() => setShowSuggestions(false)} />
-      )}
 
       <Modal open={showUploadModal} onClose={() => setShowUploadModal(false)} size="md">
         <ModalHeader title="Upload files" onClose={() => setShowUploadModal(false)} />
@@ -817,5 +868,7 @@ export default function PhotosPage() {
         </ModalBody>
       </Modal>
     </div>
+    </div>
+    </PanelRail>
   );
 }
