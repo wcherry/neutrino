@@ -1,5 +1,5 @@
 /**
- * Unit tests for CustomFontsProvider (feature/custom-fonts, red phase).
+ * Unit tests for CustomFontsProvider.
  *
  * Fetches on mount and exposes the result via context with a `loaded` flag,
  * plus the additional behavior described in
@@ -7,15 +7,10 @@
  *   - Guarded on `localStorage.getItem('access_token')` being present, so it
  *     never fires (and never triggers a 401 -> redirect loop) on
  *     /sign-in /register before a token exists.
- *   - Calls fontsApi.list(), then fontsApi.getFileBlob(font.fileUrl) for
- *     each font, builds one @font-face rule per font pointing at
- *     URL.createObjectURL(blob), and injects them into a single
- *     <style id="neutrino-custom-fonts"> tag in document.head.
+ *   - Calls fontsApi.list() and registers each font as a placeholder face;
+ *     a font's file is downloaded (fontsApi.getFileBlob) only when the
+ *     browser first tries to use it, then swapped in.
  *   - Exposes useCustomFonts() -> { fonts, loaded }.
- *
- * The module (web/apps/web/src/providers/CustomFontsProvider.tsx) does not
- * exist yet — every test below fails (or fails to import) until
- * frontend-developer adds it.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -36,7 +31,7 @@ vi.mock('@neutrino/api-admin', () => ({
   },
 }));
 
-import { CustomFontsProvider, useCustomFonts } from '@/providers/CustomFontsProvider';
+import { CUSTOM_FONT_LOADED, CustomFontsProvider, useCustomFonts } from '@/providers/CustomFontsProvider';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -77,12 +72,9 @@ describe('CustomFontsProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    document.getElementById('neutrino-custom-fonts')?.remove();
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
   });
 
   afterEach(() => {
-    document.getElementById('neutrino-custom-fonts')?.remove();
     vi.restoreAllMocks();
   });
 
@@ -138,56 +130,85 @@ describe('CustomFontsProvider', () => {
     expect(screen.getByTestId('count').textContent).toBe('0');
   });
 
-  it('calls fontsApi.getFileBlob with each font\'s fileUrl', async () => {
-    localStorage.setItem('access_token', 'test-token');
-    mockList.mockResolvedValue([sampleFont]);
-    mockGetFileBlob.mockResolvedValue(new Blob(['fake font bytes']));
+  describe('loading font files on demand', () => {
+    // jsdom has no CSS Font Loading API, so a small stand-in records what is registered and lets a
+    // test play the browser's part: fire `loadingerror` when text first uses a placeholder.
+    class FakeFontFace {
+      constructor(public family: string, public source: string | ArrayBuffer) {}
+      load() { return Promise.resolve(this); }
+    }
+    let faces: Set<FakeFontFace>;
+    let fontSet: EventTarget & { add: (f: FakeFontFace) => void; delete: (f: FakeFontFace) => void };
 
-    renderProvider();
-
-    await waitFor(() => expect(mockGetFileBlob).toHaveBeenCalledWith(sampleFont.fileUrl));
-  });
-
-  it('injects a <style id="neutrino-custom-fonts"> tag into document.head', async () => {
-    localStorage.setItem('access_token', 'test-token');
-    mockList.mockResolvedValue([sampleFont]);
-    mockGetFileBlob.mockResolvedValue(new Blob(['fake font bytes']));
-
-    renderProvider();
-
-    await waitFor(() => {
-      const style = document.getElementById('neutrino-custom-fonts');
-      expect(style).not.toBeNull();
-      expect(style?.tagName).toBe('STYLE');
+    beforeEach(() => {
+      faces = new Set();
+      fontSet = Object.assign(new EventTarget(), {
+        add: (f: FakeFontFace) => { faces.add(f); },
+        delete: (f: FakeFontFace) => { faces.delete(f); },
+      });
+      vi.stubGlobal('FontFace', FakeFontFace);
+      Object.defineProperty(document, 'fonts', { value: fontSet, configurable: true });
+      localStorage.setItem('access_token', 'test-token');
+      mockList.mockResolvedValue([sampleFont, { ...sampleFont, id: 'font-2', displayName: 'Other Font', fileUrl: '/api/v1/fonts/font-2/file' }]);
+      mockGetFileBlob.mockResolvedValue(new Blob(['fake font bytes']));
     });
-  });
 
-  it('injects an @font-face rule referencing the font display name and a blob object URL', async () => {
-    localStorage.setItem('access_token', 'test-token');
-    mockList.mockResolvedValue([sampleFont]);
-    mockGetFileBlob.mockResolvedValue(new Blob(['fake font bytes']));
-
-    renderProvider();
-
-    await waitFor(() => {
-      const style = document.getElementById('neutrino-custom-fonts');
-      expect(style?.textContent).toContain('@font-face');
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { fonts?: unknown }).fonts;
     });
-    const style = document.getElementById('neutrino-custom-fonts')!;
-    expect(style.textContent).toContain('My Custom Font');
-    expect(style.textContent).toContain('blob:mock-url');
-  });
 
-  it('does not duplicate the injected <style> tag across the app', async () => {
-    localStorage.setItem('access_token', 'test-token');
-    mockList.mockResolvedValue([sampleFont]);
-    mockGetFileBlob.mockResolvedValue(new Blob(['fake font bytes']));
+    function useFont(family: string) {
+      const face = [...faces].find((f) => f.family === family && typeof f.source === 'string')!;
+      const event = Object.assign(new Event('loadingerror'), { fontfaces: [face] });
+      fontSet.dispatchEvent(event);
+    }
 
-    renderProvider();
+    it('registers every font without downloading any file', async () => {
+      renderProvider();
+      await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+      expect([...faces].map((f) => f.family)).toEqual(['My Custom Font', 'Other Font']);
+      expect([...faces].every((f) => typeof f.source === 'string' && f.source.startsWith('local('))).toBe(true);
+      expect(mockGetFileBlob).not.toHaveBeenCalled();
+    });
 
-    await waitFor(() => expect(document.getElementById('neutrino-custom-fonts')).not.toBeNull());
-    const styleTags = document.querySelectorAll('#neutrino-custom-fonts');
-    expect(styleTags.length).toBe(1);
+    it('downloads a font the first time it is used, swaps it in and announces it', async () => {
+      const announced: string[] = [];
+      const listener = (e: Event) => announced.push((e as CustomEvent<{ family: string }>).detail.family);
+      window.addEventListener(CUSTOM_FONT_LOADED, listener);
+      renderProvider();
+      await waitFor(() => expect(faces.size).toBe(2));
+
+      useFont('My Custom Font');
+
+      await waitFor(() => expect([...faces].some((f) => f.source instanceof ArrayBuffer)).toBe(true));
+      expect(mockGetFileBlob).toHaveBeenCalledTimes(1);
+      expect(mockGetFileBlob).toHaveBeenCalledWith(sampleFont.fileUrl);
+      const mine = [...faces].filter((f) => f.family === 'My Custom Font');
+      expect(mine).toHaveLength(1);
+      expect(mine[0].source).toBeInstanceOf(ArrayBuffer);
+      // So a canvas that drew the fallback can redraw.
+      expect(announced).toEqual(['My Custom Font']);
+      window.removeEventListener(CUSTOM_FONT_LOADED, listener);
+    });
+
+    it('downloads each font at most once', async () => {
+      renderProvider();
+      await waitFor(() => expect(faces.size).toBe(2));
+      const placeholder = [...faces].find((f) => f.family === 'My Custom Font')!;
+
+      fontSet.dispatchEvent(Object.assign(new Event('loadingerror'), { fontfaces: [placeholder] }));
+      fontSet.dispatchEvent(Object.assign(new Event('loadingerror'), { fontfaces: [placeholder] }));
+
+      await waitFor(() => expect(mockGetFileBlob).toHaveBeenCalledTimes(1));
+    });
+
+    it('removes its fonts when unmounted', async () => {
+      const { unmount } = renderProvider();
+      await waitFor(() => expect(faces.size).toBe(2));
+      unmount();
+      expect(faces.size).toBe(0);
+    });
   });
 
   it('useCustomFonts returns safe defaults when used outside the provider', () => {

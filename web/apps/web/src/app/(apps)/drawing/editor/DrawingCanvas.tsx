@@ -88,6 +88,7 @@ import {
   type VectorStyle,
 } from './types';
 import { addKeyHandler } from '@neutrino/commands';
+import { CUSTOM_FONT_LOADED } from '@/providers/CustomFontsProvider';
 
 export interface DrawingCanvasHandle {
   setTransform: (t: Transform) => void;
@@ -655,6 +656,13 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
     }, []);
 
     useEffect(() => { render(); }, [doc, selection, bitmaps, images, textEdit, tool, render]);
+
+    // A custom font arrives only once text first asks for it, after this canvas has already drawn
+    // that text in the fallback font.
+    useEffect(() => {
+      window.addEventListener(CUSTOM_FONT_LOADED, render);
+      return () => window.removeEventListener(CUSTOM_FONT_LOADED, render);
+    }, [render]);
 
     // The ants only run while something is selected, so an idle editor is not
     // repainting the whole canvas twice a second for nothing.
