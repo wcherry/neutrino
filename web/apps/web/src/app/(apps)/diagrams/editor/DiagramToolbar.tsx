@@ -424,7 +424,7 @@ export function DiagramToolbar({
   ];
 
   return (
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} data-toolbar-root>
       {/* Left: main menu + mode tools + history */}
       <div className={styles.left}>
         <button

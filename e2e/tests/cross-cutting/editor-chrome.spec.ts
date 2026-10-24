@@ -77,7 +77,10 @@ test.describe('Toolbar customization', () => {
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTitle('Text case')).toHaveCount(0);
 
-    await page.getByTitle('Bold (Ctrl+B)').click({ button: 'right' });
+    // Anywhere on the bar, not only on a tool: here its empty right-hand end.
+    const bar = page.locator('[data-tool="history"]').locator('xpath=../..');
+    const box = (await bar.boundingBox())!;
+    await bar.click({ button: 'right', position: { x: box.width - 4, y: box.height / 2 } });
     await page.getByRole('menuitem', { name: 'Customize toolbar…' }).click();
     await page.getByRole('button', { name: 'Reset to default' }).click();
     await page.getByRole('button', { name: 'Close dialog' }).click();
