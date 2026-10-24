@@ -20,6 +20,11 @@
   gap: 1px;
 }
 
+/* A tool rail is one button wide: a captioned group stacks its buttons. */
+.vertical .toolBody {
+  flex-direction: column;
+}
+
 .toolCaption {
   font-size: var(--font-size-10);
   line-height: 1.1;
@@ -45,6 +50,19 @@
 .moreButton[aria-expanded='true'] {
   background: var(--editor-tool-hover-bg, var(--color-surface-hover));
   color: var(--editor-tool-hover-fg, var(--color-text));
+}
+
+/* Drawn as the shared Popover draws itself, but fixed and on <body>. */
+.morePopover {
+  position: fixed;
+  z-index: var(--z-popover);
+  max-width: 360px;
+  background-color: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
 }
 
 .morePanel {

@@ -3,7 +3,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreHorizontal, SlidersHorizontal } from 'lucide-react';
-import { Popover } from '@neutrino/ui';
 import { useDismiss } from '@neutrino/commands';
 import { EDITOR_TOOLBARS, useToolbarLayout, type EditorToolbarId } from '@/lib/editorToolbars';
 import { CustomizeToolbarDialog } from './CustomizeToolbar';
@@ -50,6 +49,7 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
   const [customizing, setCustomizing] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   useDismiss(() => setMenu(null), menu !== null);
+  useDismiss(() => setMoreOpen(false), moreOpen);
   const itemsRef = useRef<HTMLDivElement>(null);
 
   // The items are `display: contents`, so the gaps and the rest of the bar belong to the toolbar
@@ -77,6 +77,31 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
     el.style.left = `${Math.max(4, Math.min(menu.x, window.innerWidth - width - 4))}px`;
     el.style.top = `${Math.max(4, Math.min(menu.y, window.innerHeight - height - 4))}px`;
   }, [menu]);
+
+  // "More tools" opens beside its button (to the right of a rail, below a bar), on <body> like the
+  // menu: a tool rail scrolls, and a panel drawn inside it was clipped and scrolled the rail away.
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const morePanelRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const button = moreButtonRef.current;
+    const panel = morePanelRef.current;
+    if (!moreOpen || !button || !panel) return;
+    const at = button.getBoundingClientRect();
+    const { width, height } = panel.getBoundingClientRect();
+    const left = vertical ? at.right + 6 : at.right - width;
+    const top = vertical ? at.top : at.bottom + 6;
+    panel.style.left = `${Math.max(4, Math.min(left, window.innerWidth - width - 4))}px`;
+    panel.style.top = `${Math.max(4, Math.min(top, window.innerHeight - height - 4))}px`;
+  }, [moreOpen, vertical]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!morePanelRef.current?.contains(target) && !moreButtonRef.current?.contains(target)) setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [moreOpen]);
 
   const byId = new Map(tools.map(t => [t.id, t]));
   const captionOf = (id: string) => catalog.find(t => t.id === id)?.caption ?? id;
@@ -107,29 +132,24 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
   }
 
   return (
-    <div ref={itemsRef} className={styles.toolItems}>
+    <div ref={itemsRef} className={vertical ? `${styles.toolItems} ${styles.vertical}` : styles.toolItems}>
       {shown}
       {overflow && tucked.length > 0 && (
         <>
           {shown.length > 0 && divider}
-          <Popover
-            open={moreOpen}
-            onClose={() => setMoreOpen(false)}
-            placement={vertical ? 'right' : 'bottom-end'}
-            trigger={
-              <button
-                type="button"
-                className={styles.moreButton}
-                title="More tools"
-                aria-label="More tools"
-                aria-expanded={moreOpen}
-                onClick={() => setMoreOpen(v => !v)}
-              >
-                <MoreHorizontal size={15} />
-              </button>
-            }
+          <button
+            ref={moreButtonRef}
+            type="button"
+            className={styles.moreButton}
+            title="More tools"
+            aria-label="More tools"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen(v => !v)}
           >
-            <div className={styles.morePanel} role="group" aria-label="More tools">
+            <MoreHorizontal size={15} />
+          </button>
+          {moreOpen && createPortal(
+            <div ref={morePanelRef} className={`${styles.morePopover} ${styles.morePanel}`} data-toolbar-menu role="group" aria-label="More tools">
               {tucked.map(({ id, body }) => (
                 <div key={id} className={styles.moreRow} data-tool={id}>
                   <span className={styles.moreCaption}>{captionOf(id)}</span>
@@ -146,8 +166,9 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
               >
                 <SlidersHorizontal size={13} aria-hidden="true" /> Customize toolbar…
               </button>
-            </div>
-          </Popover>
+            </div>,
+            document.body,
+          )}
         </>
       )}
       {/* On <body>: a toolbar's glass `backdrop-filter` makes it the containing block of a fixed
