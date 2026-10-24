@@ -87,7 +87,8 @@ async function seedSearchDb(page: Page, docs: SeedDoc[]): Promise<void> {
     }
 
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('neutrino_search', 2);
+      // The app's schema version (packages/search/src/db.ts); v3 added docs.byUpdatedAt.
+      const req = indexedDB.open('neutrino_search', 3);
       req.onupgradeneeded = (e) => {
         const d = (e.target as IDBOpenDBRequest).result;
         if (d.objectStoreNames.contains('tokens')) d.deleteObjectStore('tokens');
@@ -95,7 +96,8 @@ async function seedSearchDb(page: Page, docs: SeedDoc[]): Promise<void> {
         const ts = d.createObjectStore('tokens', { keyPath: ['term', 'documentId', 'field'] });
         ts.createIndex('byTerm', 'term', { unique: false });
         ts.createIndex('byDocumentId', 'documentId', { unique: false });
-        d.createObjectStore('docs', { keyPath: 'documentId' });
+        const docs = d.createObjectStore('docs', { keyPath: 'documentId' });
+        docs.createIndex('byUpdatedAt', 'updatedAt', { unique: false });
       };
       req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
       req.onerror = () => reject(req.error);
