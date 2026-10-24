@@ -753,10 +753,11 @@
   /* Seamless, as its --rule is: panels are told apart by their surface, not by lines. */
   --editor-panel-rule: none;
   --editor-paper-shadow: 0 1px 2px rgb(37 52 170 / 0.06), 0 10px 30px rgb(37 52 170 / 0.08);
-  --editor-toolbar-bg: var(--glass-bg);
-  --editor-toolbar-border: 1px solid var(--glass-border);
-  --editor-toolbar-rule: 1px solid var(--glass-border);
-  --editor-toolbar-filter: var(--glass-filter);
+  /* The toolbar is drawn as the panels beside it are: on the app's own ground, not a glass card. */
+  --editor-toolbar-bg: var(--editor-panel-bg);
+  --editor-toolbar-border: 0;
+  --editor-toolbar-rule: none;
+  --editor-toolbar-filter: none;
   --editor-ground: transparent;
   --editor-tool-hover-bg: color-mix(in srgb, var(--app-color) 9%, transparent);
   --editor-header-cell-bg: color-mix(in srgb, var(--app-color) 5%, #ffffff);
@@ -793,7 +794,7 @@
 
 [data-look="blended"][data-theme="dark"] {
   --editor-panel-rule: none;
-  --editor-toolbar-bg: var(--glass-bg);
+  --editor-toolbar-bg: var(--editor-panel-bg);
   --editor-ground: transparent;
 }
 
