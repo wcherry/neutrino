@@ -1024,6 +1024,10 @@
 /* ── Editor area (rulers + scroll) ─────────────────────────────────────── */
 .editorArea {
   flex: 1;
+  /* Fills the rail's view, which is not a flex container: without a height of its own the area
+     grew to the document's, so the scroller below never scrolled and a trackpad scrolled the
+     window instead. */
+  height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
