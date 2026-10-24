@@ -110,6 +110,7 @@ const CommentsPanel = dynamic(
   { ssr: false }
 );
 import { EditorContextMenu } from './EditorContextMenu';
+import { isMacContextClick } from './macContextClick';
 // Editing tools — find/replace, grammar check, AI writing (feature gap #3)
 import { FindReplaceExtension } from '@/lib/extensions/FindReplaceExtension';
 import { GrammarCheckExtension, getGrammarIssueAt } from '@/lib/extensions/GrammarCheckExtension';
@@ -1081,6 +1082,18 @@ export function DocEditor() {
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
+      handleDOMEvents: {
+        // On a Mac, Ctrl-click is a right-click, but it arrives as a left-button mousedown, which
+        // ProseMirror takes as a click that places the cursor and the browser as the start of a
+        // click-selection that collapses on mouseup — so the selection the context menu is about
+        // was gone. Returning true stops ProseMirror, and preventDefault the browser; neither
+        // stops the contextmenu event, so it behaves as a real right-click (button 2) does.
+        mousedown: (_view, event) => {
+          if (!isMacContextClick(event)) return false;
+          event.preventDefault();
+          return true;
+        },
+      },
     },
     onTransaction: ({ transaction }) => {
       // Spell-check moving its window as the page scrolls changes nothing the React tree shows.
