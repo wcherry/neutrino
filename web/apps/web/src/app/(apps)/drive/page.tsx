@@ -415,6 +415,7 @@ function DriveContent() {
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       if (body.isStarred !== undefined) {
         queryClient.invalidateQueries({ queryKey: ['starred'] });
+        queryClient.invalidateQueries({ queryKey: ['recent'] });
       }
     },
   });
@@ -426,6 +427,7 @@ function DriveContent() {
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       if (body.isStarred !== undefined) {
         queryClient.invalidateQueries({ queryKey: ['starred'] });
+        queryClient.invalidateQueries({ queryKey: ['recent'] });
       }
     },
   });
@@ -436,6 +438,7 @@ function DriveContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['recent'] });
       toast.success('File moved');
       setMoveFile(null);
     },
@@ -483,6 +486,7 @@ function DriveContent() {
     onSuccess: ({ file, moved, keys, teamName }) => {
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['recent'] });
       queryClient.invalidateQueries({ queryKey: ['team-library'] });
       queryClient.invalidateQueries({ queryKey: ['team-shares'] });
       setMoveFile(null);
@@ -507,6 +511,7 @@ function DriveContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['recent'] });
       toast.success('File deleted');
     },
     onError: () => toast.error('Failed to delete file'),
@@ -517,6 +522,7 @@ function DriveContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['recent'] });
       toast.success('Folder deleted');
     },
     onError: () => toast.error('Failed to delete folder'),
@@ -609,6 +615,7 @@ function DriveContent() {
       );
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['recent'] });
       toast.success(`${ids.length} ${ids.length === 1 ? 'item' : 'items'} moved`);
       setSelectedIds(new Set());
       setBulkMoveOpen(false);
@@ -641,6 +648,7 @@ function DriveContent() {
       );
       queryClient.invalidateQueries({ queryKey: ['contents'] });
       queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['recent'] });
       toast.success(`${count} ${count === 1 ? 'item' : 'items'} deleted`);
       setSelectedIds(new Set());
     } catch {
