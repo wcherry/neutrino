@@ -805,6 +805,24 @@
   color: var(--palette-sky-39-2);
 }
 
+/* ── Comment anchors ─────────────────────────────────────────────────────────
+   Text an open comment is pinned to, the selected comment's text, and the text a comment is
+   being written about. Decorations from CommentAnchorExtension; the mark itself draws nothing. */
+.editorContent :global(.comment-anchor) {
+  background-color: color-mix(in srgb, var(--color-warning) 22%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--color-warning) 70%, transparent);
+  cursor: pointer;
+}
+
+.editorContent :global(.comment-anchor-active) {
+  background-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  border-bottom-color: var(--color-warning);
+}
+
+.editorContent :global(.comment-anchor-pending) {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
 /* ── Document themes ─────────────────────────────────────────────────────────
    Applied via data-doc-theme attribute on the .page element.
 ─────────────────────────────────────────────────────────────────────────── */

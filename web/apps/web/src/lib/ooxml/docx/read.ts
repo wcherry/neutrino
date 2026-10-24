@@ -268,6 +268,8 @@ interface ReadContext {
   rels: Rels;
   media: Map<string, string>;
   counters: Record<string, number>;
+  /** Comment anchors whose bookmark has started and not yet ended: bookmark id → comment id. */
+  openComments: Map<string, string>;
 }
 
 const nextIndex = (ctx: ReadContext, kind: string): number => {
@@ -297,7 +299,7 @@ function inlineFrom(parent: Element, ctx: ReadContext, extraMarks: DocMark[] = [
     switch (el.localName) {
       case 'r': {
         const rPr = kid(el, 'rPr');
-        const marks = [...marksFromRunProps(rPr), ...extraMarks];
+        const marks = [...marksFromRunProps(rPr), ...extraMarks, ...commentMarks(ctx)];
         // A placeholder run is kept as a node of its own rather than as text,
         // so it cannot merge into an adjacent italic run and lose the shape
         // `restorePlaceholders` matches on. See `PLACEHOLDER_STYLE_ID`.
@@ -358,8 +360,14 @@ function inlineFrom(parent: Element, ctx: ReadContext, extraMarks: DocMark[] = [
         out.push(fieldFrom(el, ctx));
         break;
 
-      case 'bookmarkStart':
+      case 'bookmarkStart': {
+        const commentId = ctx.extras.commentAnchors?.[attr(el, 'name') ?? ''];
+        if (commentId) ctx.openComments.set(attr(el, 'id') ?? '', commentId);
+        break;
+      }
       case 'bookmarkEnd':
+        ctx.openComments.delete(attr(el, 'id') ?? '');
+        break;
       case 'proofErr':
         break;
 
@@ -371,6 +379,11 @@ function inlineFrom(parent: Element, ctx: ReadContext, extraMarks: DocMark[] = [
     }
   }
   return out;
+}
+
+/** A comment-anchor mark for each comment bookmark the current run is inside. */
+function commentMarks(ctx: ReadContext): DocMark[] {
+  return [...new Set(ctx.openComments.values())].map((commentId) => ({ type: 'commentAnchor', attrs: { commentId } }));
 }
 
 function sameMarks(a: DocMark[] | undefined, b: DocMark[] | undefined): boolean {
@@ -877,6 +890,7 @@ export async function readDocx(bytes: Uint8Array): Promise<DocModel> {
     rels,
     media,
     counters: {},
+    openComments: new Map(),
   };
 
   const doc = parseXml(documentXml);

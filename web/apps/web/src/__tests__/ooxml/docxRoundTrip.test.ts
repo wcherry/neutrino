@@ -536,3 +536,46 @@ describe('a .docx from elsewhere', () => {
     expect(body?.content?.[0].marks).toEqual([{ type: 'bold' }]);
   });
 });
+
+describe('comment anchors survive a round trip as hidden bookmarks', () => {
+  const anchor = (commentId: string) => ({ type: 'commentAnchor', attrs: { commentId } });
+
+  it('on part of a paragraph', async () => {
+    const content = [para(text('before '), text('pinned', [anchor('c1')] as never), text(' after'))];
+    expect(await bodyRoundTrip(content)).toEqual(content);
+  });
+
+  it('across text split by another mark', async () => {
+    const content = [para(text('bold', [{ type: 'bold' }, anchor('c1')] as never), text(' plain', [anchor('c1')] as never))];
+    expect(await bodyRoundTrip(content)).toEqual(content);
+  });
+
+  it('with two comments on overlapping text', async () => {
+    const content = [para(
+      text('one ', [anchor('c1')] as never),
+      text('both', [anchor('c1'), anchor('c2')] as never),
+      text(' two', [anchor('c2')] as never),
+    )];
+    expect(await bodyRoundTrip(content)).toEqual(content);
+  });
+
+  it('in a heading, which already sits in a bookmark of its own', async () => {
+    const content = [{ type: 'heading', attrs: { level: 1 }, content: [text('Title ', []), text('pinned', [anchor('c1')] as never)] }];
+    const [heading] = await bodyRoundTrip(content as DocNode[]);
+    expect(heading.content?.find((n) => n.text === 'pinned')?.marks).toEqual([anchor('c1')]);
+  });
+
+  it('on linked text', async () => {
+    const [p] = await bodyRoundTrip([para(text('site', [{ type: 'link', attrs: { href: 'https://example.com' } }, anchor('c1')] as never))]);
+    const marks = p.content?.[0].marks ?? [];
+    expect(marks).toContainEqual(anchor('c1'));
+    expect(marks).toContainEqual({ type: 'link', attrs: { href: 'https://example.com' } });
+  });
+
+  it('as a hidden (underscore) bookmark, so Word does not list it', async () => {
+    const bytes = await writeDocx({ doc: { type: 'doc', content: [para(text('pinned', [anchor('c1')] as never))] }, meta: baseMeta() }, { title: 'RT' });
+    const JSZip = (await import('jszip')).default;
+    const xml = await (await JSZip.loadAsync(bytes)).file('word/document.xml')!.async('string');
+    expect(xml).toMatch(/<w:bookmarkStart [^>]*w:name="_NxC0"/);
+  });
+});

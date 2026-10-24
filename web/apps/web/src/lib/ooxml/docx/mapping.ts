@@ -281,7 +281,18 @@ export interface DocExtras {
   placeholders?: { kind: string; attrs: Record<string, unknown> }[];
   /** `showCode` on a field, indexed by field order — a display toggle Word has no notion of. */
   fieldShowCode?: number[];
+  /**
+   * Comment anchors, by the name of the hidden bookmark around each stretch of anchored text.
+   *
+   * By name rather than by index: a bookmark already marks exactly the range, and Word keeps a
+   * bookmark's name (only its numeric id is renumbered). A `_`-prefixed name is a hidden bookmark,
+   * so Word does not list it. The comment itself — body, replies, status — is on the server.
+   */
+  commentAnchors?: Record<string, string>;
 }
+
+/** The hidden bookmark name for the nth stretch of comment-anchored text. */
+export const commentBookmarkName = (n: number): string => `_NxC${n}`;
 
 /**
  * Placeholder kinds that stood in for a *block* node rather than an inline one.
