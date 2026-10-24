@@ -76,10 +76,16 @@
   background: var(--color-surface-secondary, var(--color-surface));
   color: var(--color-text-primary);
   user-select: all;
-  white-space: pre-wrap;
-  word-break: break-all;
+  /* Never wrapped: a group split across two lines is a key transcribed wrong. A kit wider than
+     the box scrolls sideways instead. */
+  white-space: pre;
   overflow-x: auto;
 }
+.kitActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 
 .confirmRow {
   display: flex;
