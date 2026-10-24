@@ -25,7 +25,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) =>
     React.createElement('button', { onClick }, children),
   Toolbar: () => null,

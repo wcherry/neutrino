@@ -157,93 +157,34 @@
   overflow: hidden;
 }
 
-.outlinePanel {
-  width: 220px;
-  flex-shrink: 0;
-  background: var(--editor-panel-bg, var(--color-bg));
-  border-right: var(--editor-panel-rule, 1px solid var(--color-border));
-  overflow-y: auto;
-  padding: 8px 0 16px;
-  position: relative;
-  transition: width 0.2s ease;
+/* The editor area inside its panel rails. */
+.panelHost {
+  flex: 1;
+  min-width: 0;
 }
 
-.outlinePanelCollapsed {
-  width: 32px;
-  flex-shrink: 0;
-  background: var(--color-bg);
-  border-right: 1px solid var(--color-border);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 8px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  position: relative;
-  transition: width 0.2s ease;
-}
-
-.outlineTitleRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 8px 8px 16px;
-}
-
-.outlineTitle {
-  font-size: var(--font-size-11);
-  font-weight: 600;
+.panelEmpty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--font-size-13);
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
+
+
+
+
 
 /* Collapse tab — pinned to the right edge of the panel, vertically centred */
-.outlineCollapseTab {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 48px;
-  border: none;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-bg);
-  border-radius: 0 calc(6px * var(--radius-scale)) calc(6px * var(--radius-scale)) 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-  transition: background 0.15s, color 0.15s;
-  z-index: var(--z-layer-1);
-}
 
-.outlineCollapseTab:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
-}
 
 /* Expand button shown at top of the collapsed (icon-only) panel */
-.outlineExpandBtn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  border-radius: calc(4px * var(--radius-scale));
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
-}
 
-.outlineExpandBtn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
+
+/* The outline's list; the rail's panel draws the frame and collapses it. */
+.outlineList {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
 }
 
 .outlineEmpty {
@@ -252,31 +193,8 @@
   color: var(--color-text-muted);
 }
 
-.outlineIconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  width: 32px;
-  height: 26px;
-  border: none;
-  background: none;
-  border-radius: calc(4px * var(--radius-scale));
-  cursor: pointer;
-  padding: 0 4px;
-  transition: background 0.1s;
-}
 
-.outlineIconBtn:hover {
-  background: var(--color-surface-hover);
-}
 
-.outlineIconBadge {
-  font-size: var(--font-size-10);
-  font-weight: 700;
-  color: var(--color-text-muted);
-  line-height: 1;
-  font-family: 'Roboto Mono', monospace;
-}
 
 .outlineItem {
   display: block;
@@ -960,15 +878,6 @@
 }
 
 /* ── AI writing result panel overlay ────────────────────────────────────── */
-.aiPanelOverlay {
-  position: fixed;
-  bottom: 48px;
-  right: 24px;
-  z-index: var(--z-dropdown);
-  width: 340px;
-  max-width: calc(100vw - 32px);
-  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.18));
-}
 
 /* ── Print ────────────────────────────────────────────────────────────────── */
 @media print {

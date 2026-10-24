@@ -204,7 +204,8 @@ test.describe('Canvas tools', () => {
     await registerAndLogin(request, page);
     await openEditor(request, page);
 
-    await expect(page.getByText('Layers')).toBeVisible({ timeout: 5_000 });
+    // The layers panel is the left rail's open tab.
+    await expect(page.getByRole('tabpanel', { name: 'Layers' })).toBeVisible({ timeout: 5_000 });
     // Every new drawing starts with one layer to draw into.
     await expect(layerNamed(page, 'Layer 1')).toBeVisible({ timeout: 5_000 });
 

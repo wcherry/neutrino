@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, X, Copy, Check, CornerDownLeft } from 'lucide-react';
+import { Sparkles, Copy, Check, CornerDownLeft } from 'lucide-react';
 import styles from './AiPanel.module.css';
 
 export type AiOperation = 'suggestions' | 'summarize' | 'change-tone' | 'grammar-fix';
@@ -13,7 +13,6 @@ interface AiPanelProps {
   error: string | null;
   hasSelection: boolean;
   onInsert: () => void;
-  onClose: () => void;
   /** When false the "Apply fix" footer is hidden (e.g. advisory-only grammar results). */
   canInsert?: boolean;
 }
@@ -49,7 +48,6 @@ export function AiPanel({
   error,
   hasSelection,
   onInsert,
-  onClose,
   canInsert = true,
 }: AiPanelProps) {
   const [copied, setCopied] = React.useState(false);
@@ -63,21 +61,13 @@ export function AiPanel({
   }
 
   return (
-    <div className={styles.panel} role="complementary" aria-label="AI result panel">
-      {/* Header */}
+    <div className={styles.panel}>
+      {/* Which operation this is; the panel around it is titled "AI". */}
       <div className={styles.header}>
         <div className={styles.headerTitle}>
           <Sparkles size={14} className={styles.sparkleIcon} />
           <span>{OPERATION_LABELS[operation]}</span>
         </div>
-        <button
-          className={styles.closeBtn}
-          onClick={onClose}
-          aria-label="Close AI panel"
-          type="button"
-        >
-          <X size={14} />
-        </button>
       </div>
 
       {/* Description */}

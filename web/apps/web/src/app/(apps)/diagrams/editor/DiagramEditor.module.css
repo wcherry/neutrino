@@ -14,8 +14,35 @@
   overflow: hidden;
 }
 
+/* The canvas inside its panel rails. */
+.panelHost {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A panel's own header button (Shapes' library settings), sized like the rail's controls. */
+.panelAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--editor-tool-radius, var(--radius-sm));
+  background: none;
+  color: var(--editor-tool-fg, var(--color-text-muted));
+  cursor: pointer;
+}
+
+.panelAction:hover {
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
+  color: var(--editor-tool-hover-fg, var(--color-text));
+}
+
 .canvasWrapper {
   flex: 1;
+  height: 100%;
   min-width: 0;
   position: relative;
   overflow: hidden;

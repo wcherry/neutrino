@@ -96,7 +96,7 @@ export function SuggestionsBadge() {
   );
 }
 
-export function SuggestionsPanel({ onClose }: { onClose: () => void }) {
+export function SuggestionsPanel() {
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -122,15 +122,6 @@ export function SuggestionsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.panelHeader}>
-        <div className={styles.panelTitle}>
-          <Sparkles size={16} />
-          <span>Suggestions</span>
-        </div>
-        <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-          <X size={16} />
-        </button>
-      </div>
 
       <p className={styles.panelHint}>
         These faces may belong to people already in your library. Accept or reject each match.

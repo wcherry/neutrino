@@ -90,7 +90,9 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 }));
 
 const toastWarning = vi.fn();
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   Spinner: () => <div data-testid="spinner" />,
   useToast: () => ({
     success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: toastWarning,

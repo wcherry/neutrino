@@ -38,12 +38,11 @@ function formatDate(iso: string): string {
 
 interface Props {
   file: FileItem;
-  onClose: () => void;
   /** Opens with the tag picker already showing — used by "Manage tags". */
   focusTags?: boolean;
 }
 
-export function FileInfoPanel({ file, onClose, focusTags = false }: Props) {
+export function FileInfoPanel({ file, focusTags = false }: Props) {
   const [pickerOpen, setPickerOpen] = useState(focusTags);
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -98,18 +97,7 @@ export function FileInfoPanel({ file, onClose, focusTags = false }: Props) {
   const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : 'Unknown';
 
   return (
-    <aside className={styles.panel} aria-label="File information">
-      <div className={styles.header}>
-        <Heading level={3} size="sm">File info</Heading>
-        <button
-          type="button"
-          className={styles.closeBtn}
-          onClick={onClose}
-          aria-label="Close file info"
-        >
-          <X size={16} />
-        </button>
-      </div>
+    <div className={styles.panel}>
 
       <div className={styles.iconArea}>
         <div className={styles.fileIcon} style={{ color: getIconColor(file.mimeType) }}>
@@ -247,6 +235,6 @@ export function FileInfoPanel({ file, onClose, focusTags = false }: Props) {
           {file.mimeType}
         </Text>
       </div>
-    </aside>
+    </div>
   );
 }

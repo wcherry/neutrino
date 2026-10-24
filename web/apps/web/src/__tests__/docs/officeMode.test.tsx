@@ -42,7 +42,9 @@ vi.mock('next/navigation', () => ({
 // A stable handle, so a test can assert the editor did *not* report a failure.
 const mockToastError = vi.fn();
 
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   Spinner: ({ overlay }: { overlay?: boolean }) =>
     React.createElement('div', { 'data-testid': 'spinner', 'data-overlay': overlay }),
   useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: mockToastError, info: vi.fn() }),

@@ -61,7 +61,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, ChevronLeft, ChevronRight, FileText, Minimize2,
 } from 'lucide-react';
-import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
+import { PanelRail, ShareButton, Spinner, useToast, ZoomSlider, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
+import { useRailState } from '@/lib/panelLayouts';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import {
   docsApi, driveReadBytes, driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes,
@@ -118,7 +119,7 @@ import { FindReplaceBar } from './FindReplaceBar';
 import { AiPanel, type AiOperation } from './AiPanel';
 import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
 import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
-import { Sparkles } from 'lucide-react';
+import { GitCompare, History, ListTree, MessageSquare, Sparkles } from 'lucide-react';
 import styles from './page.module.css';
 // Feature gap #4 — Real-time presence / cursor awareness
 import { usePresence } from '@/hooks/usePresence';
@@ -578,6 +579,20 @@ function useDocumentCounts(editor: ReturnType<typeof useEditor>): { words: numbe
   return counts;
 }
 
+/** Docs' panels and the rails they start in — today's places: the outline left, the rest right. */
+const DOC_SIDES: RailSide[] = ['left', 'right'];
+const DOC_PANEL_SPEC: RailSpec = {
+  sides: DOC_SIDES,
+  panels: [
+    { id: 'outline', side: 'left' },
+    { id: 'comments', side: 'right' },
+    { id: 'history', side: 'right' },
+    { id: 'compare', side: 'right' },
+    { id: 'ai', side: 'right' },
+  ],
+};
+const DOC_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'outline' };
+
 export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -603,9 +618,9 @@ export function DocEditor() {
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [saveAsFormat, setSaveAsFormat] = useState('pdf');
   const pendingExportHtmlRef = useRef('');
-  const [showOutline, setShowOutline] = useState(true);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showComments, setShowComments] = useState(false);
+  // Outline on the left; comments, history, compare and AI on the right — always tabs, opened
+  // and collapsed through the rail (see lib/panelLayouts.ts).
+  const panels = useRailState('docs-editor', DOC_PANEL_SPEC, DOC_PANELS_OPEN);
   const [commentInitialText, setCommentInitialText] = useState('');
 
   // ── Layout & structure state ──
@@ -671,7 +686,6 @@ export function DocEditor() {
     message: string; suggestion?: string; category?: string; from: number; to: number;
   } | null>(null);
   // AI writing panel state
-  const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiOperation, setAiOperation] = useState<AiOperation>('suggestions');
   const [aiResult, setAiResult] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -1889,7 +1903,7 @@ export function DocEditor() {
 
   const handleAddComment = (selectedText: string) => {
     setCommentInitialText(selectedText ? `"${selectedText}"\n\n` : '');
-    setShowComments(true);
+    panels.open('comments');
   };
 
   // ── AI writing handlers ────────────────────────────────────────────────────
@@ -1901,7 +1915,7 @@ export function DocEditor() {
   ) => {
     if (!editor) return;
     setAiOperation(op);
-    setShowAiPanel(true);
+    panels.open('ai');
     setAiLoading(true);
     setAiError(null);
     setAiResult('');
@@ -2002,7 +2016,7 @@ export function DocEditor() {
     } else {
       editor.chain().focus().insertContentAt(editor.state.selection.to, ' ' + text).run();
     }
-    setShowAiPanel(false);
+    panels.close('ai');
   }, [editor, aiOperation]);
 
   const handleApplyGrammarFix = useCallback((from: number, to: number, replacement: string) => {
@@ -2331,6 +2345,77 @@ export function DocEditor() {
     );
   }
 
+  const currentVersionPlaceholder: FileVersionItem = {
+    id: '__current__',
+    fileId: docId,
+    versionNumber: 999,
+    sizeBytes: 0,
+    label: 'Current',
+    createdAt: new Date().toISOString(),
+  };
+  const railPanels: RailPanel[] = [
+    { id: 'outline', title: 'Outline', icon: <ListTree size={14} />, side: 'left', content: <DocOutline editor={editor} /> },
+    {
+      id: 'comments',
+      title: 'Comments',
+      icon: <MessageSquare size={14} />,
+      side: 'right',
+      content: <CommentsPanel fileId={docId} initialText={commentInitialText} />,
+    },
+    {
+      id: 'history',
+      title: 'Version history',
+      icon: <History size={14} />,
+      side: 'right',
+      content: (
+        <VersionHistoryPanel
+          fileId={docId}
+          onRestore={() => {
+            queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
+          }}
+          compareEnabled
+          onCompare={(v) => {
+            setCompareVersion(v);
+            panels.open('compare');
+          }}
+        />
+      ),
+    },
+    {
+      id: 'compare',
+      title: 'Compare',
+      icon: <GitCompare size={14} />,
+      side: 'right',
+      content: compareVersion && editor ? (
+        <DocComparePanel
+          fileId={docId}
+          baseVersion={compareVersion}
+          compareVersion={currentVersionPlaceholder}
+          currentContent={serializeContent(editor.getJSON(), layoutMetaRef.current)}
+        />
+      ) : (
+        <p className={styles.panelEmpty}>Pick a version in Version history to compare it with this one.</p>
+      ),
+    },
+    {
+      id: 'ai',
+      title: 'AI',
+      icon: <Sparkles size={14} />,
+      side: 'right',
+      content: (
+        <AiPanel
+          operation={aiOperation}
+          result={aiResult}
+          isLoading={aiLoading}
+          error={aiError}
+          hasSelection={editor ? !editor.state.selection.empty : false}
+          onInsert={handleAiInsert}
+          canInsert={aiOperation !== 'grammar-fix' || grammarAiCanInsertRef.current}
+        />
+      ),
+    },
+  ];
+
   return (
     <div className={distractionFree ? `${styles.shell} ${styles.distractionFreeShell}` : styles.shell}>
       {/* ── Top bar ── */}
@@ -2346,12 +2431,12 @@ export function DocEditor() {
           onExport={handleExport}
           onPageSetup={() => setShowPageSetup(true)}
           onPrint={handlePrint}
-          showOutline={showOutline}
-          onToggleOutline={() => setShowOutline(v => !v)}
-          showHistory={showHistory}
-          onToggleHistory={() => setShowHistory(v => !v)}
-          showComments={showComments}
-          onToggleComments={() => setShowComments(v => !v)}
+          showOutline={panels.isOpen('outline')}
+          onToggleOutline={() => panels.toggle('outline')}
+          showHistory={panels.isOpen('history')}
+          onToggleHistory={() => panels.toggle('history')}
+          showComments={panels.isOpen('comments')}
+          onToggleComments={() => panels.toggle('comments')}
           distractionFree={distractionFree}
           onToggleFocus={() => setDistractionFree(v => !v)}
           showRulers={showRulers}
@@ -2504,189 +2589,156 @@ export function DocEditor() {
 
       {/* ── Main area ── */}
       <div className={styles.mainArea}>
-        {!distractionFree && showOutline && <DocOutline editor={editor} />}
-
-        {/* Editor area: rulers + scroll */}
-        <div className={styles.editorArea}>
-          {/* ── Top ruler row ── */}
-          {showRulers && !distractionFree && (
-            <div className={styles.rulerRow}>
-              <div className={styles.rulerCorner} />
-              <div className={styles.topRulerOuter}>
-                <HorizontalRuler
-                  pageWidthPx={widthPx}
-                  marginLeftPx={pageSetup.marginLeft}
-                  marginRightPx={pageSetup.marginRight}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ── Content row: side ruler + editor scroll ── */}
-          <div className={styles.editorWithRuler}>
+        <PanelRail
+          panels={railPanels}
+          sides={DOC_SIDES}
+          layout={panels.layout}
+          onLayoutChange={panels.setLayout}
+          defaultExpanded={DOC_PANELS_OPEN}
+          railsHidden={distractionFree}
+          className={styles.panelHost}
+        >
+          {/* Editor area: rulers + scroll */}
+          <div className={styles.editorArea}>
+            {/* ── Top ruler row ── */}
             {showRulers && !distractionFree && (
-              <div ref={sideRulerColRef} className={styles.sideRulerCol}>
-                {/* 32px spacer matches editorScroll paddingTop so ruler y=0 aligns with page top */}
-                <div style={{ height: 32, flexShrink: 0 }} />
-                <VerticalRuler
-                  pageHeightPx={heightPx}
-                  marginTopPx={pageSetup.marginTop}
-                  marginBottomPx={pageSetup.marginBottom}
-                  gapPx={PAGE_GAP_PX}
-                  totalPages={totalPages}
-                />
+              <div className={styles.rulerRow}>
+                <div className={styles.rulerCorner} />
+                <div className={styles.topRulerOuter}>
+                  <HorizontalRuler
+                    pageWidthPx={widthPx}
+                    marginLeftPx={pageSetup.marginLeft}
+                    marginRightPx={pageSetup.marginRight}
+                  />
+                </div>
               </div>
             )}
-            <div
-              ref={editorScrollRef}
-              className={`${styles.editorScroll}${singlePageMode ? ` ${styles.singlePageScroll}` : ''}`}
-              style={singlePageMode ? { height: heightPx * zoomLevel / 100 + 64 } : undefined}
-              onContextMenu={handleContextMenu}
-              onScroll={handleEditorScroll}
-            >
-              <div
-                className={styles.pageZoomWrap}
-                style={{
-                  width: widthPx * zoomLevel / 100,
-                  height: Math.max(pageScrollHeight, pageStackHeight) * zoomLevel / 100,
-                }}
-              >
-              <div
-                ref={attachPageRef}
-                className={styles.page}
-                style={{
-                  ...pageStyle,
-                  margin: 0,
-                  // Paint the last sheet full height rather than stopping where
-                  // its text happens to end.
-                  minHeight: pageStackHeight,
-                  ...(pageGapBackground ? { backgroundImage: pageGapBackground } : {}),
-                  ...(zoomLevel !== 100 ? { transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' } : {}),
-                }}
-                // Double-click into a band to edit it, double-click the body to
-                // come back out — the way out has to be as findable as the way in.
-                onDoubleClick={headerFooterEditing ? exitHeaderFooterEdit : undefined}
-                {...(docTheme !== 'default'
-                  ? { 'data-doc-theme': docTheme }
-                  : {})}
-              >
-                {/* ── Headers & footers (one band pair per page) ── */}
-                {/* Rendered even when empty: the blank bands are the
-                    double-click target that opens the editor, as in Word. */}
-                <HeaderFooterLayer
-                  ref={headerFooterLayerRef}
-                  config={headerFooter}
-                  totalPages={totalPages}
-                  pageHeight={heightPx}
-                  gap={PAGE_GAP_PX}
-                  marginLeft={pageSetup.marginLeft}
-                  marginRight={pageSetup.marginRight}
-                  title={title}
-                  properties={docProperties}
-                  editing={headerFooterEditing}
-                  focus={headerFooterFocus}
-                  onFocusChange={setHeaderFooterFocus}
-                  onSlotChange={handleHeaderFooterSlotChange}
-                  onRequestEdit={enterHeaderFooterEdit}
-                  onExitEdit={exitHeaderFooterEdit}
-                />
-                {/* ── Watermark ── */}
-                {watermarkText && (
-                  <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
-                )}
-                <div
-                  className={`${styles.editorContent}${headerFooterEditing ? ` ${styles.editorContentDimmed}` : ''}`}
-                  // One content band tall at minimum, whatever the paper size —
-                  // an empty document should be exactly one page, not one page
-                  // plus whatever a hardcoded Letter column left over.
-                  style={{ '--doc-content-min-height': `${contentHeightPx}px` } as React.CSSProperties}
-                  onClick={handleCrossRefClick}
-                >
-                  <EditorContent editor={editor} />
+
+            {/* ── Content row: side ruler + editor scroll ── */}
+            <div className={styles.editorWithRuler}>
+              {showRulers && !distractionFree && (
+                <div ref={sideRulerColRef} className={styles.sideRulerCol}>
+                  {/* 32px spacer matches editorScroll paddingTop so ruler y=0 aligns with page top */}
+                  <div style={{ height: 32, flexShrink: 0 }} />
+                  <VerticalRuler
+                    pageHeightPx={heightPx}
+                    marginTopPx={pageSetup.marginTop}
+                    marginBottomPx={pageSetup.marginBottom}
+                    gapPx={PAGE_GAP_PX}
+                    totalPages={totalPages}
+                  />
                 </div>
-                {/* ── Footnote list ── */}
-                {editor && (() => {
-                  void editorVersion;
-                  const notes = getFootnoteItems(editor);
-                  if (notes.length === 0) return null;
-                  return (
-                    <div className={styles.footnoteList}>
-                      <div className={styles.footnoteDivider} />
-                      {notes.map(n => (
-                        <div key={n.id} id={`footnote-${n.id}`} className={styles.footnoteItem}>
-                          <sup>{n.number}</sup> {n.text || '(empty footnote)'}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
+              )}
+              <div
+                ref={editorScrollRef}
+                className={`${styles.editorScroll}${singlePageMode ? ` ${styles.singlePageScroll}` : ''}`}
+                style={singlePageMode ? { height: heightPx * zoomLevel / 100 + 64 } : undefined}
+                onContextMenu={handleContextMenu}
+                onScroll={handleEditorScroll}
+              >
+                <div
+                  className={styles.pageZoomWrap}
+                  style={{
+                    width: widthPx * zoomLevel / 100,
+                    height: Math.max(pageScrollHeight, pageStackHeight) * zoomLevel / 100,
+                  }}
+                >
+                <div
+                  ref={attachPageRef}
+                  className={styles.page}
+                  style={{
+                    ...pageStyle,
+                    margin: 0,
+                    // Paint the last sheet full height rather than stopping where
+                    // its text happens to end.
+                    minHeight: pageStackHeight,
+                    ...(pageGapBackground ? { backgroundImage: pageGapBackground } : {}),
+                    ...(zoomLevel !== 100 ? { transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' } : {}),
+                  }}
+                  // Double-click into a band to edit it, double-click the body to
+                  // come back out — the way out has to be as findable as the way in.
+                  onDoubleClick={headerFooterEditing ? exitHeaderFooterEdit : undefined}
+                  {...(docTheme !== 'default'
+                    ? { 'data-doc-theme': docTheme }
+                    : {})}
+                >
+                  {/* ── Headers & footers (one band pair per page) ── */}
+                  {/* Rendered even when empty: the blank bands are the
+                      double-click target that opens the editor, as in Word. */}
+                  <HeaderFooterLayer
+                    ref={headerFooterLayerRef}
+                    config={headerFooter}
+                    totalPages={totalPages}
+                    pageHeight={heightPx}
+                    gap={PAGE_GAP_PX}
+                    marginLeft={pageSetup.marginLeft}
+                    marginRight={pageSetup.marginRight}
+                    title={title}
+                    properties={docProperties}
+                    editing={headerFooterEditing}
+                    focus={headerFooterFocus}
+                    onFocusChange={setHeaderFooterFocus}
+                    onSlotChange={handleHeaderFooterSlotChange}
+                    onRequestEdit={enterHeaderFooterEdit}
+                    onExitEdit={exitHeaderFooterEdit}
+                  />
+                  {/* ── Watermark ── */}
+                  {watermarkText && (
+                    <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
+                  )}
+                  <div
+                    className={`${styles.editorContent}${headerFooterEditing ? ` ${styles.editorContentDimmed}` : ''}`}
+                    // One content band tall at minimum, whatever the paper size —
+                    // an empty document should be exactly one page, not one page
+                    // plus whatever a hardcoded Letter column left over.
+                    style={{ '--doc-content-min-height': `${contentHeightPx}px` } as React.CSSProperties}
+                    onClick={handleCrossRefClick}
+                  >
+                    <EditorContent editor={editor} />
+                  </div>
+                  {/* ── Footnote list ── */}
+                  {editor && (() => {
+                    void editorVersion;
+                    const notes = getFootnoteItems(editor);
+                    if (notes.length === 0) return null;
+                    return (
+                      <div className={styles.footnoteList}>
+                        <div className={styles.footnoteDivider} />
+                        {notes.map(n => (
+                          <div key={n.id} id={`footnote-${n.id}`} className={styles.footnoteItem}>
+                            <sup>{n.number}</sup> {n.text || '(empty footnote)'}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+                </div>{/* end pageZoomWrap */}
               </div>
-              </div>{/* end pageZoomWrap */}
             </div>
+
+            {/* ── Single page navigation ── */}
+            {singlePageMode && !distractionFree && (
+              <div className={styles.pageNav}>
+                <button
+                  className={styles.pageNavBtn}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <span>Page {currentPage} of {totalPages}</span>
+                <button
+                  className={styles.pageNavBtn}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
-
-          {/* ── Single page navigation ── */}
-          {singlePageMode && !distractionFree && (
-            <div className={styles.pageNav}>
-              <button
-                className={styles.pageNavBtn}
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage <= 1}
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span>Page {currentPage} of {totalPages}</span>
-              <button
-                className={styles.pageNavBtn}
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {!distractionFree && showHistory && (
-          <VersionHistoryPanel
-            fileId={docId}
-            onRestore={() => {
-              queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
-            }}
-            onClose={() => setShowHistory(false)}
-            compareEnabled
-            onCompare={(v) => setCompareVersion(v)}
-          />
-        )}
-        {!distractionFree && compareVersion && editor && (
-          (() => {
-            const currentVersionPlaceholder: FileVersionItem = {
-              id: '__current__',
-              fileId: docId,
-              versionNumber: 999,
-              sizeBytes: 0,
-              label: 'Current',
-              createdAt: new Date().toISOString(),
-            };
-            const currentContent = serializeContent(editor.getJSON(), layoutMetaRef.current);
-            return (
-              <DocComparePanel
-                fileId={docId}
-                baseVersion={compareVersion}
-                compareVersion={currentVersionPlaceholder}
-                currentContent={currentContent}
-                onClose={() => setCompareVersion(null)}
-              />
-            );
-          })()
-        )}
-        {!distractionFree && showComments && (
-          <CommentsPanel
-            fileId={docId}
-            onClose={() => { setShowComments(false); setCommentInitialText(''); }}
-            initialText={commentInitialText}
-          />
-        )}
+        </PanelRail>
       </div>
 
       {/* ── Status bar ── */}
@@ -2863,20 +2915,6 @@ export function DocEditor() {
         />
       )}
 
-      {showAiPanel && (
-        <div className={styles.aiPanelOverlay}>
-          <AiPanel
-            operation={aiOperation}
-            result={aiResult}
-            isLoading={aiLoading}
-            error={aiError}
-            hasSelection={editor ? !editor.state.selection.empty : false}
-            onInsert={handleAiInsert}
-            onClose={() => setShowAiPanel(false)}
-            canInsert={aiOperation !== 'grammar-fix' || grammarAiCanInsertRef.current}
-          />
-        </div>
-      )}
 
       {showShareDialog && officeFileMeta && (
         <ShareDialog

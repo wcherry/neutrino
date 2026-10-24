@@ -1,49 +1,13 @@
 /* ── Compare panel ────────────────────────────────────────────────────────── */
 .panel {
-  width: 380px;
-  flex-shrink: 0;
-  background: var(--color-bg);
-  border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-height: 100%;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
 
-.headerTitle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text);
-}
 
-.closeBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  border-radius: calc(4px * var(--radius-scale));
-  cursor: pointer;
-  color: var(--color-text-muted);
-  transition: background 0.15s;
-}
 
-.closeBtn:hover {
-  background: var(--color-bg-hover);
-}
 
 .versionLabels {
   display: flex;

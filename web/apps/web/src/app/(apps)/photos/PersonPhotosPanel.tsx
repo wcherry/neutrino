@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { X, Users, Image as ImageIcon, Pencil, Check, GitMerge, Trash2, Clock, FolderPlus, Link } from 'lucide-react';
+import { Users, Image as ImageIcon, Pencil, Check, GitMerge, Trash2, Clock, FolderPlus, Link } from 'lucide-react';
 import { personsApi, storageApi, type PersonResponse } from '@/lib/api';
 import { PersonTimelinePanel } from './PersonTimelinePanel';
 import styles from './PersonPhotosPanel.module.css';
@@ -10,14 +10,13 @@ import styles from './PersonPhotosPanel.module.css';
 interface Props {
   person: PersonResponse;
   allPersons: PersonResponse[];
-  onClose: () => void;
   onPersonUpdated: (updated: PersonResponse) => void;
   onPersonDeleted: () => void;
 }
 
 type ActiveTab = 'photos' | 'timeline';
 
-export function PersonPhotosPanel({ person, allPersons, onClose, onPersonUpdated, onPersonDeleted }: Props) {
+export function PersonPhotosPanel({ person, allPersons, onPersonUpdated, onPersonDeleted }: Props) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<ActiveTab>('photos');
 
@@ -215,9 +214,6 @@ export function PersonPhotosPanel({ person, allPersons, onClose, onPersonUpdated
               )}
             </div>
           )}
-          <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-            <X size={14} />
-          </button>
         </div>
       </div>
 

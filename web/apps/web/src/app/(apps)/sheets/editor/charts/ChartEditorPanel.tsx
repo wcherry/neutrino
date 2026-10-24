@@ -31,7 +31,6 @@ interface ChartEditorPanelProps {
     data: Map<string, CellProps>;
     onUpdate: (patch: Partial<ChartDef>) => void;
     onDelete: () => void;
-    onClose: () => void;
 }
 
 // Phase 1 chart types
@@ -71,7 +70,7 @@ const LEGEND_POSITIONS: { pos: LegendPosition; label: string }[] = [
 // Chart types that have line/marker controls
 const LINE_CHART_TYPES: ChartType[] = ['line', 'area', 'scatter', 'combo'];
 
-export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: ChartEditorPanelProps) {
+export function ChartEditorPanel({ def, data, onUpdate, onDelete }: ChartEditorPanelProps) {
     const [localRange, setLocalRange] = useState(def.dataRange);
 
     function applyRange() {
@@ -121,13 +120,6 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
 
     return (
         <div className={styles.editorPanel}>
-            <div className={styles.editorPanelHeader}>
-                <span className={styles.editorPanelTitle}>Chart</span>
-                <button className={styles.editorPanelClose} onClick={onClose} aria-label="Close chart editor">
-                    <X size={15} />
-                </button>
-            </div>
-
             <div className={styles.editorPanelBody}>
                 {/* Chart type */}
                 <div className={styles.editorSection}>

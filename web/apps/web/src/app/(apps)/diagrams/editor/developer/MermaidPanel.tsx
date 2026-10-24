@@ -65,9 +65,6 @@ export function MermaidPanel({ page, onApplyShapes, onRunLayout }: MermaidPanelP
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        Developer
-      </div>
 
       <div className={styles.tabs}>
         <button className={`${styles.tab} ${subTab === 'mermaid' ? styles.active : ''}`} onClick={() => setSubTab('mermaid')}>

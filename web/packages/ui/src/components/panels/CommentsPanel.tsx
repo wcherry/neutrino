@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { MessageSquare, X, Check, Trash2, Reply, ChevronDown, ChevronRight } from 'lucide-react';
+import { Check, Trash2, Reply, ChevronDown, ChevronRight } from 'lucide-react';
 import { Spinner } from '../../index';
 import styles from './CommentsPanel.module.css';
 
@@ -27,7 +27,6 @@ export interface CommentsPanelProps {
   isError?: boolean;
   filter: 'open' | 'all';
   onFilterChange: (filter: 'open' | 'all') => void;
-  onClose: () => void;
   initialText?: string;
   onCreateComment: (body: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
@@ -196,7 +195,6 @@ export function CommentsPanel({
   isError,
   filter,
   onFilterChange,
-  onClose,
   initialText,
   onCreateComment,
   onDeleteComment,
@@ -208,8 +206,12 @@ export function CommentsPanel({
   const [creating, setCreating] = useState(false);
   const newTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+  // A panel in a rail stays mounted, so "comment on this" arrives as a new initialText rather
+  // than a fresh mount: take the quote into the box (unless a draft is already there) and focus it.
   React.useEffect(() => {
-    if (initialText) newTextareaRef.current?.focus();
+    if (!initialText) return;
+    setNewText((draft) => (draft.trim() ? draft : initialText));
+    newTextareaRef.current?.focus();
   }, [initialText]);
 
   async function submitNew() {
@@ -226,27 +228,23 @@ export function CommentsPanel({
 
   const openCount = comments.filter(c => c.status === 'open').length;
 
+  const filterSelect = (
+    <select
+      className={styles.filterSelect}
+      aria-label="Show comments"
+      value={filter}
+      onChange={e => onFilterChange(e.target.value as 'open' | 'all')}
+    >
+      <option value="open">Open</option>
+      <option value="all">All</option>
+    </select>
+  );
+
   return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>
-          <MessageSquare size={16} />
-          Comments
-          {openCount > 0 && <span className={styles.countBadge}>{openCount}</span>}
-        </div>
-        <div className={styles.headerRight}>
-          <select
-            className={styles.filterSelect}
-            value={filter}
-            onChange={e => onFilterChange(e.target.value as 'open' | 'all')}
-          >
-            <option value="open">Open</option>
-            <option value="all">All</option>
-          </select>
-          <button className={styles.closeBtn} onClick={onClose} title="Close">
-            <X size={16} />
-          </button>
-        </div>
+    <div className={styles.content}>
+      <div className={styles.toolbar}>
+        <span className={styles.toolbarCount}>{openCount === 1 ? '1 open' : `${openCount} open`}</span>
+        {filterSelect}
       </div>
 
       <div className={styles.newCommentForm}>

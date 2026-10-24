@@ -25,7 +25,6 @@ function Demo(props: Partial<React.ComponentProps<typeof VersionHistoryPanel>>) 
     <div style={{ display: 'flex', height: '100vh', justifyContent: 'flex-end' }}>
       <VersionHistoryPanel
         versions={versions}
-        onClose={() => alert('close')}
         onLabelVersion={async (versionId, label) => {
           await new Promise(r => setTimeout(r, 500));
           setVersions(prev => prev.map(v => v.id === versionId ? { ...v, label } : v));
@@ -52,7 +51,6 @@ export const Loading: Story = {
       <VersionHistoryPanel
         versions={[]}
         isLoading
-        onClose={noop}
         onLabelVersion={noop}
         onRestoreVersion={noop}
       />
@@ -65,7 +63,6 @@ export const Empty: Story = {
     <div style={{ display: 'flex', height: '100vh', justifyContent: 'flex-end' }}>
       <VersionHistoryPanel
         versions={[]}
-        onClose={noop}
         onLabelVersion={noop}
         onRestoreVersion={noop}
       />

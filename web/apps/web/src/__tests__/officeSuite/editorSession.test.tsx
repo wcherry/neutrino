@@ -49,7 +49,9 @@ vi.mock('@/app/(apps)/slides/editor/SlideEditor', () => ({ SlideEditor: stubEdit
 vi.mock('@/app/(apps)/diagrams/editor/DiagramEditor', () => ({ DiagramEditor: stubEditor('diagrams') }));
 vi.mock('@/app/(apps)/drawing/editor/DrawingEditor', () => ({ DrawingEditor: stubEditor('drawing') }));
 
-vi.mock('@neutrino/ui', () => ({ Spinner: () => <div /> }));
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()), Spinner: () => <div /> }));
 
 import SheetEditorPage from '@/app/(apps)/sheets/editor/page';
 import DocEditorPage from '@/app/(apps)/docs/editor/page';

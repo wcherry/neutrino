@@ -14,7 +14,12 @@ import {
   EmptyState,
   Skeleton,
   useToast,
+  PanelRail,
+  type RailPanel,
+  type RailSide,
+  type RailSpec,
 } from '@neutrino/ui';
+import { useRailState } from '@/lib/panelLayouts';
 import {
   Folder,
   Clock,
@@ -22,6 +27,7 @@ import {
   Search,
   SearchX,
   X,
+  Info,
 } from 'lucide-react';
 import { getCurrentUserId } from '@neutrino/api-core';
 import { storageApi, filesystemApi, teamsApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
@@ -86,6 +92,10 @@ interface ContextMenuState {
   y: number;
 }
 
+/** My Drive's panels: file info, in a right rail. */
+const DRIVE_SIDES: RailSide[] = ['right'];
+const DRIVE_PANEL_SPEC: RailSpec = { sides: DRIVE_SIDES, panels: [{ id: 'info', side: 'right' }] };
+
 export default function DrivePage() {
   // `useSearchParams` needs a Suspense boundary above it during prerender.
   return (
@@ -124,6 +134,13 @@ function DriveContent() {
   // `focusTags` opens the panel with the tag picker already expanded, so
   // "Manage tags" lands on the tag UI in one click instead of two.
   const [infoFile, setInfoFile] = useState<{ file: FileItem; focusTags: boolean } | null>(null);
+  // File info is a tab in a right rail (lib/panelLayouts.ts), and follows the file it shows.
+  const panels = useRailState('drive', DRIVE_PANEL_SPEC);
+  useEffect(() => {
+    if (infoFile) panels.open('info');
+    else panels.close('info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infoFile?.file.id, infoFile?.focusTags]);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
   // Both team flags, `teamSpaces` first — see `canTransferToTeams`. With either off the Move
   // dialog is offered no teams and lists My Drive alone, rather than showing destinations whose
@@ -781,7 +798,37 @@ function DriveContent() {
     </div>
   );
 
+
+  const railPanels: RailPanel[] = [
+    {
+      id: 'info',
+      title: 'File info',
+      icon: <Info size={14} />,
+      side: 'right',
+      content: infoFile ? (
+        <FileInfoPanel
+          key={`${infoFile.file.id}:${infoFile.focusTags}`}
+          file={infoFile.file}
+          focusTags={infoFile.focusTags}
+        />
+      ) : (
+        <p className={styles.panelEmpty}>Choose Info on a file to see its details and tags here.</p>
+      ),
+    },
+  ];
   return (
+    <PanelRail
+      panels={railPanels}
+      sides={DRIVE_SIDES}
+      layout={panels.layout}
+      onLayoutChange={(next) => {
+        panels.setLayout(next);
+        // Collapsing file info clears it, as closing the panel did.
+        if (infoFile && !next.floating.info && next.rails.right?.expanded !== 'info') setInfoFile(null);
+      }}
+      className={styles.panelHost}
+    >
+    <div className={styles.scroller}>
     <div className={styles.page} data-own-regions={flow || undefined}>
       {!flow && header}
 
@@ -1083,14 +1130,6 @@ function DriveContent() {
         />
       )}
 
-      {infoFile && (
-        <FileInfoPanel
-          key={`${infoFile.file.id}:${infoFile.focusTags}`}
-          file={infoFile.file}
-          focusTags={infoFile.focusTags}
-          onClose={() => setInfoFile(null)}
-        />
-      )}
 
       {bulkMoveOpen && (
         <MoveFolderDialog
@@ -1159,5 +1198,7 @@ function DriveContent() {
         </div>
       )}
     </div>
+    </div>
+    </PanelRail>
   );
 }

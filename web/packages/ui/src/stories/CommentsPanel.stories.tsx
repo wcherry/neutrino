@@ -50,7 +50,6 @@ function Demo(props: Partial<React.ComponentProps<typeof CommentsPanel>>) {
         comments={visible}
         filter={filter}
         onFilterChange={setFilter}
-        onClose={() => alert('close')}
         onCreateComment={async (body) => {
           await new Promise(r => setTimeout(r, 600));
           setComments(prev => [...prev, {
@@ -108,7 +107,6 @@ export const Loading: Story = {
         isLoading
         filter="open"
         onFilterChange={noop}
-        onClose={noop}
         onCreateComment={noop}
         onDeleteComment={noop}
         onResolveComment={noop}
@@ -126,7 +124,6 @@ export const Empty: Story = {
         comments={[]}
         filter="open"
         onFilterChange={noop}
-        onClose={noop}
         onCreateComment={noop}
         onDeleteComment={noop}
         onResolveComment={noop}
