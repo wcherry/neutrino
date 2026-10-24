@@ -121,6 +121,13 @@
   padding: 0;
 }
 
+/* The UI reset removes list markers everywhere; a document's lists need them back (see the
+   editor's page.module.css for why the default styles are never written inline). */
+.docContent ul { list-style-type: disc; }
+.docContent ul ul { list-style-type: circle; }
+.docContent ul ul ul { list-style-type: square; }
+.docContent ol { list-style-type: decimal; }
+
 .docContent li {
   margin-bottom: var(--space-1);
 }

@@ -8,6 +8,7 @@ import { useEditorExit } from '@/lib/editorReturn';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { spellSuggestionsFor, useNspell } from '@/hooks/useNspell';
 import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { useDocumentCounts } from './useDocumentCounts';
 import { EditorShellActions } from '@/components/editorChrome/EditorShellActions';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
@@ -556,32 +557,6 @@ const AUTO_SAVE_DELAY_MS = 2000;
  * caret.
  */
 const RERENDER_AFTER_TYPING_MS = 300;
-
-/** Word and character counts, recounted once typing pauses rather than on every render. */
-function useDocumentCounts(editor: ReturnType<typeof useEditor>): { words: number; characters: number } {
-  const [counts, setCounts] = useState({ words: 0, characters: 0 });
-  useEffect(() => {
-    if (!editor) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const count = () => {
-      timer = null;
-      if (editor.isDestroyed) return;
-      const storage = editor.storage.characterCount;
-      setCounts({ words: storage.words(), characters: storage.characters() });
-    };
-    const onUpdate = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(count, 300);
-    };
-    count();
-    editor.on('update', onUpdate);
-    return () => {
-      editor.off('update', onUpdate);
-      if (timer) clearTimeout(timer);
-    };
-  }, [editor]);
-  return counts;
-}
 
 /** Docs' panels and the rails they start in — today's places: the outline left, the rest right. */
 const DOC_SIDES: RailSide[] = ['left', 'right'];
