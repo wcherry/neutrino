@@ -187,7 +187,7 @@ export function EditorContextMenu({
       kind: 'action',
       icon: <Link size={14} />,
       label: 'Insert link',
-      shortcut: '⌘K',
+      shortcut: '⌘⇧K',
       disabled: !hasSelection,
       action: () => run(onInsertLink),
     },

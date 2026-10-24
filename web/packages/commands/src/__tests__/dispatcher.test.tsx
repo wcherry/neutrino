@@ -118,7 +118,7 @@ describe('commands', () => {
     const el = document.createElement('div');
     el.addEventListener('keydown', () => order.push('element'));
     document.body.appendChild(el);
-    press('k', { metaKey: true }, el);
+    press('k', { metaKey: true, shiftKey: true }, el);
     expect(order).toEqual(['command']);
   });
 
@@ -264,18 +264,22 @@ describe('the command palette\'s view', () => {
     expect(runCommandById('shell.goto.sheets')).toBe(false);
   });
 
-  it("gives ⌘K to Docs' link command inside Docs and to the palette everywhere else", () => {
+  it('opens the palette on ⌘K everywhere, Docs included, where the link is ⌘⇧K', () => {
     const palette = vi.fn();
     const link = vi.fn();
-    registerCommand('shell.commandPalette', palette);
-    press('k', { metaKey: true });
+    registerCommand('shell.commandPalette', palette, { phase: 'capture' });
+    // An editor that stops every key it sees, as the sheet grid and the canvases do.
+    const grid = document.createElement('div');
+    grid.addEventListener('keydown', (e) => e.stopPropagation());
+    document.body.appendChild(grid);
+    press('k', { metaKey: true }, grid);
     expect(palette).toHaveBeenCalledOnce();
     const off = registerCommand('docs.insertLink', link, { phase: 'capture' });
     press('k', { metaKey: true });
+    expect(palette).toHaveBeenCalledTimes(2);
+    expect(link).not.toHaveBeenCalled();
+    press('k', { metaKey: true, shiftKey: true });
     expect(link).toHaveBeenCalledOnce();
-    expect(palette).toHaveBeenCalledOnce();
-    // ⌘/ still opens the palette inside Docs.
-    press('/', { metaKey: true });
     expect(palette).toHaveBeenCalledTimes(2);
     off();
   });

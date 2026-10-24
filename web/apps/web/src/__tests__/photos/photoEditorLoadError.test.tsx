@@ -18,11 +18,11 @@ import userEvent from '@testing-library/user-event';
 // vi.mock() calls are hoisted above the import of the module under test.
 // ---------------------------------------------------------------------------
 
-const back = vi.fn();
+const push = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: (k: string) => (k === 'fileId' ? 'file-1' : null) }),
-  useRouter: () => ({ push: vi.fn(), back, replace: vi.fn() }),
+  useRouter: () => ({ push, back: vi.fn(), replace: vi.fn() }),
 }));
 
 vi.mock('@neutrino/ui', () => ({
@@ -107,7 +107,7 @@ import { PhotoEditor } from '@/app/(apps)/photos/editor/PhotoEditor';
 
 describe('PhotoEditor load failure', () => {
   beforeEach(() => {
-    back.mockClear();
+    push.mockClear();
     downloadFile.mockReset();
     downloadFile.mockResolvedValue(new Blob([new Uint8Array([1, 2, 3])]));
     getFileMetadata.mockReset();
@@ -203,12 +203,13 @@ describe('PhotoEditor load failure', () => {
     expect(toRenderableImageBlob).not.toHaveBeenCalled();
   });
 
-  it('goes back when the dialog is dismissed, since there is nothing behind it', async () => {
+  it('leaves the editor when the dialog is dismissed, since there is nothing behind it', async () => {
     toRenderableImageBlob.mockRejectedValue(new Error('boom'));
 
     render(<PhotoEditor />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Go back' }));
-    await waitFor(() => expect(back).toHaveBeenCalled());
+    // Nowhere recorded to return to in this tab, so the Photos library.
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/photos'));
   });
 });

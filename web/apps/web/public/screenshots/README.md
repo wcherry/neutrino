@@ -6,10 +6,20 @@
 and `calendar.png` are real captures of the running app at 2000×1250 (a 1600×1000
 viewport at 2× DPI, downscaled). They are referenced by the app showcase on `/`.
 
-To regenerate: run the server against a throwaway database, seed it with demo
-content, and capture at a 1600×1000 viewport with `deviceScaleFactor: 2`. Keep the
-dimensions consistent — the showcase reserves a 2000×1250 box, and mismatched
-sizes will shift the layout as images load.
+They are captured in the **Blended Flow** look by `e2e/screenshots/landing.spec.ts`,
+which registers a demo account (Ada Lovelace) on the e2e suite's disposable Docker
+stack, seeds it — office files and notes dropped on Drive's upload dialog, painted
+landscape photos through Photos' upload, a week of calendar events — and writes the
+seven files here. To regenerate, with Docker running and the `neutrino:test` image
+built (`cargo e2e` builds it):
+
+```bash
+cd e2e && pnpm screenshots
+```
+
+The capture is 1600×1000 at `deviceScaleFactor: 2`, scaled to 2000×1250 with `sips`,
+so it runs on macOS. Keep the dimensions consistent — the showcase reserves a
+2000×1250 box, and mismatched sizes will shift the layout as images load.
 
 ## Native clients (supplied by hand)
 

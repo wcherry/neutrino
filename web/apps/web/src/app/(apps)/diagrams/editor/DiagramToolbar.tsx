@@ -47,6 +47,7 @@ import { DiagramHamburgerMenu } from './DiagramHamburgerMenu';
 import type { DiagramFormat } from '@neutrino/api-diagrams';
 import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
 import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { EditorShellActions } from '@/components/editorChrome/EditorShellActions';
 import styles from './DiagramToolbar.module.css';
 
 export interface TextDefaults {
@@ -483,6 +484,7 @@ export function DiagramToolbar({
           <Save size={14} />
           {isSaving ? 'Saving…' : 'Save'}
         </button>
+        <EditorShellActions />
       </div>
     </div>
   );

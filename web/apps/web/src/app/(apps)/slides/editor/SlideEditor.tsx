@@ -1,6 +1,7 @@
 'use client';
 
 import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { EditorShellActions } from '@/components/editorChrome/EditorShellActions';
 import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
 import React, {
   useState,
@@ -9,6 +10,7 @@ import React, {
   useEffect,
 } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Download, Plus, Trash2, Type, Square, Circle, ChevronDown, Play, Presentation, Copy, AlignLeft, AlignCenter, AlignRight, AlignJustify, Minus, ChevronUp, LayoutTemplate, Zap, Upload, ArrowRight, ArrowUp, ArrowDown, ArrowUpToLine, ArrowDownToLine, ZoomIn, Layers, Sun, RotateCcw, Box, Images, Grid, ChevronsRight, Eraser, Video, Table2, ImageIcon, List, ListOrdered, ArrowUpDown, Network, Pencil, Eye, Palette, PlusSquare, Stamp,
@@ -308,6 +310,7 @@ const SLIDE_PANELS_OPEN: Partial<Record<RailSide, string>> = { right: 'layout' }
 export function SlideEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const exitEditor = useEditorExit();
   const queryClient = useQueryClient();
   const { fontFamilyNames: FONT_FAMILIES } = useAvailableFonts();
   const slideId = searchParams.get('id') ?? '';
@@ -746,7 +749,7 @@ export function SlideEditor() {
       await contentMutation.mutateAsync({ content });
     }
     queryClient.invalidateQueries({ queryKey: ['slides'] });
-    router.push('/drive');
+    exitEditor();
   }
 
   /** Menu / Ctrl+S: skip the autosave debounce and write the deck now. */
@@ -2158,7 +2161,7 @@ export function SlideEditor() {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <p>Presentation not found</p>
-        <Button variant="ghost" icon={<ArrowLeft size={16} />} onClick={() => router.push('/drive')}>
+        <Button variant="ghost" icon={<ArrowLeft size={16} />} onClick={exitEditor}>
           Back to Drive
         </Button>
       </div>
@@ -2550,6 +2553,7 @@ export function SlideEditor() {
           <Button icon={<Play size={16} />} onClick={() => setPresenterMode(true)}>
             Present
           </Button>
+          <EditorShellActions />
         </div>
       </div>
 

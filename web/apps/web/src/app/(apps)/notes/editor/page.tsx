@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { Spinner, useToast } from '@neutrino/ui';
@@ -99,6 +100,7 @@ export default function NoteEditorPage() {
 
 function NoteEditor({ noteId }: { noteId: string }) {
   const router = useRouter();
+  const exitEditor = useEditorExit();
   const queryClient = useQueryClient();
   const currentUser = useUser();
   const toast = useToast();
@@ -555,8 +557,8 @@ function NoteEditor({ noteId }: { noteId: string }) {
   const handleBack = useCallback(async () => {
     if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
     await save(serializeBlocks(blocksRef.current), titleRef.current);
-    router.push('/drive');
-  }, [save, router]);
+    exitEditor();
+  }, [save, exitEditor]);
 
   const handleNewNote = useCallback(async () => {
     const newNote = await createNote('Untitled note');
@@ -589,8 +591,8 @@ function NoteEditor({ noteId }: { noteId: string }) {
     await storageApi.deleteFile(noteId);
     queryClient.invalidateQueries({ queryKey: ['notes'] });
     toast.success('Note moved to trash');
-    router.push('/notes');
-  }, [noteId, queryClient, router, toast]);
+    exitEditor();
+  }, [noteId, queryClient, exitEditor, toast]);
 
   const handleExport = useCallback((format: 'md' | 'txt') => {
     const name = title || 'Untitled note';

@@ -139,13 +139,24 @@ impl FilesystemService {
             Some(false) => Some(None),
             None => None,
         };
+        // Renaming or recolouring is an edit; starring is not, and must not make the folder look
+        // recently changed.
+        let edited = req.name.is_some() || req.color.is_some();
+        if !edited && req.is_starred.is_none() {
+            // Nothing to write — and an empty changeset is an error in Diesel, not a no-op.
+            let folder = self
+                .repo
+                .find_folder(folder_id, user_id)?
+                .ok_or_else(|| ApiError::not_found("Folder not found"))?;
+            return Ok(FolderResponse::from(folder));
+        }
         let changeset = UpdateFolderRecord {
             name: req.name.map(|n| n.trim().to_string()),
             color: req.color,
             is_starred: req.is_starred,
             starred_at,
             parent_id: None,
-            updated_at: now,
+            updated_at: edited.then_some(now),
         };
 
         let folder = self.repo.update_folder(folder_id, user_id, changeset)?;

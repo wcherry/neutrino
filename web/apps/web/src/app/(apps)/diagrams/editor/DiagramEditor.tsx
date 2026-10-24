@@ -10,6 +10,7 @@ import type { ExportFormat, RasterSize } from './io/ExportDialog';
 import { RASTER_SIZE_SCALE } from './io/ExportDialog';
 import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload, withDiagramSource } from './io/exportUtils';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button, PanelRail, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
 import { Code2, Database, MessageSquare, Settings, Shapes, SlidersHorizontal, Sparkles } from 'lucide-react';
@@ -224,6 +225,7 @@ const DIAGRAM_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'shapes',
 
 export function DiagramEditor() {
   const router = useRouter();
+  const exitEditor = useEditorExit('/diagrams');
   const searchParams = useSearchParams();
   const diagramId = searchParams.get('id') ?? '';
   useAccessRevocation(diagramId);
@@ -574,10 +576,10 @@ export function DiagramEditor() {
     try {
       await saveMutation.mutateAsync();
     } finally {
-      router.push('/diagrams');
+      exitEditor();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [exitEditor]);
 
   const handleNewDiagram = useCallback(() => {
     router.push('/diagrams');
@@ -609,7 +611,7 @@ export function DiagramEditor() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['diagrams'] });
-      router.push('/diagrams');
+      exitEditor();
     },
     onError: () => toast.error('Failed to delete diagram'),
   });
@@ -831,7 +833,7 @@ export function DiagramEditor() {
           >
             {traceSvgMutation.isPending ? 'Creating…' : 'Create a diagram from this image'}
           </Button>
-          <Button variant="secondary" onClick={() => router.push('/diagrams')}>
+          <Button variant="secondary" onClick={exitEditor}>
             Back to Diagrams
           </Button>
         </div>

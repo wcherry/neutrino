@@ -250,6 +250,16 @@ export function DisplaySettings() {
           { value: 'starred', label: 'Starred' },
         ]}
       />
+      <Segmented
+        prefKey="drive.quickAccessDays"
+        label="Quick access shows files edited in the last"
+        options={[
+          { value: '3', label: '3 days' },
+          { value: '7', label: '7 days' },
+          { value: '30', label: '30 days' },
+          { value: '90', label: '90 days' },
+        ]}
+      />
       <RememberedViews />
     </div>
   );

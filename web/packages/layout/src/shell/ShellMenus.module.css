@@ -170,6 +170,62 @@
   color: var(--text-3);
 }
 
+.quick-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px;
+  border: 0;
+  border-radius: calc(8px * var(--radius-scale));
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-item:hover {
+  background: var(--menu-item-hover);
+}
+
+.quick-item:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: -2px;
+}
+
+.quick-icon {
+  flex: 0 0 18px;
+  display: inline-flex;
+  color: var(--text-3);
+}
+
+.quick-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.quick-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.quick-star {
+  flex-shrink: 0;
+  color: var(--color-warning);
+  fill: currentColor;
+}
+
 .who {
   display: flex;
   flex-direction: column;

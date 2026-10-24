@@ -1,8 +1,10 @@
 'use client';
 
 import { EditorDocIcon, EditorSaveState, createSaveStateStore } from '@/components/editorChrome/EditorTitle';
+import { EditorShellActions } from '@/components/editorChrome/EditorShellActions';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, History, Layers as LayersIcon, Palette } from 'lucide-react';
 import { PanelRail, Spinner, useToast, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
@@ -252,7 +254,7 @@ const DRAWING_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'layers',
 
 export function DrawingEditor() {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const exitEditor = useEditorExit('/drawing');
   const drawingId = searchParams.get('id');
   const currentUser = useUser();
   const toast = useToast();
@@ -1110,7 +1112,7 @@ export function DrawingEditor() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 16 }}>
         <p style={{ color: 'var(--color-neutral-500)' }}>{error}</p>
-        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }}>
+        <button onClick={exitEditor} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)' }}>
           Go back
         </button>
       </div>
@@ -1177,7 +1179,7 @@ export function DrawingEditor() {
   return (
     <div className={styles.container}>
       <div className={styles.topBar}>
-        <button className={styles.backBtn} onClick={() => router.back()} aria-label="Go back">
+        <button className={styles.backBtn} onClick={exitEditor} aria-label="Go back">
           <ArrowLeft size={18} />
         </button>
         <EditorDocIcon app="drawing" />
@@ -1240,6 +1242,7 @@ export function DrawingEditor() {
           aria-label="Drawing title"
         />
         <EditorSaveState store={saveStateRef.current} />
+        <EditorShellActions />
       </div>
 
       <div className={styles.editorBody}>

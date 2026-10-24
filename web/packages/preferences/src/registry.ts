@@ -99,6 +99,8 @@ export interface PreferenceValues {
   /** Where a team's shared library lives — an encrypted team file, sealed to members (T4). */
   'team.library': { fileId?: string; updatedAt?: string } | null;
   'drive.landing': 'drive' | 'recent' | 'starred';
+  /** Days back Quick access looks for edited files, before it fills up with starred ones. */
+  'drive.quickAccessDays': '3' | '7' | '30' | '90';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];
   'library.sheets.cfVariables': unknown[];

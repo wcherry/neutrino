@@ -591,6 +591,26 @@
       "section": "appearance"
     },
     {
+      "key": "drive.quickAccessDays",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "3",
+          "7",
+          "30",
+          "90"
+        ]
+      },
+      "default": "7",
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
+      "label": "Quick access shows files edited in the last",
+      "section": "appearance"
+    },
+    {
       "key": "ai.apiKey",
       "type": {
         "kind": "string",

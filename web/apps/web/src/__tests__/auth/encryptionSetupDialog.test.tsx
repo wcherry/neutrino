@@ -122,4 +122,15 @@ describe('EncryptionSetupDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue without it' }));
     expect(onDone).toHaveBeenCalled();
   });
+
+  it('copies the recovery kit to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderDialog();
+    await ready();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy recovery kit' }));
+    expect(writeText).toHaveBeenCalledWith('KIT0-1234-5678');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copied' })).toBeTruthy());
+  });
 });

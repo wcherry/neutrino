@@ -2,15 +2,12 @@
 
 import { useTeamCommands, useTeamPins } from '@/lib/teamResources';
 import { createDocFromTemplate } from '@/lib/docTemplates';
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
 import {
-  AccountMenu,
   AppShell,
   CommandPalette,
-  NotificationsMenu,
   ShellSidebar,
   ShellTopBar,
   Sidebar,
@@ -63,6 +60,13 @@ import { signInHref } from '@/lib/signInRedirect';
 import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
 import { appForPath } from '@/lib/appForPath';
+import { EditorReturnTracker } from '@/lib/editorReturn';
+import { useQuickAccess } from '@/hooks/useQuickAccess';
+import { getFileIcon, getIconColor } from '@/lib/file-icons';
+import { formatFriendlyDate } from '@neutrino/utils';
+import { routeForFile } from './drive/routeForFile';
+import { DRIVE_PREVIEW_PARAM } from './drive/searchParams';
+import { EditorShellActionsProvider, type EditorShellActionsValue } from '@/components/editorChrome/EditorShellActions';
 import { usePreferencesSync } from '@/lib/preferencesSync';
 import { preferences, usePreference, usePreferencesLoaded } from '@neutrino/preferences';
 import { readInstanceBrand } from '@/lib/instanceBrand';
@@ -275,7 +279,6 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
 
   const shellCommands = useMemo(() => {
     const runs: Partial<Record<CommandId, () => void>> = {
-      'shell.commandPalette': openPalette,
       'shell.toggleSidebar': () => setSidebarCollapsed(!preferences.get('shell.sidebarCollapsed')),
     };
     for (const g of GOTO) {
@@ -283,8 +286,11 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       runs[g.id] = () => router.push(g.href);
     }
     return runs;
-  }, [openPalette, setSidebarCollapsed, enabledApps, router]);
+  }, [setSidebarCollapsed, enabledApps, router]);
   useCommands(shellCommands);
+  // In the capture phase, so ⌘K reaches the palette from inside every editor: the sheet grid, the
+  // canvases and ProseMirror all stop keys they handle before they bubble up to the window.
+  useCommands({ 'shell.commandPalette': openPalette }, { phase: 'capture' });
 
   const { data: profileDetails } = useQuery({
     queryKey: ['profile-details'],
@@ -444,12 +450,48 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const shellUser = ready
     ? { name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }
     : undefined;
+  // The same list as Drive's Quick access, in the bar between the bell and the avatar. A file
+  // with no editor opens in Drive's preview, as a Universal Link to one does.
+  const quickAccess = useQuickAccess({ enabled: ready });
+  const quickAccessProps = {
+    items: quickAccess.entries?.map(({ file, reason }) => {
+      const Icon = getFileIcon(file.mimeType);
+      return {
+        id: file.id,
+        title: file.name,
+        subtitle: `Edited · ${formatFriendlyDate(file.updatedAt)}`,
+        icon: <Icon size={16} strokeWidth={1.8} />,
+        iconColor: getIconColor(file.mimeType),
+        starred: reason === 'starred',
+      };
+    }),
+    onOpen: (id: string) => {
+      const file = quickAccess.entries?.find((e) => e.file.id === id)?.file;
+      if (!file) return;
+      routeForFile(file, router, {
+        onPreviewFallback: (f) => router.push(`/drive?${DRIVE_PREVIEW_PARAM}=${encodeURIComponent(f.id)}`),
+      });
+    },
+  };
   const notificationProps = {
     notifications: toTopbarNotifications(notifications),
     unreadCount: unreadCount,
     onRead: markRead,
     onMarkAllRead: markAllRead,
   };
+
+  // Only the editor frame lacks a top bar, so only there do the editors draw its search,
+  // notifications and account in their own title bars.
+  const editorShellActions: EditorShellActionsValue | null =
+    flow && chrome === 'editor'
+      ? {
+          onOpenPalette: openPalette,
+          paletteShortcut,
+          notifications: notificationProps,
+          quickAccess: quickAccessProps,
+          account: shellUser && { user: shellUser, ...accountActions },
+        }
+      : null;
 
   const sidebar = flow ? (
     <ShellSidebar
@@ -460,24 +502,6 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       brand={brand}
       logoHref={landingHref}
       showBrand={chrome === 'editor'}
-      footer={
-        chrome === 'editor' ? (
-          // No top bar in the editor frame: its search, notifications and account sit here.
-          <div className={shellStyles['editor-foot']} data-collapsed={sidebarCollapsed || undefined}>
-            <button
-              type="button"
-              className={shellStyles['foot-btn']}
-              onClick={openPalette}
-              aria-label="Search and commands"
-              title={paletteShortcut ? `Search and commands (${paletteShortcut})` : 'Search and commands'}
-            >
-              <Search size={17} strokeWidth={1.8} aria-hidden="true" />
-            </button>
-            <NotificationsMenu {...notificationProps} placement="above" />
-            {shellUser && <AccountMenu user={shellUser} {...accountActions} placement="above" />}
-          </div>
-        ) : undefined
-      }
     />
   ) : (
     <Sidebar
@@ -504,16 +528,14 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       onNotificationRead={markRead}
       onMarkAllNotificationsRead={markAllRead}
       account={accountActions}
+      quickAccess={quickAccessProps}
     />
   ) : (
     <Topbar
       user={shellUser}
-      onSearch={handleSearch}
-      searchPlaceholder="Search in Drive..."
-      searchResults={searchResults}
-      onResultClick={handleResultClick}
-      onSearchSubmit={handleSearchSubmit}
-      searchPending={searchPending}
+      onOpenPalette={openPalette}
+      paletteShortcut={paletteShortcut}
+      quickAccess={quickAccessProps}
       notifications={notificationProps.notifications}
       unreadNotificationCount={unreadCount}
       onNotificationRead={markRead}
@@ -535,7 +557,11 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     // is what keeps it — and its progress bar — alive across an app switch.
     <ImportRunProvider>
       <AppShell sidebar={sidebar} topbar={topbar} variant={flow ? 'flow' : 'classic'} chrome={chrome}>
-        {children}
+        <EditorShellActionsProvider value={editorShellActions}>{children}</EditorShellActionsProvider>
+        {/* Remembers the folder or library an editor was opened from, for its back button. */}
+        <Suspense fallback={null}>
+          <EditorReturnTracker />
+        </Suspense>
         <CommandPalette
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}

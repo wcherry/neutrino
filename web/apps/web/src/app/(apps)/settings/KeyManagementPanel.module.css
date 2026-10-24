@@ -141,8 +141,8 @@
 
 /* ── Recovery kit ─────────────────────────────────────────────────────────── */
 
-/* Pre-wrapped into groups of four by `exportRecoveryKit`; `pre-wrap` keeps
-   those breaks, which is what makes it transcribable by hand. */
+/* Pre-wrapped into groups of four by `exportRecoveryKit`; `pre` keeps those
+   breaks, which is what makes it transcribable by hand. */
 .kit {
   margin: 0;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -156,8 +156,9 @@
   background: var(--color-surface);
   color: var(--color-text-primary);
   user-select: all;
-  white-space: pre-wrap;
-  word-break: break-all;
+  /* Never wrapped: a group split across two lines is a key transcribed wrong. A kit wider than
+     the box scrolls sideways instead. */
+  white-space: pre;
   overflow-x: auto;
 }
 

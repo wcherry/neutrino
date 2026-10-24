@@ -37,7 +37,8 @@ pub struct UpdateFolderRecord {
     pub is_starred: Option<bool>,
     pub starred_at: Option<Option<NaiveDateTime>>,
     pub parent_id: Option<Option<String>>,
-    pub updated_at: NaiveDateTime,
+    /// `None` leaves it alone — a star alone is not a change to the folder.
+    pub updated_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, AsChangeset)]

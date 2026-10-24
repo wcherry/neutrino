@@ -97,6 +97,7 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "team.commands", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
     Spec { key: "team.library", kind: Kind::Object { max_bytes: 1024 }, scopes: TEAM },
     Spec { key: "drive.landing", kind: Kind::Enum(&["drive", "recent", "starred"]), scopes: USER_ORG },
+    Spec { key: "drive.quickAccessDays", kind: Kind::Enum(&["3", "7", "30", "90"]), scopes: USER_ORG },
 ];
 
 pub fn spec(key: &str) -> Option<&'static Spec> {

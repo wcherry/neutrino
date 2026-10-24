@@ -74,6 +74,7 @@ describe('conflictsWith', () => {
 
   it("does not count a yielding global command against an app's own binding", () => {
     const keymap = buildKeymap('neutrino', {});
+    // Rebinding Docs' link to the palette's ⌘K is allowed: inside Docs the link wins.
     expect(conflictsWith('shell.commandPalette', 'Mod+K', keymap)).toEqual([]);
     expect(conflictsWith('docs.insertLink', 'Mod+K', keymap)).toEqual([]);
     // A command that does not yield still conflicts with an app's.

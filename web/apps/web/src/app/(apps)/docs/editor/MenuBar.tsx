@@ -313,7 +313,7 @@ export function HamburgerMenu({
       kind: 'submenu',
       label: 'Insert',
       items: [
-        { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
+        { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+Shift+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
         { kind: 'action' as const, label: 'Image…',             action: () => onInsertImage?.() },
         { kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() },
         { kind: 'separator' },
