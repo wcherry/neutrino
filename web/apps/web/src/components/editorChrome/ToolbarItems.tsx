@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { MoreHorizontal, SlidersHorizontal } from 'lucide-react';
 import { Popover } from '@neutrino/ui';
 import { useDismiss } from '@neutrino/commands';
@@ -149,7 +150,10 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
           </Popover>
         </>
       )}
-      {menu && (
+      {/* On <body>: a toolbar's glass `backdrop-filter` makes it the containing block of a fixed
+          descendant, which put the menu far from the pointer, and stops the menu's own glass
+          blurring anything. */}
+      {menu && createPortal(
         <>
           <div className={styles.menuScrim} data-toolbar-menu onMouseDown={() => setMenu(null)} onContextMenu={e => { e.preventDefault(); setMenu(null); }} />
           <div ref={menuRef} className={styles.contextMenu} data-toolbar-menu role="menu" style={{ left: menu.x, top: menu.y }}>
@@ -166,7 +170,8 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
               <SlidersHorizontal size={13} aria-hidden="true" /> Customize toolbar…
             </button>
           </div>
-        </>
+        </>,
+        document.body,
       )}
       <CustomizeToolbarDialog editor={editor} open={customizing} onClose={() => setCustomizing(false)} />
     </div>

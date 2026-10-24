@@ -113,6 +113,27 @@ test.describe('Toolbar customization', () => {
 });
 
 test.describe('The editors in the new looks', () => {
+  test('a glass toolbar opens Customize toolbar… at the pointer, over a blurred backdrop', async ({ page, request }) => {
+    const token = await registerAndLogin(request, page, 'chrome_menu');
+    await setPrefs(request, token, { 'appearance.look': 'blended' });
+    await openNew(page, 'Document');
+    const bar = page.locator('[data-tool="history"]').locator('xpath=../..');
+    const box = (await bar.boundingBox())!;
+    const at = { x: box.width - 4, y: box.height / 2 };
+    await bar.click({ button: 'right', position: at });
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    // Inside a toolbar with a backdrop-filter, a fixed menu was placed against the toolbar rather
+    // than the window — far below and to the side of the pointer.
+    const m = (await menu.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(m.x + m.width).toBeLessThanOrEqual(viewport.width);
+    expect(Math.abs(m.y - (box.y + at.y))).toBeLessThan(8);
+    expect(Math.abs(m.x + m.width - (box.x + at.x))).toBeLessThan(m.width + 8);
+    // A menu nested in the toolbar's glass cannot blur the page; drawn on <body> it can.
+    expect(await menu.evaluate(el => el.parentElement === document.body)).toBe(true);
+  });
+
   test('the title bar says the document is saved encrypted, and classic keeps its own wording', async ({ page, request }) => {
     const token = await registerAndLogin(request, page, 'chrome_save');
     await setPrefs(request, token, { 'appearance.look': 'precision' });

@@ -62,3 +62,13 @@ describe('toolbar context menu', () => {
     expect(screen.getByRole('dialog', { name: 'Customize the Docs toolbar' })).toBeInTheDocument();
   });
 });
+
+describe('toolbar context menu placement', () => {
+  it('is drawn on <body>, so a toolbar’s backdrop-filter cannot become its containing block', () => {
+    bar();
+    fireEvent.contextMenu(screen.getByTestId('region'), { clientX: 40, clientY: 20 });
+    const menu = screen.getByRole('menu');
+    expect(menu.parentElement).toBe(document.body);
+    expect(screen.getByTestId('bar').contains(menu)).toBe(false);
+  });
+});
