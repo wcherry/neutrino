@@ -14,6 +14,7 @@ import { InsertDiagramDialog as InsertDiagramDocDialog } from './InsertDiagramDi
 import { InsertImageDialog, type ImageSource } from '@/components/InsertImageDialog';
 import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
 import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
+import { CommentAnchorExtension, commentAnchorTexts } from '@/lib/extensions/CommentAnchorExtension';
 import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
 import { SectionBreakExtension } from '@/lib/extensions/SectionBreakExtension';
 import { ColumnLayoutExtension } from '@/lib/extensions/ColumnLayoutExtension';
@@ -68,7 +69,7 @@ import {
   docsApi, driveReadBytes, driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes,
   extractDocText,
   uploadDriveFile, mintFileKey, canEncryptFor, isMissingEncryptionKey,
-  storageApi, filesystemApi, ApiClientError, DEFAULT_PAGE_SETUP,
+  storageApi, filesystemApi, commentsApi, ApiClientError, DEFAULT_PAGE_SETUP,
   type PageSetup, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
@@ -110,6 +111,7 @@ const CommentsPanel = dynamic(
   { ssr: false }
 );
 import { EditorContextMenu } from './EditorContextMenu';
+import { isMacContextClick } from './macContextClick';
 // Editing tools — find/replace, grammar check, AI writing (feature gap #3)
 import { FindReplaceExtension } from '@/lib/extensions/FindReplaceExtension';
 import { GrammarCheckExtension, getGrammarIssueAt } from '@/lib/extensions/GrammarCheckExtension';
@@ -622,6 +624,12 @@ export function DocEditor() {
   // and collapsed through the rail (see lib/panelLayouts.ts).
   const panels = useRailState('docs-editor', DOC_PANEL_SPEC, DOC_PANELS_OPEN);
   const [commentInitialText, setCommentInitialText] = useState('');
+  // Comments pinned to text (CommentAnchorExtension): the text a new comment will be pinned to,
+  // and the comment selected in the text or the panel.
+  const [commentAnchorQuote, setCommentAnchorQuote] = useState<string | null>(null);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  // The editor is built once, so its click handler reaches the current state through a ref.
+  const selectCommentFromTextRef = useRef<(id: string | null) => void>(() => {});
 
   // ── Layout & structure state ──
   const [headerFooter, setHeaderFooter] = useState<HeaderFooterConfig>(defaultHeaderFooterConfig);
@@ -1062,6 +1070,7 @@ export function DocEditor() {
       // Layout & structure extensions
       FootnoteExtension,
       CrossRefExtension,
+      CommentAnchorExtension.configure({ onSelect: (id) => selectCommentFromTextRef.current(id) }),
       TableOfContentsExtension,
       SectionBreakExtension,
       ColumnLayoutExtension,
@@ -1081,6 +1090,18 @@ export function DocEditor() {
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
+      handleDOMEvents: {
+        // On a Mac, Ctrl-click is a right-click, but it arrives as a left-button mousedown, which
+        // ProseMirror takes as a click that places the cursor and the browser as the start of a
+        // click-selection that collapses on mouseup — so the selection the context menu is about
+        // was gone. Returning true stops ProseMirror, and preventDefault the browser; neither
+        // stops the contextmenu event, so it behaves as a real right-click (button 2) does.
+        mousedown: (_view, event) => {
+          if (!isMacContextClick(event)) return false;
+          event.preventDefault();
+          return true;
+        },
+      },
     },
     onTransaction: ({ transaction }) => {
       // Spell-check moving its window as the page scrolls changes nothing the React tree shows.
@@ -1902,9 +1923,81 @@ export function DocEditor() {
   }, [editor, spellWordRange]);
 
   const handleAddComment = (selectedText: string) => {
-    setCommentInitialText(selectedText ? `"${selectedText}"\n\n` : '');
+    const { from, to } = editor?.state.selection ?? { from: 0, to: 0 };
+    if (editor?.isEditable && to > from) {
+      // Pinned to the text: marked as pending while the comment is written, anchored once the
+      // comment exists (onCommentCreated).
+      editor.commands.setCommentAnchorView({ pending: { from, to } });
+      setCommentAnchorQuote(selectedText || editor.state.doc.textBetween(from, to, ' '));
+    } else {
+      // Someone who can comment but not edit cannot add the anchor to the document, so the
+      // comment quotes its text instead, as comments always did.
+      setCommentInitialText(selectedText ? `"${selectedText}"\n\n` : '');
+    }
     panels.open('comments');
   };
+
+  const clearCommentAnchor = useCallback(() => {
+    setCommentAnchorQuote(null);
+    editor?.commands.setCommentAnchorView({ pending: null });
+  }, [editor]);
+
+  const onCommentCreated = useCallback((comment: { id: string }) => {
+    if (!commentAnchorQuote || !editor) return;
+    editor.commands.anchorPendingComment(comment.id);
+    setCommentAnchorQuote(null);
+    setActiveCommentId(comment.id);
+  }, [commentAnchorQuote, editor]);
+
+  const onCommentDeleted = useCallback((commentId: string) => {
+    if (editor?.isEditable) editor.commands.removeCommentAnchor(commentId);
+    setActiveCommentId((id) => (id === commentId ? null : id));
+  }, [editor]);
+
+  // Clicking commented text selects its comment, and shows it.
+  selectCommentFromTextRef.current = (id) => {
+    setActiveCommentId(id);
+    if (id) panels.open('comments');
+  };
+
+  // Selecting a comment in the panel brings its text into view, if it is not already.
+  const selectCommentFromPanel = useCallback((commentId: string) => {
+    setActiveCommentId(commentId);
+    const scroller = editorScrollRef.current;
+    const anchor = editor?.view.dom.querySelector<HTMLElement>(`[data-comment-id="${CSS.escape(commentId)}"]`);
+    if (!scroller || !anchor) return;
+    // What can be seen is the editor's scroller clipped to the window: depending on the layout
+    // the scroller or the page is what scrolls, and either way scrollIntoView moves the right one.
+    const box = scroller.getBoundingClientRect();
+    const top = Math.max(box.top, 0);
+    const bottom = Math.min(box.bottom, window.innerHeight);
+    const at = anchor.getBoundingClientRect();
+    if (at.top < top || at.bottom > bottom) anchor.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [editor]);
+
+  // The open comments are the ones whose text is marked. Shares the panel's query and cache, so
+  // the markers show without the panel having been opened.
+  const { data: openComments } = useQuery({
+    queryKey: ['comments', docId, 'open'],
+    queryFn: () => commentsApi.listComments(docId, 'open'),
+    enabled: !!docId,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.commands.setCommentAnchorView({ openIds: new Set((openComments?.comments ?? []).map((c) => c.id)) });
+  }, [editor, openComments]);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.commands.setCommentAnchorView({ activeId: activeCommentId });
+  }, [editor, activeCommentId]);
+  const commentTexts = useMemo(
+    () => (editor ? commentAnchorTexts(editor.state.doc) : new Map<string, string>()),
+    // The document is a new object on every change; re-reading it per render is the point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, editor?.state.doc],
+  );
 
   // ── AI writing handlers ────────────────────────────────────────────────────
 
@@ -2360,7 +2453,19 @@ export function DocEditor() {
       title: 'Comments',
       icon: <MessageSquare size={14} />,
       side: 'right',
-      content: <CommentsPanel fileId={docId} initialText={commentInitialText} />,
+      content: (
+        <CommentsPanel
+          fileId={docId}
+          initialText={commentInitialText}
+          anchorQuote={commentAnchorQuote}
+          onClearAnchor={clearCommentAnchor}
+          anchorTexts={commentTexts}
+          activeCommentId={activeCommentId}
+          onSelectComment={selectCommentFromPanel}
+          onCreated={onCommentCreated}
+          onDeleted={onCommentDeleted}
+        />
+      ),
     },
     {
       id: 'history',

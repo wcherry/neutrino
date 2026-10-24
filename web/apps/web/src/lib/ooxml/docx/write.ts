@@ -27,7 +27,7 @@ import {
   EXTRAS_NAMESPACE, EXTRAS_PART, EXTRAS_PROPS_PART, FIELD_TO_INSTRUCTION, HIGHLIGHT_NAMES,
   INDENT_PX_PER_LEVEL, ORDERED_STYLE_TO_NUMFMT, PAGE_SIZE_TWIPS,
   PLACEHOLDER_STYLE_ID, QUOTE_STYLE_ID,
-  docPropertyInstruction, fontSizeToHalfPoints, hexToOoxml, headingStyleId,
+  commentBookmarkName, docPropertyInstruction, fontSizeToHalfPoints, hexToOoxml, headingStyleId,
   normalizeColor, ptToTwip, pxToTwip,
   type DocExtras, type DocMark, type DocModel, type DocNode,
 } from './mapping';
@@ -90,6 +90,10 @@ class ExtrasCollector {
 
   fieldShowCode(index: number): void {
     (this.extras.fieldShowCode ??= []).push(index);
+  }
+
+  commentAnchor(bookmarkName: string, commentId: string): void {
+    (this.extras.commentAnchors ??= {})[bookmarkName] = commentId;
   }
 }
 
@@ -237,11 +241,17 @@ function textRuns(node: DocNode, d: Docx, ctx: WriteContext): ParagraphChild[] {
     run = new d.TextRun({ ...linked, text });
   }
 
-  if (!link) return [run];
-  return [new d.ExternalHyperlink({
-    link: String(link.attrs?.href ?? ''),
-    children: [run as never],
-  })];
+  let out: ParagraphChild[] = link
+    ? [new d.ExternalHyperlink({ link: String(link.attrs?.href ?? ''), children: [run as never] })]
+    : [run];
+  // A comment anchor is a hidden bookmark around the text — siblings of the runs rather than a
+  // `d.Bookmark`, which a heading already wraps its content in and which cannot nest. Wrapped
+  // last-first, so the first mark's bookmark is outermost and opens first when read back.
+  for (const anchor of (node.marks ?? []).filter((m) => m.type === 'commentAnchor').reverse()) {
+    const { name, id } = ctx.commentBookmark(String(anchor.attrs?.commentId ?? ''));
+    out = [new d.BookmarkStart(name, id) as unknown as ParagraphChild, ...out, new d.BookmarkEnd(id) as unknown as ParagraphChild];
+  }
+  return out;
 }
 
 /** A `docField` node as a real Word field, so it stays live in Word. */
@@ -581,6 +591,8 @@ interface WriteContext {
   images: Map<string, Uint8Array>;
   footnoteBodies: Map<number, string>;
   bookmarkFor(headingText: string): string;
+  /** A fresh hidden bookmark for one stretch of a comment's anchored text. */
+  commentBookmark(commentId: string): { name: string; id: number };
   footnoteNumberFor(node: DocNode): number;
   numberingFor(ordered: boolean, styleType: string): string;
   nextRevisionId(): number;
@@ -622,6 +634,7 @@ export async function writeDocx(model: DocModel, opts: WriteDocxOptions): Promis
   const footnoteBodies = new Map<number, string>();
   const numbering = new Map<string, string>();
   let revisionId = 0;
+  let commentBookmarks = 0;
 
   const ctx: WriteContext = {
     extras: new ExtrasCollector(),
@@ -638,6 +651,13 @@ export async function writeDocx(model: DocModel, opts: WriteDocxOptions): Promis
         bookmarks.set(key, name);
       }
       return name;
+    },
+    commentBookmark(commentId) {
+      const name = commentBookmarkName(commentBookmarks);
+      ctx.extras.commentAnchor(name, commentId);
+      // Bookmark ids must be unique in the document; the `docx` package numbers the heading
+      // bookmarks it writes from 1, so these start well clear of them.
+      return { name, id: 1_000_000 + commentBookmarks++ };
     },
     footnoteNumberFor(node) {
       let n = footnoteNumbers.get(node);

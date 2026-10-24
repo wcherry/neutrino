@@ -805,6 +805,24 @@
   color: var(--palette-sky-39-2);
 }
 
+/* ── Comment anchors ─────────────────────────────────────────────────────────
+   Text an open comment is pinned to, the selected comment's text, and the text a comment is
+   being written about. Decorations from CommentAnchorExtension; the mark itself draws nothing. */
+.editorContent :global(.comment-anchor) {
+  background-color: color-mix(in srgb, var(--color-warning) 22%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--color-warning) 70%, transparent);
+  cursor: pointer;
+}
+
+.editorContent :global(.comment-anchor-active) {
+  background-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  border-bottom-color: var(--color-warning);
+}
+
+.editorContent :global(.comment-anchor-pending) {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
 /* ── Document themes ─────────────────────────────────────────────────────────
    Applied via data-doc-theme attribute on the .page element.
 ─────────────────────────────────────────────────────────────────────────── */
@@ -1006,6 +1024,10 @@
 /* ── Editor area (rulers + scroll) ─────────────────────────────────────── */
 .editorArea {
   flex: 1;
+  /* Fills the rail's view, which is not a flex container: without a height of its own the area
+     grew to the document's, so the scroller below never scrolled and a trackpad scrolled the
+     window instead. */
+  height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
