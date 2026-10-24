@@ -13,7 +13,7 @@ import { usePreference } from '@neutrino/preferences';
  * order puts it — never a hole, never a lost tool.
  */
 
-export type EditorToolbarId = 'docs' | 'sheets' | 'slides' | 'diagrams' | 'drawing';
+export type EditorToolbarId = 'docs' | 'sheets' | 'slides' | 'diagrams' | 'drawing' | 'photos';
 
 export interface ToolbarTool {
   id: string;
@@ -108,6 +108,15 @@ export const EDITOR_TOOLBARS: Record<EditorToolbarId, { label: string; tools: To
       { id: 'paint', label: 'Brushes and pixel eraser', caption: 'Paint' },
       { id: 'pixelSelect', label: 'Pixel selections', caption: 'Areas' },
       { id: 'insert', label: 'Insert image and delete objects', caption: 'Insert' },
+    ],
+  },
+  photos: {
+    label: 'Photos',
+    tools: [
+      { id: 'select', label: 'Select and crop', caption: 'Select' },
+      { id: 'annotate', label: 'Pen, highlighter, shapes and text', caption: 'Draw' },
+      { id: 'redact', label: 'Blur, pixelate and black box', caption: 'Redact' },
+      { id: 'clone', label: 'Clone stamp', caption: 'Clone' },
     ],
   },
 };

@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { preferences } from '@neutrino/preferences';
 import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
@@ -60,5 +60,42 @@ describe('toolbar context menu', () => {
     fireEvent.contextMenu(screen.getByTestId('region'));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Customize toolbar…' }));
     expect(screen.getByRole('dialog', { name: 'Customize the Docs toolbar' })).toBeInTheDocument();
+  });
+});
+
+describe('toolbar context menu placement', () => {
+  it('is drawn on <body>, so a toolbar’s backdrop-filter cannot become its containing block', () => {
+    bar();
+    fireEvent.contextMenu(screen.getByTestId('region'), { clientX: 40, clientY: 20 });
+    const menu = screen.getByRole('menu');
+    expect(menu.parentElement).toBe(document.body);
+    expect(screen.getByTestId('bar').contains(menu)).toBe(false);
+  });
+});
+
+describe('Photos editor toolbar', () => {
+  it('is a customizable toolbar: a right-click on the rail opens Customize, with the Photos tools', async () => {
+    const { PhotoToolbar } = await import('@/app/(apps)/photos/editor/PhotoToolbar');
+    render(<PhotoToolbar activeTool="select" onToolChange={() => {}} />);
+    const rail = screen.getByRole('toolbar', { name: 'Photo editing tools' });
+    expect([...rail.querySelectorAll('[data-tool]')].map(el => el.getAttribute('data-tool')))
+      .toEqual(['select', 'annotate', 'redact', 'clone']);
+    expect(fireEvent.contextMenu(rail)).toBe(false);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Customize toolbar…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Customize the Photos toolbar' });
+    expect(dialog).toHaveTextContent('Blur, pixelate and black box');
+  });
+
+  it('keeps hidden groups in More tools and still switches tools', async () => {
+    preferences.set('editor.toolbars', { photos: { hidden: ['redact'] } });
+    const { PhotoToolbar } = await import('@/app/(apps)/photos/editor/PhotoToolbar');
+    const onToolChange = vi.fn();
+    render(<PhotoToolbar activeTool="select" onToolChange={onToolChange} />);
+    expect(screen.queryByRole('button', { name: 'Blur' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'More tools' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Blur' }));
+    expect(onToolChange).toHaveBeenCalledWith('blur');
+    // Drawn on <body>, so the rail's own scrolling cannot clip it.
+    expect(screen.getByRole('group', { name: 'More tools' }).parentElement).toBe(document.body);
   });
 });
