@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Bug, Import, LogOut, Settings, User } from 'lucide-react';
+import { Bell, Bug, History, Import, LogOut, Search, Settings, Star, User } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
 import { Avatar, usePresence } from '@neutrino/ui';
 import type { TopbarNotification, TopbarUser } from '../Topbar';
@@ -23,6 +23,32 @@ function usePopup() {
   useDismiss(() => setOpen(false), open);
   const presence = usePresence(open);
   return { open, setOpen, ref, presence };
+}
+
+export interface SearchButtonProps {
+  /** Opens the command palette, which is also where files are searched. */
+  onOpenPalette: () => void;
+  /** The palette's key, already formatted for this platform (`⌘K`), shown in the tooltip. */
+  paletteShortcut?: string;
+}
+
+/**
+ * Search, as an icon beside the bell. The palette is where the typing happens, so a field in the bar
+ * only ever stood for the palette; one icon reads the same in the top bar and an editor's title bar.
+ */
+export function SearchButton({ onOpenPalette, paletteShortcut }: SearchButtonProps) {
+  return (
+    <button
+      type="button"
+      className={styles['icon-btn']}
+      onClick={onOpenPalette}
+      aria-haspopup="dialog"
+      aria-label="Search and commands"
+      title={paletteShortcut ? `Search files, people and commands (${paletteShortcut})` : 'Search files, people and commands'}
+    >
+      <Search size={18} strokeWidth={1.8} aria-hidden="true" />
+    </button>
+  );
 }
 
 export interface NotificationsMenuProps {
@@ -87,6 +113,93 @@ export function NotificationsMenu({ notifications, unreadCount, onRead, onMarkAl
                       )
                     )}
                   </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export interface QuickAccessItem {
+  id: string;
+  title: string;
+  /** Pre-formatted by the caller, e.g. "Edited · Yesterday". */
+  subtitle: string;
+  icon?: React.ReactNode;
+  iconColor?: string;
+  starred?: boolean;
+}
+
+export interface QuickAccessMenuProps {
+  /** Undefined while loading. */
+  items: QuickAccessItem[] | undefined;
+  onOpen: (id: string) => void;
+  /** The trigger's class, for a top bar whose icon buttons are styled its own way (the classic one). */
+  triggerClassName?: string;
+  placement?: 'below' | 'above';
+}
+
+/**
+ * The same list as Drive's Quick access, from anywhere: the bar's button between the bell and the
+ * avatar. The app decides what is in it (`useQuickAccess`); this only draws it.
+ */
+export function QuickAccessMenu({ items, onOpen, triggerClassName, placement = 'below' }: QuickAccessMenuProps) {
+  const { open, setOpen, ref, presence } = usePopup();
+  return (
+    <div className={styles.anchor} ref={ref}>
+      <button
+        type="button"
+        className={triggerClassName ?? styles['icon-btn']}
+        aria-label="Quick access"
+        title="Quick access"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <History size={18} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+      {presence.mounted && (
+        <div
+          className={[styles.popup, styles.wide, styles[placement]].join(' ')}
+          role="dialog"
+          aria-label="Quick access"
+          aria-hidden={open ? undefined : true}
+          data-motion="rise"
+          data-state={presence.state}
+        >
+          <div className={styles['popup-header']}>
+            <span className={styles['popup-title']}>Quick access</span>
+          </div>
+          {!items ? (
+            <p className={styles.empty}>Loading…</p>
+          ) : items.length === 0 ? (
+            <p className={styles.empty}>Files you edit or star appear here.</p>
+          ) : (
+            <ul className={styles.list}>
+              {items.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className={styles['quick-item']}
+                    onClick={() => {
+                      setOpen(false);
+                      onOpen(item.id);
+                    }}
+                  >
+                    <span className={styles['quick-icon']} style={item.iconColor ? { color: item.iconColor } : undefined} aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span className={styles['quick-text']}>
+                      <span className={styles['quick-title']}>{item.title}</span>
+                      <span className={styles['quick-sub']}>
+                        {item.starred && <Star size={11} className={styles['quick-star']} aria-label="Starred" />}
+                        {item.subtitle}
+                      </span>
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>

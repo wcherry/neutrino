@@ -268,3 +268,13 @@
 .saveStateError {
   color: var(--color-danger, var(--palette-red-50));
 }
+
+/* Search, the bell and the avatar, in the corner the top bar has everywhere else. */
+.shellActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+}
+

@@ -97,22 +97,18 @@ test.describe('Topbar search', () => {
     await registerAndLogin(request, page);
   });
 
-  test('search input is visible in the topbar', async ({ page }) => {
+  test('the search icon opens the palette', async ({ page }) => {
     await page.goto('/drive');
-    await expect(page.getByRole('searchbox', { name: 'Search' })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: 'Search and commands' }).click({ timeout: 10_000 });
+    const palette = page.getByRole('dialog', { name: 'Search and commands' });
+    await palette.getByRole('combobox').fill('hello world');
+    await expect(palette.getByRole('combobox')).toHaveValue('hello world');
   });
 
-  test('typing in the search input updates its value', async ({ page }) => {
-    await page.goto('/drive');
-    const search = page.getByRole('searchbox', { name: 'Search' });
-    await search.fill('hello world');
-    await expect(search).toHaveValue('hello world');
-  });
-
-  test('search input is present across app pages', async ({ page }) => {
+  test('the search icon is present across app pages', async ({ page }) => {
     for (const href of ['/drive', '/notes', '/calendar']) {
       await page.goto(href);
-      await expect(page.getByRole('searchbox', { name: 'Search' })).toBeVisible({
+      await expect(page.getByRole('button', { name: 'Search and commands' })).toBeVisible({
         timeout: 10_000,
       });
     }

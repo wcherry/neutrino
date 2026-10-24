@@ -167,8 +167,6 @@ impl FilesystemRepository {
         user_id: &str,
         changeset: UpdateFolderRecord,
     ) -> Result<FolderRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-
         diesel::update(
             folders::table
                 .filter(folders::id.eq(folder_id))
@@ -177,7 +175,9 @@ impl FilesystemRepository {
                 .filter(folders::deleted_at.is_null()),
         )
         .set(&changeset)
-        .execute(&mut conn)
+        // A connection of its own, returned before `find_folder` takes another, so the two never
+        // hold the pool at once.
+        .execute(&mut self.get_conn()?)
         .map_err(|e| {
             tracing::error!("DB update folder error: {:?}", e);
             ApiError::internal("Database error")
@@ -439,13 +439,14 @@ impl FilesystemRepository {
             })?;
         }
 
+        // A star is the user's mark on the file, not a change to it: `updated_at` is what "Edited"
+        // and Recent are read from, so starring must leave it alone.
         if let Some(starred) = is_starred {
             let starred_at: Option<chrono::NaiveDateTime> = if starred { Some(now) } else { None };
             diesel::update(base)
                 .set((
                     files::is_starred.eq(starred),
                     files::starred_at.eq(starred_at),
-                    files::updated_at.eq(now),
                 ))
                 .execute(&mut conn)
                 .map_err(|e| {
@@ -1472,6 +1473,80 @@ mod tests {
             .list_recent_files("user-1", 100, Some(&DriveFileType::Photo.mime_filter()))
             .unwrap();
         assert_eq!(sorted_names(&files), vec!["a-photo.png", "b-photo.jpg"]);
+    }
+
+    // ── Starring is not editing ───────────────────────────────────────────────
+
+    fn long_ago() -> chrono::NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(2020, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
+
+    /// `updated_at` is what "Edited" and Recent read, so a star must not move it — or starring a
+    /// year-old file would put it at the top of Recent and Quick access as if it had just changed.
+    #[test]
+    fn starring_a_file_leaves_its_modified_date_alone() {
+        let repo = test_repo();
+        insert_file(&repo, "f", "user-1", "old.docx", "text/plain");
+        diesel::update(files::table.filter(files::id.eq("f")))
+            .set(files::updated_at.eq(long_ago()))
+            .execute(&mut repo.get_conn().unwrap())
+            .unwrap();
+
+        let starred = repo
+            .update_file("f", "user-1", None, None, Some(true))
+            .unwrap();
+        assert!(starred.is_starred);
+        assert!(starred.starred_at.is_some());
+        assert_eq!(starred.updated_at, long_ago());
+
+        let unstarred = repo
+            .update_file("f", "user-1", None, None, Some(false))
+            .unwrap();
+        assert!(!unstarred.is_starred);
+        assert_eq!(unstarred.updated_at, long_ago());
+
+        // A rename is an edit, and still is one.
+        let renamed = repo
+            .update_file("f", "user-1", Some("new.docx"), None, None)
+            .unwrap();
+        assert!(renamed.updated_at > long_ago());
+    }
+
+    #[test]
+    fn starring_a_folder_leaves_its_modified_date_alone() {
+        let repo = test_repo();
+        repo.create_folder(NewFolderRecord {
+            id: "d",
+            user_id: "user-1",
+            parent_id: None,
+            name: "Old",
+        })
+        .unwrap();
+        diesel::update(folders::table.filter(folders::id.eq("d")))
+            .set(folders::updated_at.eq(long_ago()))
+            .execute(&mut repo.get_conn().unwrap())
+            .unwrap();
+
+        // The changeset the service builds for a star alone.
+        let starred = repo
+            .update_folder(
+                "d",
+                "user-1",
+                UpdateFolderRecord {
+                    name: None,
+                    color: None,
+                    is_starred: Some(true),
+                    starred_at: Some(Some(chrono::Utc::now().naive_utc())),
+                    parent_id: None,
+                    updated_at: None,
+                },
+            )
+            .unwrap();
+        assert!(starred.is_starred);
+        assert_eq!(starred.updated_at, long_ago());
     }
 
     // ── Recent, with and without a type filter ────────────────────────────────

@@ -9,10 +9,8 @@ import {
   Heading,
   Text,
   Button,
-  Card,
   Breadcrumbs,
   EmptyState,
-  Skeleton,
   useToast,
   PanelRail,
   type RailPanel,
@@ -22,7 +20,6 @@ import {
 import { useRailState } from '@/lib/panelLayouts';
 import {
   Folder,
-  Clock,
   Upload,
   Search,
   SearchX,
@@ -32,7 +29,6 @@ import {
 import { getCurrentUserId } from '@neutrino/api-core';
 import { storageApi, filesystemApi, teamsApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
 import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
-import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
@@ -53,12 +49,12 @@ import { routeForFile, previewKindForMime } from './routeForFile';
 import {
   fileToGridItem,
   folderToGridItem,
-  formatDate,
   formatFileSize,
 } from './gridItems';
 import { useDismiss } from '@neutrino/commands';
 import { usePreference } from '@neutrino/preferences';
 import { QuickAccess } from './QuickAccess';
+import { useQuickAccess } from '@/hooks/useQuickAccess';
 import styles from './page.module.css';
 import { useListingView } from '@/lib/listingViews';
 
@@ -305,21 +301,12 @@ function DriveContent() {
     if (hit) router.push(hit.href);
   }, [searchHits, router]);
 
-  const { data: starredData } = useQuery({
-    queryKey: ['starred'],
-    queryFn: () => filesystemApi.getStarred(5),
-  });
-
-  // The new looks lay Drive out as the boards do (look-and-feel roadmap §5): Quick access — the
-  // files last worked on — as its own region, then one region holding the folder's title, the
-  // controls and the list. Classic keeps today's page exactly.
+  // The new looks lay Drive out as the boards do (look-and-feel roadmap §5): Quick access as its
+  // own region, then one region holding the folder's title, the controls and the list. Classic
+  // keeps today's page layout; what Quick access lists is the same in both.
   const [look] = usePreference('appearance.look');
   const flow = look !== 'classic';
-  const { data: recentData, isLoading: recentLoading } = useQuery({
-    queryKey: ['recent', 'quick-access'],
-    queryFn: () => filesystemApi.getRecent({ limit: 4 }),
-    enabled: flow && !searchTerm,
-  });
+  const quickAccess = useQuickAccess({ enabled: !searchTerm });
 
   const {
     data: contentsData,
@@ -833,86 +820,12 @@ function DriveContent() {
       {!flow && header}
 
       {/* Quick access — hidden while showing search results */}
-      {flow && !searchTerm && (
+      {!searchTerm && (
         <QuickAccess
-          files={recentData?.files}
-          loading={recentLoading}
+          entries={quickAccess.entries}
+          loading={quickAccess.loading}
           onOpen={(file) => routeForFile(file, router, { onPreviewFallback: () => setPreviewFile(file) })}
         />
-      )}
-      {!flow && !searchTerm && (
-      <section className={styles.section} aria-labelledby="quick-access-heading">
-        <div className={styles['section-header']}>
-          <Heading level={2} size="sm" id="quick-access-heading">Quick access</Heading>
-          <Text as="span" size="xs" color="muted">
-            <Clock size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
-            Recently starred
-          </Text>
-        </div>
-        <div className={styles['quick-grid']}>
-          {!starredData
-            ? Array.from({ length: 4 }, (_, i) => (
-                <div key={i} className={styles['quick-card-skeleton']}>
-                  <Skeleton shape="rect" width={36} height={36} />
-                  <div style={{ flex: 1 }}>
-                    <Skeleton shape="text" width="80%" height="0.875rem" />
-                    <div style={{ marginTop: '4px' }}><Skeleton shape="text" width="50%" height="0.75rem" /></div>
-                  </div>
-                </div>
-              ))
-            : (() => {
-                const starredFiles = starredData.files.map((file) => ({
-                  key: file.id,
-                  icon: getFileIcon(file.mimeType),
-                  iconColor: getIconColor(file.mimeType),
-                  name: file.name,
-                  date: file.updatedAt,
-                  thumbnailUrl: storageApi.getThumbnailUrl(file.coverThumbnailUrl),
-                  onClick: () => {
-                    routeForFile(file, router, {
-                                      onPreviewFallback: () => setPreviewFile(file),
-                    });
-                  },
-                }));
-                const starredFolders = starredData.folders.map((folder) => ({
-                  key: folder.id,
-                  icon: Folder,
-                  iconColor: folder.color ?? 'var(--folder-color)',
-                  name: folder.name,
-                  date: folder.updatedAt,
-                  thumbnailUrl: null as string | null,
-                  onClick: () => openFolder(folder),
-                }));
-                const items = [...starredFiles, ...starredFolders];
-                if (items.length === 0) {
-                  return (
-                    <Text size="sm" color="muted">
-                      Star files and folders to see them here.
-                    </Text>
-                  );
-                }
-                return items.map((item) => {
-                  const IconComponent = item.icon;
-                  return (
-                    <Card key={item.key} hoverable padding="sm" className={styles['quick-card']} role="button" tabIndex={0} aria-label={`Open ${item.name}`} onClick={item.onClick}>
-                      <div className={styles['quick-card-inner']}>
-                        <div className={styles['file-icon-sm']} style={!item.thumbnailUrl ? { color: item.iconColor } : undefined}>
-                          {item.thumbnailUrl
-                            ? <img src={item.thumbnailUrl} alt="" className={styles['file-icon-sm-thumb']} loading="lazy" />
-                            : <IconComponent size={20} strokeWidth={1.5} />
-                          }
-                        </div>
-                        <div className={styles['quick-card-info']}>
-                          <Text size="sm" weight="medium" truncate>{item.name}</Text>
-                          <Text size="xs" color="muted">{formatDate(item.date)}</Text>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                });
-              })()}
-        </div>
-      </section>
       )}
 
       {/* Files — the same grid whether it is listing a folder or search hits */}

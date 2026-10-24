@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, Bell, Bug, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
+import { Menu, Bell, Bug, Search, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
-import { SearchInput, usePresence } from '@neutrino/ui';
+import { usePresence } from '@neutrino/ui';
 import { Avatar } from '@neutrino/ui';
 import { useShell } from './AppShell';
 import { formatRelativeTime, notificationLabel } from './notifications';
+import { QuickAccessMenu, type QuickAccessMenuProps } from './shell/ShellMenus';
 import styles from './Topbar.module.css';
 
 export interface TopbarUser {
@@ -45,19 +46,17 @@ export interface TopbarSearchResult {
   modified?: string;
 }
 
-/** Characters typed before the drop-down opens. */
-const MIN_SEARCH_LENGTH = 3;
-
 export interface TopbarProps {
   user?: TopbarUser;
-  onSearch?: (query: string) => void;
-  searchPlaceholder?: string;
-  searchResults?: TopbarSearchResult[];
-  onResultClick?: (result: TopbarSearchResult) => void;
-  /** Enter pressed in the search box — typically shows the full result list. */
-  onSearchSubmit?: (query: string) => void;
-  /** True while `onSearch` is still resolving, so the drop-down can say so. */
-  searchPending?: boolean;
+  /**
+   * Opens the command palette, which is where files are searched — an icon beside the bell, as in
+   * the new looks' top bar and the editors' title bars, rather than a box of its own.
+   */
+  onOpenPalette?: () => void;
+  /** The palette's key, already formatted for this platform (`⌘K`), shown in the tooltip. */
+  paletteShortcut?: string;
+  /** Drive's Quick access list, as a menu between the bell and the avatar. */
+  quickAccess?: Omit<QuickAccessMenuProps, 'placement' | 'triggerClassName'>;
   actions?: TopbarAction[];
   notifications?: TopbarNotification[];
   unreadNotificationCount?: number;
@@ -75,12 +74,9 @@ export interface TopbarProps {
 
 export function Topbar({
   user,
-  onSearch,
-  searchPlaceholder = 'Search files...',
-  searchResults,
-  onResultClick,
-  onSearchSubmit,
-  searchPending = false,
+  onOpenPalette,
+  paletteShortcut,
+  quickAccess,
   actions = [],
   notifications = [],
   unreadNotificationCount = 0,
@@ -94,14 +90,11 @@ export function Topbar({
   className = '',
   children,
 }: TopbarProps) {
-  const [searchValue, setSearchValue] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
-  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const notificationPanelRef = useRef<HTMLDivElement>(null);
   const { toggleSidebar } = useShell();
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const searchWrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -130,61 +123,6 @@ export function Topbar({
   const notificationPanel = usePresence(notificationPanelOpen);
   const userMenu = usePresence(userMenuOpen);
 
-  useEffect(() => {
-    if (!searchDropdownOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target as Node)) {
-        setSearchDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [searchDropdownOpen]);
-  useDismiss(() => {
-    setSearchDropdownOpen(false);
-    setSearchValue('');
-    onSearch?.('');
-  }, searchDropdownOpen);
-
-  // The drop-down opens on the query, not on the results: an empty result set
-  // still has something to say ("No matches"), which is the only feedback the
-  // user gets that the search actually ran.
-  useEffect(() => {
-    setSearchDropdownOpen(searchValue.trim().length >= MIN_SEARCH_LENGTH);
-  }, [searchValue]);
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchValue(e.target.value);
-    onSearch?.(e.target.value);
-  };
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return;
-    const query = searchValue.trim();
-    if (!query) return;
-    e.preventDefault();
-    // Hand the query off to the full results view; the box clears because that
-    // view shows the term as a dismissible filter from here on.
-    setSearchDropdownOpen(false);
-    setSearchValue('');
-    onSearch?.('');
-    onSearchSubmit?.(query);
-  };
-
-  const handleSearchClear = () => {
-    setSearchValue('');
-    onSearch?.('');
-    setSearchDropdownOpen(false);
-  };
-
-  const handleResultClick = (result: TopbarSearchResult) => {
-    setSearchDropdownOpen(false);
-    setSearchValue('');
-    onSearch?.('');
-    onResultClick?.(result);
-  };
-
   return (
     <header className={[styles.topbar, className].filter(Boolean).join(' ')}>
       {/* Mobile menu toggle */}
@@ -196,70 +134,6 @@ export function Topbar({
       >
         <Menu size={20} />
       </button>
-
-      {/* Search */}
-      {onSearch && (
-        <div className={styles['search-wrapper']} ref={searchWrapperRef}>
-          <SearchInput
-            variant="subtle"
-            placeholder={searchPlaceholder}
-            value={searchValue}
-            onChange={handleSearchChange}
-            onClear={handleSearchClear}
-            onKeyDown={handleSearchKeyDown}
-            aria-label="Search"
-            aria-expanded={searchDropdownOpen}
-            aria-autocomplete="list"
-          />
-          {searchDropdownOpen && (
-            <ul
-              className={styles['search-dropdown']}
-              role="listbox"
-              aria-label="Search results"
-              data-testid="topbar-search-dropdown"
-            >
-              {searchResults && searchResults.length > 0 ? (
-                searchResults.map((result) => (
-                  <li key={result.id} role="option" aria-selected={false} data-testid="topbar-search-result">
-                    <button
-                      type="button"
-                      className={styles['search-result-btn']}
-                      onMouseDown={() => handleResultClick(result)}
-                    >
-                      {result.icon && (
-                        <span
-                          className={styles['search-result-icon']}
-                          style={result.iconColor ? { color: result.iconColor } : undefined}
-                          aria-hidden="true"
-                        >
-                          {result.icon}
-                        </span>
-                      )}
-                      <span className={styles['search-result-text']}>
-                        <span className={styles['search-result-title']}>{result.title}</span>
-                        <span className={styles['search-result-subtitle']}>{result.subtitle}</span>
-                      </span>
-                      {result.modified && (
-                        <span className={styles['search-result-modified']}>{result.modified}</span>
-                      )}
-                    </button>
-                  </li>
-                ))
-              ) : (
-                <li
-                  className={styles['search-empty']}
-                  role="option"
-                  aria-selected={false}
-                  aria-disabled="true"
-                  data-testid="topbar-search-empty"
-                >
-                  {searchPending ? 'Searching…' : 'No matches'}
-                </li>
-              )}
-            </ul>
-          )}
-        </div>
-      )}
 
       {/* Actions */}
       <div className={styles.actions}>
@@ -279,6 +153,19 @@ export function Topbar({
             )}
           </button>
         ))}
+
+        {onOpenPalette && (
+          <button
+            type="button"
+            className={styles['icon-btn']}
+            onClick={onOpenPalette}
+            aria-haspopup="dialog"
+            aria-label="Search and commands"
+            title={paletteShortcut ? `Search files, people and commands (${paletteShortcut})` : 'Search files, people and commands'}
+          >
+            <Search size={18} />
+          </button>
+        )}
 
         {/* Notifications */}
         <div className={styles['user-menu-wrapper']} ref={notificationPanelRef}>
@@ -363,6 +250,8 @@ export function Topbar({
             </div>
           )}
         </div>
+
+        {quickAccess && <QuickAccessMenu {...quickAccess} triggerClassName={styles['icon-btn']} />}
 
         {/* Report a bug — a link, not a button, so it can be opened however the
             reporter prefers and survives a popup blocker. */}

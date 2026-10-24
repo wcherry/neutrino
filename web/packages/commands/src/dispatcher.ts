@@ -14,8 +14,9 @@
  * The listeners are on `window` — keydown in the capture and bubble phases, keyup in the bubble
  * phase — installed with the first registration. The bubble phase is the default, so an element's own `onKeyDown` (an input's
  * Escape, ProseMirror's keymap) still sees the key first and can stop it; capture is only for a
- * command that must beat the focused element to it (Docs' ⌘K, which macOS Chrome would otherwise
- * take as "delete to end of line").
+ * command that must beat the focused element to it (the command palette's ⌘K, which an editor's
+ * grid or canvas would otherwise swallow, and Docs' link, which macOS Chrome would otherwise take
+ * as "delete to end of line").
  */
 
 import { preferences } from '@neutrino/preferences';
@@ -258,8 +259,8 @@ function runHandlers(e: KeyboardEvent, type: KeyEventType, phase: Phase): void {
 
 /**
  * Keys a capture-phase command already ran for. One key press runs one command: without this, the
- * bubble phase would also run a bubble-phase command bound to the same chord — Docs' ⌘K link
- * (capture) and the command palette's ⌘K (bubble) would both fire. Dismiss layers and key
+ * bubble phase would also run a bubble-phase command bound to the same chord, so two commands
+ * the user has bound to one key would both fire. Dismiss layers and key
  * handlers still see the key, as they always have.
  */
 const handledInCapture = new WeakSet<Event>();

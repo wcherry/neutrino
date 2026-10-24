@@ -4,6 +4,7 @@ import type { CellSet } from './cellSet';
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, History } from 'lucide-react';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
@@ -66,6 +67,7 @@ import styles from './page.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
 import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { EditorShellActions } from '@/components/editorChrome/EditorShellActions';
 import { SelectionSummary } from './components/SelectionSummary';
 
 const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -160,6 +162,7 @@ const SHEET_PANEL_SPEC: RailSpec = {
 export function SheetEditor() {
     const searchParams = useSearchParams();
     const router = useRouter();
+    const exitEditor = useEditorExit();
     const sheetId = searchParams.get('id') ?? '';
     useAccessRevocation(sheetId);
 
@@ -1318,8 +1321,8 @@ export function SheetEditor() {
 
     const handleBack = useCallback(async () => {
         try { flushSync(() => {}); } catch (_) {}
-        try { await persist.save(); } finally { router.push('/drive'); }
-    }, [persist, router]);
+        try { await persist.save(); } finally { exitEditor(); }
+    }, [persist, exitEditor]);
 
     /**
      * Save before following a link out of the editor — what `handleBack` does
@@ -1409,8 +1412,8 @@ export function SheetEditor() {
 
     const handleDelete = useCallback(async () => {
         await filesystemApi.bulkDelete({ fileIds: [sheetId], folderIds: [] });
-        router.push('/drive');
-    }, [sheetId, router]);
+        exitEditor();
+    }, [sheetId, exitEditor]);
 
     // ── Import ───────────────────────────────────────────────────────────────
     const handleImportSheet = useCallback(async (file: File) => {
@@ -1736,6 +1739,7 @@ export function SheetEditor() {
                 <div className={styles.actions} style={{ marginLeft: 'auto' }}>
                     <EditorSaveState store={persist.saveState} />
                     <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
+                    <EditorShellActions />
                 </div>
             </div>
 
