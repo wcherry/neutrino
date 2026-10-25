@@ -1884,3 +1884,8 @@
 .tagSuggestionActive {
   background: var(--color-surface-hover);
 }
+
+/* A wrapper that only gives a guided tour one element to point at (`data-tour`); it draws nothing. */
+.tourGroup {
+  display: contents;
+}

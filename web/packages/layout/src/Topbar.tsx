@@ -172,6 +172,7 @@ export function Topbar({
             aria-haspopup="dialog"
             aria-label="Search and commands"
             title={paletteShortcut ? `Search files, people and commands (${paletteShortcut})` : 'Search files, people and commands'}
+            data-tour="search"
           >
             <Search size={18} />
           </button>

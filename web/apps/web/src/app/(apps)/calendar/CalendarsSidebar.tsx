@@ -38,7 +38,7 @@ export function CalendarsSidebar({ calendars, onToggle, onRecolor, onCreate, onD
   }
 
   return (
-    <div data-testid="calendars-sidebar">
+    <div data-testid="calendars-sidebar" data-tour="calendar-calendars">
       <div className={styles.sidebarHeading}>
         <span className={styles.sidebarTitle}>Calendars</span>
         <button className={styles.reminderNewBtn} onClick={() => setAdding(true)} title="New calendar" aria-label="New calendar">

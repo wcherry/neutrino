@@ -1661,6 +1661,7 @@ export function SheetEditor() {
             title: 'Version history',
             icon: <History size={14} />,
             side: 'right',
+            tour: 'sheets-history',
             content: (
                 <VersionHistoryPanel
                     fileId={sheetId}
@@ -1738,7 +1739,7 @@ export function SheetEditor() {
                 </div>
                 <div className={styles.actions} style={{ marginLeft: 'auto' }}>
                     <EditorSaveState store={persist.saveState} />
-                    <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
+                    <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} data-tour="share" />
                     <EditorShellActions />
                 </div>
             </div>

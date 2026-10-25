@@ -15,6 +15,12 @@ export interface ToolDef {
   render: () => React.ReactNode;
   /** Drawn straight after the group before it, with no divider — as the toolbar always drew it. */
   joined?: boolean;
+  /**
+   * A guided tour's name for the group (`data-tour`). It goes on the group's wrapper, which is
+   * `display: contents`, so a tour measures it by what it holds; tucked into More tools, it is not
+   * on screen and the step is left out.
+   */
+  tour?: string;
 }
 
 export interface ToolbarItemsProps {
@@ -124,7 +130,7 @@ export function ToolbarItems({ editor, tools, divider, region, overflow = true, 
     if (body == null || body === false) continue;
     if (shown.length > 0 && !tool.joined) shown.push(<React.Fragment key={`${id}:divider`}>{divider}</React.Fragment>);
     shown.push(
-      <span key={id} data-tool={id} className={layout.labels ? styles.toolLabelled : styles.tool}>
+      <span key={id} data-tool={id} data-tour={tool.tour} className={layout.labels ? styles.toolLabelled : styles.tool}>
         {layout.labels ? <span className={styles.toolBody}>{body}</span> : body}
         {layout.labels && <span className={styles.toolCaption}>{captionOf(id)}</span>}
       </span>,

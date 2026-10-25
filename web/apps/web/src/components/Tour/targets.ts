@@ -4,6 +4,31 @@ export function targetSelector(target: string): string {
   return `[data-tour="${target.replace(/["\\]/g, '\\$&')}"]`;
 }
 
+type Rect = Pick<DOMRect, 'top' | 'left' | 'right' | 'bottom' | 'width' | 'height'>;
+
+/**
+ * Where `el` is drawn. An element that is `display: contents` has no box of its own — a toolbar's
+ * tool wrapper, a group of tabs marked for a tour — so it is measured as the union of its
+ * children's boxes, which is what it looks like on screen.
+ */
+export function targetRect(el: Element): Rect {
+  if (typeof window === 'undefined' || window.getComputedStyle(el).display !== 'contents') return el.getBoundingClientRect();
+  let top = Infinity;
+  let left = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const child of Array.from(el.children)) {
+    const r = targetRect(child);
+    if (r.width <= 0 || r.height <= 0) continue;
+    top = Math.min(top, r.top);
+    left = Math.min(left, r.left);
+    right = Math.max(right, r.right);
+    bottom = Math.max(bottom, r.bottom);
+  }
+  if (top === Infinity) return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  return { top, left, right, bottom, width: right - left, height: bottom - top };
+}
+
 /**
  * Whether a tour may point at `el`: laid out with a size, not hidden, not inside something
  * hidden from assistive technology, and at least partly on screen across. Down is not checked —
@@ -12,7 +37,7 @@ export function targetSelector(target: string): string {
  */
 export function isTargetVisible(el: Element): boolean {
   if (!el.isConnected) return false;
-  const rect = el.getBoundingClientRect();
+  const rect = targetRect(el);
   if (rect.width <= 0 || rect.height <= 0) return false;
   const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
   if (rect.right <= 0 || rect.left >= viewportWidth) return false;

@@ -193,7 +193,7 @@ export function TasksSidebar({
   const doneTasks = tasks.filter((t) => t.done);
 
   return (
-    <div className={styles.tasksSection}>
+    <div className={styles.tasksSection} data-tour="calendar-tasks">
       <input
         ref={fileInputRef}
         type="file"

@@ -1125,6 +1125,7 @@ export function DrawingEditor() {
       title: 'Layers',
       icon: <LayersIcon size={14} />,
       side: 'left',
+      tour: 'drawing-layers',
       content: (
       <LayersPanel
         doc={doc}
@@ -1142,6 +1143,7 @@ export function DrawingEditor() {
       title: 'Style',
       icon: <Palette size={14} />,
       side: 'right',
+      tour: 'drawing-style',
       content: (
       <StylePanel
         doc={doc}

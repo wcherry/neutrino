@@ -6,11 +6,13 @@ import styles from './Toolbar.module.css';
 export interface ToolbarProps {
   children?: React.ReactNode;
   className?: string;
+  /** A guided tour's name for the toolbar. */
+  'data-tour'?: string;
 }
 
-export function Toolbar({ children, className }: ToolbarProps) {
+export function Toolbar({ children, className, 'data-tour': tour }: ToolbarProps) {
   const cls = [styles.toolbar, className].filter(Boolean).join(' ');
-  return <div className={cls}>{children}</div>;
+  return <div className={cls} data-tour={tour}>{children}</div>;
 }
 
 export interface ToolbarGroupProps {

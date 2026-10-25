@@ -2,9 +2,9 @@
 
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useDismiss } from '@neutrino/commands';
+import { useDismiss, useKeyHandler } from '@neutrino/commands';
 import { Button } from '@neutrino/ui';
-import { findTarget } from './targets';
+import { findTarget, targetRect } from './targets';
 import { placeCard, type Box } from './position';
 import { tourName, type ResolvedStep, type TourDefinition } from './types';
 import styles from './Tour.module.css';
@@ -23,7 +23,7 @@ export interface TourOverlayProps {
 
 function boxOf(el: Element | null): Box | null {
   if (!el || !el.isConnected) return null;
-  const r = el.getBoundingClientRect();
+  const r = targetRect(el);
   if (r.width <= 0 || r.height <= 0) return null;
   return {
     top: r.top - SPOTLIGHT_PADDING,
@@ -82,8 +82,10 @@ export function TourOverlay({ tour, steps, onEnd }: TourOverlayProps) {
   useLayoutEffect(() => {
     const el = currentElement();
     if (el) {
-      const r = el.getBoundingClientRect();
-      if (r.bottom < 0 || r.top > window.innerHeight) el.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+      const r = targetRect(el);
+      // A `display: contents` target has no box to scroll to; its first child stands in for it.
+      const box = window.getComputedStyle(el).display === 'contents' ? (el.firstElementChild ?? el) : el;
+      if (r.bottom < 0 || r.top > window.innerHeight) box.scrollIntoView?.({ block: 'center', inline: 'nearest' });
     }
     measure();
   }, [currentElement, measure]);
@@ -138,26 +140,25 @@ export function TourOverlay({ tour, steps, onEnd }: TourOverlayProps) {
   // Esc is a dismiss layer like any dialog's, so the key closes the tour and nothing under it.
   useDismiss(() => endRef.current('skipped'), true);
 
-  // The rest of the keyboard, from the window and before anything else hears it: nothing under a
-  // tour can be used while it is open, and the keys work wherever focus happens to be.
-  const keys = useRef({ next, back });
-  keys.current = { next, back };
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
+  // The rest of the keyboard, in the dispatcher's capture phase, before any element hears it:
+  // nothing under a tour can be used while it is open, and the keys work wherever focus is. Through
+  // the dispatcher rather than a listener of its own, as every key handler in the app is.
+  useKeyHandler(
+    (e: KeyboardEvent) => {
       const card = cardRef.current;
       if (!card) return;
       const inCard = card.contains(document.activeElement);
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === 'ArrowRight') keys.current.next();
-        else keys.current.back();
+        if (e.key === 'ArrowRight') next();
+        else back();
       } else if (e.key === 'Enter') {
         // A focused button in the card presses itself; anywhere else, Enter is Next.
         if (inCard && document.activeElement instanceof HTMLButtonElement) return;
         e.preventDefault();
         e.stopPropagation();
-        keys.current.next();
+        next();
       } else if (e.key === 'Tab') {
         const items = Array.from(card.querySelectorAll<HTMLElement>(FOCUSABLE));
         if (items.length === 0) return;
@@ -174,10 +175,9 @@ export function TourOverlay({ tour, steps, onEnd }: TourOverlayProps) {
           first.focus();
         }
       }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, []);
+    },
+    { phase: 'capture' },
+  );
 
   if (!current || typeof document === 'undefined') return null;
 
