@@ -370,6 +370,30 @@ describe('layout metadata survives a round trip', () => {
     expect(out.meta.watermarkText).toBe('CONFIDENTIAL');
   });
 
+  /**
+   * The iOS and Android writers put the watermark paragraph straight under `w:hdr`, ahead of the
+   * band, where this writer's `ImportedXmlComponent` nests it. The band must still be found:
+   * found by scripts/crosscheck-web-docx.sh in neutrino_shared_android.
+   */
+  it('a header band behind a watermark paragraph, as the native clients write it', async () => {
+    const bytes = await writeDocx({
+      doc: { type: 'doc', content: [para(text('x'))] },
+      meta: baseMeta({
+        watermarkText: 'DRAFT',
+        headerFooter: { ...baseMeta().headerFooter, variants: { ...baseMeta().headerFooter.variants,
+          default: { header: { left: 'Acme', center: 'Report', right: '' }, footer: { left: '', center: '', right: '' } } } },
+      }),
+    }, { title: 'RT' });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(bytes);
+    const name = Object.keys(zip.files).find((n) => /^word\/header\d+\.xml$/.test(n))!;
+    const xml = await zip.file(name)!.async('string');
+    await zip.file(name, xml.replace(/<undefined>([\s\S]*?)<\/undefined>/, '$1'));
+    const out = await readDocx(new Uint8Array(await zip.generateAsync({ type: 'uint8array' })));
+    expect(out.meta.watermarkText).toBe('DRAFT');
+    expect(out.meta.headerFooter.variants.default.header).toEqual({ left: 'Acme', center: 'Report', right: '' });
+  });
+
   it('background colour', async () => {
     const out = await roundTrip({ doc: { type: 'doc', content: [para(text('x'))] }, meta: baseMeta({ bgColor: '#fafafa' }) });
     expect(out.meta.bgColor).toBe('#fafafa');

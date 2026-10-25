@@ -39,7 +39,7 @@ email** that walks through the same setup steps as the wizard, each a link into 
 
 ## Design
 
-### Table — migration `00148_auth__2026-10-24-000000_create_invites`
+### Table — migration `00149_auth__2026-10-24-000000_create_invites`
 
 ```
 invites (
