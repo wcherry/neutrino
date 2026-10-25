@@ -251,7 +251,7 @@ export function Sidebar({
 
       {/* Storage quota */}
       {quota && !collapsed && (
-        <div className={styles.quota}>
+        <div className={styles.quota} data-tour="storage">
           <div className={styles['quota-header']}>
             <span className={styles['quota-label']}>Storage</span>
             <span className={styles['quota-value']}>{Math.round(quotaPercent)}%</span>

@@ -507,7 +507,7 @@ export function FileGrid({
           </div>
         )}
       </div>
-      <div className={styles['view-toggle']} role="group" aria-label="View mode">
+      <div className={styles['view-toggle']} role="group" aria-label="View mode" data-tour="view-mode">
         {VIEW_BUTTONS.map(({ mode, icon, label }) => (
           <button
             key={mode}
@@ -528,7 +528,7 @@ export function FileGrid({
   // Drawn while loading too: it does not depend on the items, and adding it once they arrive
   // pushed the list down under the reader.
   const filterBar = showFilter && (
-    <div className={styles['filter-bar']} role="group" aria-label="Filter files">
+    <div className={styles['filter-bar']} role="group" aria-label="Filter files" data-tour="file-filters">
       {FILTER_CHIPS.map(({ key, label }) => (
         <button
           key={key}

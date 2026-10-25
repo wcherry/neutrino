@@ -1,6 +1,7 @@
 export {
   REGISTRY,
   APPS,
+  TOUR_IDS,
   specFor,
   defaultOf,
   isValid,
@@ -10,6 +11,7 @@ export {
   type PreferenceValues,
   type Scope,
   type AppKey,
+  type TourId,
   type Sync,
 } from './registry';
 export {

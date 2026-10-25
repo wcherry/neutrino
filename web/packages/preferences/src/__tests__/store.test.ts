@@ -5,6 +5,9 @@ import {
   BOOT_KEY,
   BOOT_OWN_KEY,
   REGISTRY,
+  TOUR_IDS,
+  specFor,
+  isValid,
   migrateLegacyPreferences,
   type PreferenceBackend,
   type PreferenceKey,
@@ -369,7 +372,7 @@ describe('the typed value map', () => {
       'docs.spellCheck': true, 'docs.splitParagraphs': true, 'photos.autoFaceDetect': true, 'drawing.brush': true,
       'search.syncDisabled': true, 'keyboard.preset': true, 'keyboard.bindings': true, 'ai.provider': true, 'ai.apiKey': true,
       'apps.enabled': true, 'teamSpace.view': true, 'teamSpace.sort': true, 'teamSpace.sortDirection': true,
-      'listing.views': true, 'drive.landing': true, 'drive.quickAccessDays': true, 'editor.toolbars': true, 'editor.panels': true, 'team.pins': true, 'team.commands': true, 'team.library': true,
+      'listing.views': true, 'drive.landing': true, 'drive.quickAccessDays': true, 'onboarding.toursSeen': true, 'editor.toolbars': true, 'editor.panels': true, 'team.pins': true, 'team.commands': true, 'team.library': true,
       'appearance.textSize': true, 'appearance.shape': true, 'appearance.font': true, 'appearance.accent': true, 'a11y.reduceMotion': true,
       'a11y.reduceTransparency': true, 'a11y.contrast': true, 'shell.sidebar': true,
       'library.sheets.cfTemplates': true, 'library.sheets.cfVariables': true, 'library.fill.slides': true,
@@ -377,5 +380,32 @@ describe('the typed value map', () => {
       'library.diagrams.shapeLibraries': true,
     };
     expect(Object.keys(typed).sort()).toEqual(REGISTRY.map((s) => s.key).sort());
+  });
+});
+
+describe('onboarding.toursSeen', () => {
+  it('offers every tour id, Drive and each app, as its options', () => {
+    const spec = specFor('onboarding.toursSeen')!;
+    expect(spec.type).toEqual({ kind: 'set', options: [...TOUR_IDS] });
+    expect(spec.default).toEqual([]);
+    expect(spec.sync).toBe('plain');
+    expect(spec.scopes).toEqual(['user']);
+  });
+
+  it('holds each known tour once, and nothing else', () => {
+    const spec = specFor('onboarding.toursSeen')!;
+    expect(isValid(spec, ['drive', 'docs'])).toBe(true);
+    expect(isValid(spec, [])).toBe(true);
+    expect(isValid(spec, ['drive', 'drive'])).toBe(false);
+    expect(isValid(spec, ['mail'])).toBe(false);
+    expect(isValid(spec, 'drive')).toBe(false);
+  });
+
+  it('is a user preference that syncs like any other plain one', () => {
+    const store = new PreferenceStore(new MemoryStorage(), null);
+    expect(store.get('onboarding.toursSeen')).toEqual([]);
+    expect(store.set('onboarding.toursSeen', ['drive'])).toBe(true);
+    expect(store.get('onboarding.toursSeen')).toEqual(['drive']);
+    expect(store.pendingKeys().has('onboarding.toursSeen')).toBe(true);
   });
 });

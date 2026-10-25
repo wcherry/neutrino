@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, Bell, Bug, Search, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
+import { Menu, Bell, Bug, Compass, Search, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
 import { usePresence } from '@neutrino/ui';
 import { Avatar } from '@neutrino/ui';
@@ -68,6 +68,12 @@ export interface TopbarProps {
   onImport?: () => void;
   onSignOut?: () => void;
   onProfileClick?: () => void;
+  /**
+   * Replays the current app's guided tour — the shell has no Help menu, so it sits in the account
+   * menu beside Settings and Import. Shown with `tourLabel` ("Take the Drive tour"), both or neither.
+   */
+  onTakeTour?: () => void;
+  tourLabel?: string;
   className?: string;
   children?: React.ReactNode;
 }
@@ -87,6 +93,8 @@ export function Topbar({
   onImport,
   onSignOut,
   onProfileClick,
+  onTakeTour,
+  tourLabel,
   className = '',
   children,
 }: TopbarProps) {
@@ -154,6 +162,8 @@ export function Topbar({
           </button>
         ))}
 
+        {/* Search to the account menu: one group, so a guided tour can point at the corner. */}
+        <div className={styles['end-group']} data-tour="top-right">
         {onOpenPalette && (
           <button
             type="button"
@@ -387,6 +397,36 @@ export function Topbar({
                     Import
                   </button>
                 )}
+                {onTakeTour && tourLabel && (
+                  <button
+                    type="button"
+                    onClick={() => { setUserMenuOpen(false); onTakeTour(); }}
+                    role="menuitem"
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-3)',
+                      padding: 'var(--space-2) var(--space-4)',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: 'var(--text-sm)',
+                      color: 'var(--color-text-primary)',
+                      textAlign: 'left',
+                      transition: 'background-color var(--duration-fast) var(--ease-default)',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-subtle)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <Compass size={16} aria-hidden="true" />
+                    {tourLabel}
+                  </button>
+                )}
                 <div className={styles.divider} aria-hidden="true" />
                 {onSignOut && (
                   <button
@@ -423,6 +463,7 @@ export function Topbar({
             )}
           </div>
         )}
+        </div>
       </div>
     </header>
   );
