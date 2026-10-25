@@ -700,9 +700,36 @@ async fn main() -> std::io::Result<()> {
     // Registration seeds the new account's default folders, so auth needs the
     // filesystem service — hence this sitting below it rather than beside the
     // other auth wiring above.
+    // Friend invites and the sign-up gate in front of registration. Personal invite links are an
+    // HMAC of the row id under the JWT secret, so rotating the secret invalidates them.
+    let invite_service = Arc::new(auth::invites::service::InviteService::new(
+        Arc::new(auth::invites::repository::InviteRepository::new(pool.clone())),
+        config.jwt_secret.clone(),
+        mailer.clone(),
+        config.drive_base_url.clone(),
+    ));
+    let invites_state = web::Data::new(auth::invites::api::InvitesApiState {
+        invites: invite_service.clone(),
+    });
+    let welcome_mailer = Arc::new(auth::welcome::WelcomeMailer::new(
+        mailer.clone(),
+        config.drive_base_url.clone(),
+    ));
+    let signup_service = Arc::new(auth::signup::SignupService::new(
+        auth_service.clone(),
+        invite_service,
+        welcome_mailer,
+        config.public_signup_open,
+    ));
+    info!(
+        "Public sign-up: {}",
+        if config.public_signup_open { "open" } else { "closed (invite only)" }
+    );
+
     let auth_state = web::Data::new(auth::api::AuthApiState {
         auth_service: auth_service.clone(),
         filesystem_service: drive_fs_service,
+        signup: signup_service,
     });
 
     let drive_sharing_repo = Arc::new(SharingRepository::new(pool.clone()));
@@ -1220,6 +1247,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
     let openapi = {
         let mut doc = NeutrinoApiDoc::openapi();
         doc.merge(auth::api::AuthApiDoc::openapi());
+        doc.merge(auth::invites::api::InvitesApiDoc::openapi());
         doc.merge(auth::keyvault::api::KeyVaultApiDoc::openapi());
         doc.merge(calendar::calendars::api::CalendarsApiDoc::openapi());
         doc.merge(calendar::events::api::EventsApiDoc::openapi());
@@ -1303,6 +1331,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_event_broadcaster_data.clone())
             // Auth
             .app_data(auth_state.clone())
+            .app_data(invites_state.clone())
             .app_data(key_vault_state.clone())
             // OAuth
             .app_data(oauth_state.clone())
@@ -1405,6 +1434,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     // See `shared::drive_events`.
                     .wrap(from_fn(shared::drive_events::broadcast_drive_changes))
                     .configure(auth::api::configure)
+                    .configure(auth::invites::api::configure)
                     .configure(oauth::api::configure)
                     .configure(drive::fonts::api::configure_public)
                     .configure(themes::api::configure)
