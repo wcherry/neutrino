@@ -41,6 +41,7 @@ import { FolderContextMenu } from './FolderContextMenu';
 import { FileInfoPanel } from './FileInfoPanel';
 import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
+import { LocalImportDialog } from '@/components/LocalImport';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { canTransferToTeams } from '@/lib/featureFlags';
 import { FileGrid, type GridItem, type SortField, type SortDir, type FilterType } from '@neutrino/ui';
@@ -191,6 +192,8 @@ function DriveContent() {
     return () => { cancelled = true; };
   }, [currentFolderId, folderPath]);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
+  // New › Import folders: the local folder import, aimed at the open folder.
+  const [importOpen, setImportOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
@@ -224,11 +227,14 @@ function DriveContent() {
   useEffect(() => {
     function onNewFolder() { setNewFolderName('New folder'); setNewFolderDialogOpen(true); }
     function onUpload() { setUploadOpen(true); }
+    function onImportFolders() { setImportOpen(true); }
     window.addEventListener('drive:new-folder', onNewFolder);
     window.addEventListener('drive:upload', onUpload);
+    window.addEventListener('drive:import-folders', onImportFolders);
     return () => {
       window.removeEventListener('drive:new-folder', onNewFolder);
       window.removeEventListener('drive:upload', onUpload);
+      window.removeEventListener('drive:import-folders', onImportFolders);
     };
   }, []);
 
@@ -931,6 +937,16 @@ function DriveContent() {
           onClose={() => { setUploadOpen(false); setDroppedFiles(null); }}
           folderId={currentFolderId}
           initialFiles={droppedFiles ?? undefined}
+        />
+      )}
+      {importOpen && (
+        <LocalImportDialog
+          open
+          onClose={() => setImportOpen(false)}
+          folderId={currentFolderId}
+          folderName={
+            (currentFolderId && folderPath.find((f) => f.id === currentFolderId)?.name) || (currentFolderId ? 'This folder' : 'My Drive')
+          }
         />
       )}
       {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
