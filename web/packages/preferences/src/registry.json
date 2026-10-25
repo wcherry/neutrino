@@ -635,6 +635,23 @@
       "section": "none"
     },
     {
+      "key": "onboarding.welcome",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "pending",
+          "done"
+        ]
+      },
+      "default": "done",
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Whether the welcome wizard is still to be shown",
+      "section": "none"
+    },
+    {
       "key": "ai.apiKey",
       "type": {
         "kind": "string",

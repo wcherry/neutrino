@@ -719,6 +719,7 @@ async fn main() -> std::io::Result<()> {
         auth_service.clone(),
         invite_service,
         welcome_mailer,
+        Arc::new(preferences::repository::PreferencesRepository::new(pool.clone())),
         config.public_signup_open,
     ));
     info!(

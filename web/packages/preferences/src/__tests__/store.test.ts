@@ -372,7 +372,7 @@ describe('the typed value map', () => {
       'docs.spellCheck': true, 'docs.splitParagraphs': true, 'photos.autoFaceDetect': true, 'drawing.brush': true,
       'search.syncDisabled': true, 'keyboard.preset': true, 'keyboard.bindings': true, 'ai.provider': true, 'ai.apiKey': true,
       'apps.enabled': true, 'teamSpace.view': true, 'teamSpace.sort': true, 'teamSpace.sortDirection': true,
-      'listing.views': true, 'drive.landing': true, 'drive.quickAccessDays': true, 'onboarding.toursSeen': true, 'editor.toolbars': true, 'editor.panels': true, 'team.pins': true, 'team.commands': true, 'team.library': true,
+      'listing.views': true, 'drive.landing': true, 'drive.quickAccessDays': true, 'onboarding.toursSeen': true, 'onboarding.welcome': true, 'editor.toolbars': true, 'editor.panels': true, 'team.pins': true, 'team.commands': true, 'team.library': true,
       'appearance.textSize': true, 'appearance.shape': true, 'appearance.font': true, 'appearance.accent': true, 'a11y.reduceMotion': true,
       'a11y.reduceTransparency': true, 'a11y.contrast': true, 'shell.sidebar': true,
       'library.sheets.cfTemplates': true, 'library.sheets.cfVariables': true, 'library.fill.slides': true,
@@ -407,5 +407,33 @@ describe('onboarding.toursSeen', () => {
     expect(store.set('onboarding.toursSeen', ['drive'])).toBe(true);
     expect(store.get('onboarding.toursSeen')).toEqual(['drive']);
     expect(store.pendingKeys().has('onboarding.toursSeen')).toBe(true);
+  });
+});
+
+describe('onboarding.welcome', () => {
+  it('is done unless the server says otherwise, so an existing account never sees the wizard', () => {
+    const spec = specFor('onboarding.welcome')!;
+    expect(spec.type).toEqual({ kind: 'enum', options: ['pending', 'done'] });
+    expect(spec.default).toBe('done');
+    expect(spec.sync).toBe('plain');
+    expect(spec.scopes).toEqual(['user']);
+    const store = new PreferenceStore(new MemoryStorage(), null);
+    expect(store.get('onboarding.welcome')).toBe('done');
+  });
+
+  it('takes pending and done and nothing else', () => {
+    const spec = specFor('onboarding.welcome')!;
+    expect(isValid(spec, 'pending')).toBe(true);
+    expect(isValid(spec, 'done')).toBe(true);
+    expect(isValid(spec, 'later')).toBe(false);
+    expect(isValid(spec, true)).toBe(false);
+  });
+
+  it('syncs like any other plain preference', () => {
+    const store = new PreferenceStore(new MemoryStorage(), null);
+    expect(store.set('onboarding.welcome', 'pending')).toBe(true);
+    expect(store.get('onboarding.welcome')).toBe('pending');
+    expect(store.set('onboarding.welcome', 'done')).toBe(true);
+    expect(store.pendingKeys().has('onboarding.welcome')).toBe(true);
   });
 });

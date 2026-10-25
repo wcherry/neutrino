@@ -22,6 +22,7 @@ use crate::auth::repository::AuthRepository;
 use crate::auth::service::AuthService;
 use crate::auth::tokens::TokenService;
 use crate::auth::welcome::{self, WelcomeMailer};
+use crate::preferences::repository::PreferencesRepository;
 use crate::schema::{invites, users};
 use crate::shared::mail::Mailer;
 use crate::shared::ApiError;
@@ -66,7 +67,13 @@ fn fx(public_signup_open: bool) -> Fx {
         "https://neutrino.test".into(),
     ));
     let welcome = Arc::new(WelcomeMailer::new(mailer, "https://neutrino.test".into()));
-    let signup = SignupService::new(auth.clone(), invites.clone(), welcome, public_signup_open);
+    let signup = SignupService::new(
+        auth.clone(),
+        invites.clone(),
+        welcome,
+        Arc::new(PreferencesRepository::new(pool.clone())),
+        public_signup_open,
+    );
 
     Fx {
         pool,
@@ -694,4 +701,97 @@ fn welcome_html_escapes_the_name() {
     let c = welcome::compose("https://neutrino.test/", "<Ada & Co>");
     assert!(!c.html.contains("<Ada & Co>"), "{}", c.html);
     assert!(c.html.contains("&lt;Ada &amp; Co&gt;"), "{}", c.html);
+}
+
+// ── the welcome wizard mark ──────────────────────────────────────────────────
+
+/// What `onboarding.welcome` holds for a user, as the preferences API would serve it.
+fn welcome_mark(fx: &Fx, user_id: &str) -> Option<String> {
+    PreferencesRepository::new(fx.pool.clone())
+        .list(user_id)
+        .unwrap()
+        .into_iter()
+        .find(|r| r.key == "onboarding.welcome")
+        .map(|r| r.value)
+}
+
+#[tokio::test]
+async fn a_self_serve_account_is_marked_for_the_welcome_wizard() {
+    let fx = fx(true);
+    let user = fx.signup.register(ok_req("new@example.com", None)).await.unwrap();
+
+    assert_eq!(welcome_mark(&fx, &user.id).as_deref(), Some("\"pending\""));
+}
+
+#[tokio::test]
+async fn an_account_made_from_an_invite_is_marked_for_the_welcome_wizard() {
+    let fx = fx(true);
+    let ada = inviter(&fx);
+    let (_, token) = emailed_token(&fx, &ada.id, "new@example.com");
+
+    let user = fx
+        .signup
+        .register(ok_req("new@example.com", Some(&token)))
+        .await
+        .unwrap();
+
+    assert_eq!(welcome_mark(&fx, &user.id).as_deref(), Some("\"pending\""));
+}
+
+#[tokio::test]
+async fn an_admin_created_account_is_marked_for_the_welcome_wizard() {
+    let fx = fx(true);
+    let created = fx
+        .auth
+        .register(req("made@example.com", "password123", "Made By Admin", None))
+        .unwrap();
+    assert_eq!(welcome_mark(&fx, &created.id), None);
+
+    fx.signup.account_created(&created);
+
+    assert_eq!(welcome_mark(&fx, &created.id).as_deref(), Some("\"pending\""));
+}
+
+#[tokio::test]
+async fn an_existing_user_is_never_marked_for_the_welcome_wizard() {
+    let fx = fx(true);
+    // Created before the wizard existed: directly, not through sign-up.
+    let ada = inviter(&fx);
+
+    // Signing in, inviting someone and being the one who invited someone mark nobody.
+    fx.auth
+        .login(
+            LoginRequest {
+                email: "ada@example.com".into(),
+                password: "password123".into(),
+                totp_code: None,
+            },
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let (_, token) = emailed_token(&fx, &ada.id, "new@example.com");
+    fx.signup
+        .register(ok_req("new@example.com", Some(&token)))
+        .await
+        .unwrap();
+
+    assert_eq!(welcome_mark(&fx, &ada.id), None);
+}
+
+#[tokio::test]
+async fn a_refused_sign_up_marks_no_one() {
+    let fx = fx(false);
+    err(fx.signup.register(ok_req("new@example.com", None)).await);
+
+    let marks: i64 = {
+        use crate::schema::user_preferences;
+        user_preferences::table
+            .filter(user_preferences::key.eq("onboarding.welcome"))
+            .count()
+            .get_result(&mut fx.pool.get().unwrap())
+            .unwrap()
+    };
+    assert_eq!(marks, 0);
 }

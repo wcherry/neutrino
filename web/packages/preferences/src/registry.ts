@@ -107,6 +107,8 @@ export interface PreferenceValues {
   'drive.quickAccessDays': '3' | '7' | '30' | '90';
   /** The guided tours this user has finished or skipped, so each starts on its own only once. */
   'onboarding.toursSeen': TourId[];
+  /** `pending` from the moment the server creates the account until the welcome wizard is finished or closed. */
+  'onboarding.welcome': 'pending' | 'done';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];
   'library.sheets.cfVariables': unknown[];

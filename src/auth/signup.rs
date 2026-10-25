@@ -7,8 +7,14 @@
 //!    invite.
 //! 3. `AuthService::register` runs every existing check unchanged. If it fails
 //!    the claim is released, so a typo does not burn the invite.
-//! 4. On success the invite records who signed up, and the welcome email goes
-//!    out on a spawned task.
+//! 4. On success the invite records who signed up, the account is marked as
+//!    owed the welcome wizard (`onboarding.welcome` = `pending`), and the
+//!    welcome email goes out on a spawned task.
+//!
+//! The wizard mark is written here, on the account-creation paths only
+//! (self-serve, invite, admin-created), and nowhere else: the preference's
+//! default is `done`, so an account that predates it, or any sign-in, can never
+//! show the wizard.
 
 use std::sync::Arc;
 
@@ -16,6 +22,8 @@ use super::dto::{RegisterRequest, RegisterResponse};
 use super::invites::service::InviteService;
 use super::service::AuthService;
 use super::welcome::WelcomeMailer;
+use crate::preferences::catalog::WELCOME_PENDING;
+use crate::preferences::repository::PreferencesRepository;
 use crate::shared::ApiError;
 
 /// Account creation: the invite gate, then registration, then the welcome email.
@@ -23,6 +31,7 @@ pub struct SignupService {
     auth: Arc<AuthService>,
     invites: Arc<InviteService>,
     welcome: Arc<WelcomeMailer>,
+    preferences: Arc<PreferencesRepository>,
     public_signup_open: bool,
 }
 
@@ -31,13 +40,29 @@ impl SignupService {
         auth: Arc<AuthService>,
         invites: Arc<InviteService>,
         welcome: Arc<WelcomeMailer>,
+        preferences: Arc<PreferencesRepository>,
         public_signup_open: bool,
     ) -> Self {
         SignupService {
             auth,
             invites,
             welcome,
+            preferences,
             public_signup_open,
+        }
+    }
+
+    /// Mark a brand-new account as owed the welcome wizard. Best effort: the account
+    /// already exists, and a missed wizard must not turn a created account into an error.
+    fn mark_welcome_pending(&self, user_id: &str) {
+        let value = serde_json::Value::String(WELCOME_PENDING.into()).to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string();
+        if let Err(e) = self.preferences.apply(
+            user_id,
+            &[("onboarding.welcome".to_string(), Some(value))],
+            &now,
+        ) {
+            tracing::error!(%user_id, "could not mark a new account for the welcome wizard: {}", e);
         }
     }
 
@@ -101,13 +126,16 @@ impl SignupService {
                 );
             }
         }
+        self.mark_welcome_pending(&user.id);
         self.welcome
             .send_later(user.email.clone(), user.name.clone());
         Ok(user)
     }
 
-    /// For admin-created accounts: send the welcome email.
+    /// For admin-created accounts: mark the account for the welcome wizard and send the
+    /// welcome email.
     pub fn account_created(&self, user: &RegisterResponse) {
+        self.mark_welcome_pending(&user.id);
         self.welcome
             .send_later(user.email.clone(), user.name.clone());
     }
