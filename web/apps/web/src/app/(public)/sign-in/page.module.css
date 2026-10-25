@@ -232,3 +232,59 @@
 .brandMessage:empty {
   display: none;
 }
+
+/*
+ * Register page: the invitation banner ("<inviterName> invited you to Neutrino.") above the form.
+ * Accent-tinted, with room for a leading icon (lucide, 16px) — put the icon and the text as two
+ * children; the icon keeps the accent while the text uses the accent's text shade for contrast.
+ * Tokens only, so it flips with the theme on its own.
+ */
+.inviteBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: var(--leading-normal);
+}
+
+.inviteBanner svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.125em;
+  color: var(--color-accent);
+}
+
+/*
+ * Neutral notice: "Sign-up on this server is by invitation only…" shown instead of the form, and
+ * "This invite link has expired or was already used." above it. Secondary text, not muted — muted
+ * fails 4.5:1 on the subtle ground in both themes.
+ */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.notice svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.125em;
+  color: var(--color-text-secondary);
+}

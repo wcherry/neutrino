@@ -36,6 +36,23 @@ pub struct Config {
     pub drive_base_url: String,
 
     pub web_dir: String,
+
+    /// Whether anyone may create an account (`PUBLIC_SIGNUP=open`, the default)
+    /// or only someone holding an invite (`PUBLIC_SIGNUP=closed`). Admin-created
+    /// accounts are unaffected.
+    pub public_signup_open: bool,
+}
+
+/// Reads `PUBLIC_SIGNUP`: unset or `open` is true, `closed` is false, anything
+/// else is a startup error rather than a guess.
+fn parse_public_signup(value: Option<&str>) -> Result<bool, String> {
+    match value.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+        None | Some("") | Some("open") => Ok(true),
+        Some("closed") => Ok(false),
+        Some(other) => Err(format!(
+            "PUBLIC_SIGNUP must be `open` or `closed`, not `{other}`"
+        )),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +204,8 @@ impl Config {
 
         let web_dir = env::var("WEB_DIR").unwrap_or_else(|_| "web/apps/web/out".to_string());
 
+        let public_signup_open = parse_public_signup(env::var("PUBLIC_SIGNUP").ok().as_deref())?;
+
         // Every path here has a default, so a variable that is missing — or
         // misspelled in a `.env` — produces a working server pointed somewhere
         // nobody meant, with nothing said about it. Reporting what was actually
@@ -218,6 +237,7 @@ impl Config {
             drive_base_url,
             oauth,
             web_dir,
+            public_signup_open,
         })
     }
 }
@@ -225,6 +245,14 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_signup_defaults_to_open_and_refuses_unknown_values() {
+        assert_eq!(parse_public_signup(None), Ok(true));
+        assert_eq!(parse_public_signup(Some("open")), Ok(true));
+        assert_eq!(parse_public_signup(Some(" Closed ")), Ok(false));
+        assert!(parse_public_signup(Some("invite-only")).is_err());
+    }
 
     fn cfg(google: Option<&str>, outlook: Option<&str>) -> OAuthConfig {
         OAuthConfig {
