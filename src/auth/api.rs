@@ -4,7 +4,7 @@ use super::dto::{
     PublicKeyResponse, PublicKeyRingResponse,
     PublicKeyVersionResponse, PublicProfileResponse,
     RefreshRequest, RegisterRequest, RegisterResponse, SessionListResponse, SessionResponse,
-    SetPublicKeyRequest, SocialLinks, TwoFactorConfirmRequest, TwoFactorDisableRequest,
+    SetPublicKeyRequest, SignupPolicyResponse, SocialLinks, TwoFactorConfirmRequest, TwoFactorDisableRequest,
     TwoFactorEnrollResponse, TwoFactorStatusResponse, UpdateProfileRequest, UserLookupResponse,
     UserProfileDetailsResponse, UserProfileResponse,
 };
@@ -22,6 +22,8 @@ pub struct AuthApiState {
     pub auth_service: Arc<AuthService>,
     /// Used to give every new account its default folders (see `register`).
     pub filesystem_service: Arc<crate::drive::filesystem::service::FilesystemService>,
+    /// The sign-up gate (closed sign-up, invite tokens) and the welcome email.
+    pub signup: Arc<crate::auth::signup::SignupService>,
 }
 
 /// Folder that editors upload pasted, linked and locally-chosen images into, so
@@ -35,7 +37,9 @@ const ATTACHMENTS_FOLDER_NAME: &str = "Attachments";
 /// Create an account with an email, name and password.
 ///
 /// Passwords are hashed with Argon2 and must be at least eight characters. This only creates
-/// the row — the client still calls `POST /auth/login` to get tokens.
+/// the row — the client still calls `POST /auth/login` to get tokens. When the server's public
+/// sign-up is closed (`PUBLIC_SIGNUP=closed`) an `inviteToken` is required; while it is open an
+/// unusable token is ignored. A new account is sent one welcome email.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/register",
@@ -43,7 +47,10 @@ const ATTACHMENTS_FOLDER_NAME: &str = "Attachments";
     responses(
         (status = 200, description = "User registered", body = RegisterResponse),
         (status = 400, description = "Invalid request"),
+        (status = 403, description = "SIGNUP_CLOSED: sign-up is by invitation only"),
+        (status = 404, description = "INVITE_NOT_FOUND (sign-up closed)"),
         (status = 409, description = "Email already in use"),
+        (status = 410, description = "INVITE_USED, INVITE_EXPIRED or INVITE_REVOKED (sign-up closed)"),
     ),
     tag = "auth"
 )]
@@ -52,7 +59,7 @@ pub async fn register(
     state: web::Data<AuthApiState>,
     body: web::Json<RegisterRequest>,
 ) -> Result<web::Json<RegisterResponse>, ApiError> {
-    let result = state.auth_service.register(body.into_inner());
+    let result = state.signup.register(body.into_inner()).await;
     match result {
         Ok(response) => {
             create_default_folders(&state, &response).await;
@@ -63,6 +70,20 @@ pub async fn register(
             Err(e)
         }
     }
+}
+
+/// Whether anyone may sign up, or only someone with an invite. Public.
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/signup-policy",
+    responses((status = 200, description = "Sign-up policy", body = SignupPolicyResponse)),
+    tag = "auth"
+)]
+#[get("/signup-policy")]
+pub async fn signup_policy(state: web::Data<AuthApiState>) -> web::Json<SignupPolicyResponse> {
+    web::Json(SignupPolicyResponse {
+        public_signup: state.signup.public_signup_open(),
+    })
 }
 
 /// Seeds a brand-new account's Drive with the folders the apps expect.
@@ -658,6 +679,7 @@ pub async fn admin_create_user(
     // the account already exists by now, so a folder that fails to create must
     // not turn a created account into an error the console reports.
     create_default_folders(&state, &created).await;
+    state.signup.account_created(&created);
     Ok(actix_web::HttpResponse::Created().json(created))
 }
 
@@ -945,6 +967,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
     conf.service(
         web::scope("/auth")
             .service(register)
+            .service(signup_policy)
             .service(login)
             .service(refresh)
             .service(change_password)
@@ -981,6 +1004,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(
         register,
+        signup_policy,
         login,
         refresh,
         change_password,
@@ -1011,6 +1035,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
     ),
     components(schemas(
         RegisterRequest,
+        SignupPolicyResponse,
         LoginRequest,
         RefreshRequest,
         AuthResponse,

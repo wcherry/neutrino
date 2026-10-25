@@ -880,6 +880,24 @@ diesel::table! {
     }
 }
 
+// ── Added in migration 148 ────────────────────────────────────────────────────
+diesel::table! {
+    invites (id) {
+        id -> Text,
+        inviter_id -> Text,
+        kind -> Text,
+        token_hash -> Text,
+        invitee_email -> Nullable<Text>,
+        note -> Nullable<Text>,
+        created_at -> Timestamp,
+        expires_at -> Timestamp,
+        accepted_at -> Nullable<Timestamp>,
+        accepted_user_id -> Nullable<Text>,
+        revoked_at -> Nullable<Timestamp>,
+        use_count -> Integer,
+    }
+}
+
 // ── Added in migration 146 ────────────────────────────────────────────────────
 diesel::table! {
     team_key_requests (id) {
@@ -1227,6 +1245,7 @@ diesel::table! {
 diesel::joinable!(refresh_tokens -> users (user_id));
 diesel::joinable!(user_key_vaults -> users (user_id));
 diesel::joinable!(user_key_unlocks -> users (user_id));
+diesel::joinable!(invites -> users (inviter_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
@@ -1381,4 +1400,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_key_unlocks,
     // Versioned identity keys
     user_public_keys,
+    // Friend invites
+    invites,
 );

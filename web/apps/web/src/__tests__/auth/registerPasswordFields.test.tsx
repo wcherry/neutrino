@@ -17,7 +17,10 @@ vi.mock('@neutrino/auth', () => ({
   authApi: {
     register: (...args: unknown[]) => register(...args),
     login: (...args: unknown[]) => login(...args),
+    // The page asks for the sign-up policy on mount (onboarding invites).
+    signupPolicy: () => Promise.resolve({ publicSignup: true }),
   },
+  invitesApi: { validate: vi.fn() },
   provisionKeyring: (...args: unknown[]) => provisionKeyring(...args),
   currentRecoveryKit: vi.fn(),
   enrollPasskey: vi.fn(),

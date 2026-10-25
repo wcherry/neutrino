@@ -2,6 +2,7 @@ import { request, ApiClientError, refreshTokens, refreshTokensOnce } from '@neut
 import { emitAuthChanged } from './authEvents';
 import type {
   RegisterRequest,
+  SignupPolicy,
   LoginRequest,
   ChangePasswordRequest,
   AuthTokens,
@@ -26,6 +27,11 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  },
+
+  /** Whether this server takes sign-ups without an invite. Unauthenticated. */
+  async signupPolicy(): Promise<SignupPolicy> {
+    return request<SignupPolicy>('/api/v1/auth/signup-policy');
   },
 
   /**

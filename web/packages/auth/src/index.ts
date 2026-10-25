@@ -1,4 +1,13 @@
 export { authApi } from './client';
+export {
+  invitesApi,
+  inviteUrl,
+  type Invite,
+  type InviteStatus,
+  type PersonalInviteLink,
+  type InviteValidation,
+  type SendInvitesRequest,
+} from './invites';
 export { AuthProvider, useAuth, useUser } from './context';
 export { emitAuthChanged, subscribeToAuthChanged } from './authEvents';
 export {
@@ -26,6 +35,7 @@ export { decodeJwtAdmin, isCurrentUserAdmin } from './adminUtils';
 
 export type {
   RegisterRequest,
+  SignupPolicy,
   LoginRequest,
   ChangePasswordRequest,
   AuthTokens,

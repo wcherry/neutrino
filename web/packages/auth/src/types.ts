@@ -6,6 +6,13 @@ export interface RegisterRequest {
   email: string;
   name: string;
   password: string;
+  /** A validated invite token from `/register?invite=…`; needed when public sign-up is closed. */
+  inviteToken?: string;
+}
+
+/** `GET /api/v1/auth/signup-policy`: whether anyone may sign up without an invite. */
+export interface SignupPolicy {
+  publicSignup: boolean;
 }
 
 export interface LoginRequest {

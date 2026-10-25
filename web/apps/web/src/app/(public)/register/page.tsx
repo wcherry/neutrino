@@ -1,12 +1,27 @@
 'use client';
 
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Info, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { authApi } from '@neutrino/auth';
+import { useEffect, useState } from 'react';
+import { authApi, invitesApi, type InviteValidation } from '@neutrino/auth';
 import { EncryptionSetupDialog } from '@/components/EncryptionSetupDialog';
 import styles from '../sign-in/page.module.css';
+
+/**
+ * Where `/register?invite=<token>` stands. `checking` keeps the form up while
+ * the token is validated, so a closed server does not flash its invitation-only
+ * notice at someone who holds a good invite.
+ */
+type InviteState =
+  | { kind: 'none' }
+  | { kind: 'checking'; token: string }
+  | { kind: 'valid'; token: string; invite: InviteValidation }
+  | { kind: 'invalid' };
+
+const INVITE_ONLY =
+  'Sign-up on this server is by invitation only. Ask someone with an account to invite you.';
+const BAD_INVITE = 'This invite link has expired or was already used.';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -20,6 +35,54 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [email, setEmail] = useState('');
+  const [invite, setInvite] = useState<InviteState>({ kind: 'none' });
+  // null until the server answers; the form shows meanwhile and is hidden only
+  // once sign-up is known to be closed.
+  const [publicSignup, setPublicSignup] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    authApi
+      .signupPolicy()
+      .then((policy) => {
+        if (!cancelled) setPublicSignup(policy.publicSignup);
+      })
+      .catch(() => {
+        // Unknown: leave the form up and let the register call be the judge.
+        if (!cancelled) setPublicSignup(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Read here rather than with useSearchParams so the static export needs no
+    // Suspense boundary around the page.
+    const token = new URLSearchParams(window.location.search).get('invite');
+    if (!token) return;
+    let cancelled = false;
+    setInvite({ kind: 'checking', token });
+    invitesApi
+      .validate(token)
+      .then((result) => {
+        if (cancelled) return;
+        setInvite({ kind: 'valid', token, invite: result });
+        const invited = result.email;
+        if (invited) setEmail((current) => current || invited);
+      })
+      .catch(() => {
+        // Expired, used, revoked or unknown all read the same to the visitor.
+        if (!cancelled) setInvite({ kind: 'invalid' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const inviteToken = invite.kind === 'valid' ? invite.token : undefined;
+  const inviteOnly = publicSignup === false && invite.kind !== 'valid' && invite.kind !== 'checking';
 
   // Only flagged once the user has typed something to compare against, so the field
   // is not red the moment it gains focus.
@@ -38,10 +101,11 @@ export default function RegisterPage() {
 
     const form = e.currentTarget;
     const name = (form.elements.namedItem('name') as HTMLInputElement).value;
-    const email = (form.elements.namedItem('email') as HTMLInputElement).value;
 
     try {
-      const profile = await authApi.register({ name, email, password });
+      const profile = await authApi.register(
+        inviteToken ? { name, email, password, inviteToken } : { name, email, password },
+      );
       await authApi.login({ email, password });
       setNewUser({ id: profile.id, email: profile.email });
     } catch (err: unknown) {
@@ -61,95 +125,117 @@ export default function RegisterPage() {
         <h1 className={styles.heading}>Create your account</h1>
         <p className={styles.sub}>Free forever · No credit card required</p>
 
-        <form className={styles.form} onSubmit={handleSubmit}>
-          <div className={styles.field}>
-            <label htmlFor="name" className={styles.label}>Name</label>
-            <input
-              id="name"
-              name="name"
-              type="text"
-              autoComplete="name"
-              required
-              className={styles.input}
-              placeholder="Your name"
-            />
+        {invite.kind === 'valid' && (
+          <div className={styles.inviteBanner}>
+            <UserPlus aria-hidden="true" />
+            <span>{invite.invite.inviterName} invited you to Neutrino.</span>
           </div>
-          <div className={styles.field}>
-            <label htmlFor="email" className={styles.label}>Email</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className={styles.input}
-              placeholder="you@example.com"
-            />
+        )}
+        {invite.kind === 'invalid' && (
+          <div className={styles.notice}>
+            <Info aria-hidden="true" />
+            <span>{BAD_INVITE}</span>
           </div>
-          <div className={styles.field}>
-            <label htmlFor="password" className={styles.label}>Password</label>
-            <div className={styles.passwordWrap}>
+        )}
+
+        {inviteOnly ? (
+          <div className={styles.notice} role="status">
+            <Info aria-hidden="true" />
+            <span>{INVITE_ONLY}</span>
+          </div>
+        ) : (
+          <form className={styles.form} onSubmit={handleSubmit}>
+            <div className={styles.field}>
+              <label htmlFor="name" className={styles.label}>Name</label>
               <input
-                id="password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
+                id="name"
+                name="name"
+                type="text"
+                autoComplete="name"
                 required
-                minLength={8}
                 className={styles.input}
-                placeholder="At least 8 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your name"
               />
-              <button
-                type="button"
-                className={styles.reveal}
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                aria-pressed={showPassword}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
             </div>
-          </div>
-          <div className={styles.field}>
-            <label htmlFor="confirmPassword" className={styles.label}>Confirm password</label>
-            <div className={styles.passwordWrap}>
+            <div className={styles.field}>
+              <label htmlFor="email" className={styles.label}>Email</label>
               <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type={showConfirmPassword ? 'text' : 'password'}
-                autoComplete="new-password"
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
                 required
-                minLength={8}
-                className={`${styles.input} ${mismatch ? styles.inputInvalid : ''}`}
-                placeholder="Re-enter your password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                aria-invalid={mismatch}
-                aria-describedby={mismatch ? 'confirmPassword-error' : undefined}
+                className={styles.input}
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
-              <button
-                type="button"
-                className={styles.reveal}
-                onClick={() => setShowConfirmPassword((v) => !v)}
-                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                aria-pressed={showConfirmPassword}
-              >
-                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
             </div>
-            {mismatch && (
-              <p id="confirmPassword-error" className={styles.fieldError}>
-                Passwords do not match
-              </p>
-            )}
-          </div>
-          {error && <p className={styles.error}>{error}</p>}
-          <button type="submit" className={styles.submit} disabled={loading || mismatch}>
-            {loading ? 'Creating account…' : 'Create free account'}
-          </button>
-        </form>
+            <div className={styles.field}>
+              <label htmlFor="password" className={styles.label}>Password</label>
+              <div className={styles.passwordWrap}>
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  className={styles.input}
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className={styles.reveal}
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            <div className={styles.field}>
+              <label htmlFor="confirmPassword" className={styles.label}>Confirm password</label>
+              <div className={styles.passwordWrap}>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  className={`${styles.input} ${mismatch ? styles.inputInvalid : ''}`}
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  aria-invalid={mismatch}
+                  aria-describedby={mismatch ? 'confirmPassword-error' : undefined}
+                />
+                <button
+                  type="button"
+                  className={styles.reveal}
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showConfirmPassword}
+                >
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {mismatch && (
+                <p id="confirmPassword-error" className={styles.fieldError}>
+                  Passwords do not match
+                </p>
+              )}
+            </div>
+            {error && <p className={styles.error}>{error}</p>}
+            <button type="submit" className={styles.submit} disabled={loading || mismatch}>
+              {loading ? 'Creating account…' : 'Create free account'}
+            </button>
+          </form>
+        )}
 
         <p className={styles.footer}>
           Already have an account?{' '}

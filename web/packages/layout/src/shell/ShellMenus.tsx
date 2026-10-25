@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Bug, Compass, History, Import, LogOut, Search, Settings, Star, User } from 'lucide-react';
+import { Bell, Bug, Compass, History, Import, LogOut, Search, Settings, Star, User, UserPlus } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
 import { Avatar, usePresence } from '@neutrino/ui';
 import type { TopbarNotification, TopbarUser } from '../Topbar';
@@ -214,6 +214,8 @@ export interface AccountMenuProps {
   user: TopbarUser;
   onProfile?: () => void;
   onSettings?: () => void;
+  /** Opens the Invite friends dialog; the item is left out without it. */
+  onInvite?: () => void;
   onImport?: () => void;
   onSignOut?: () => void;
   /** Issue tracker, opened in a new tab. */
@@ -231,6 +233,7 @@ export function AccountMenu({
   user,
   onProfile,
   onSettings,
+  onInvite,
   onImport,
   onSignOut,
   bugReportHref,
@@ -279,6 +282,7 @@ export function AccountMenu({
           <div className={styles.group}>
             {item('Profile', User, onProfile)}
             {item('Settings', Settings, onSettings)}
+            {item('Invite friends', UserPlus, onInvite)}
             {item('Import', Import, onImport)}
             {tourLabel && item(tourLabel, Compass, onTakeTour)}
             {bugReportHref && (

@@ -2225,6 +2225,7 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "hex",
+ "hmac",
  "ical",
  "image",
  "jsonwebtoken",
