@@ -55,6 +55,8 @@ export interface RailPanel {
   /** The panel's own header buttons. */
   actions?: React.ReactNode;
   footer?: React.ReactNode;
+  /** A guided tour's name for this panel's tab (`data-tour`), so a tour can point at it. */
+  tour?: string;
 }
 
 export interface PanelRailProps {
@@ -464,6 +466,7 @@ function Rail({
         tabIndex={focusable === id ? 0 : -1}
         className={styles.tab}
         data-dragging={draggingId === id ? 'true' : undefined}
+        data-tour={panel.tour}
         title={panel.title}
         onPointerDown={(e) => onTabPointerDown(id, e)}
         onClick={() => {

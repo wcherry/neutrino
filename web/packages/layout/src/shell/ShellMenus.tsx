@@ -45,6 +45,7 @@ export function SearchButton({ onOpenPalette, paletteShortcut }: SearchButtonPro
       aria-haspopup="dialog"
       aria-label="Search and commands"
       title={paletteShortcut ? `Search files, people and commands (${paletteShortcut})` : 'Search files, people and commands'}
+      data-tour="search"
     >
       <Search size={18} strokeWidth={1.8} aria-hidden="true" />
     </button>
