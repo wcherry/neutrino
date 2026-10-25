@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Bell, CalendarPlus, FileText, FolderPlus, GitBranch, NotebookPen, Plus, Presentation, Table2, Upload, Paintbrush } from 'lucide-react';
+import { Bell, CalendarPlus, FileText, FolderPlus, FolderUp, GitBranch, NotebookPen, Plus, Presentation, Table2, Upload, Paintbrush } from 'lucide-react';
 import { useToast } from '@neutrino/ui';
 import { usePreference } from '@neutrino/preferences';
 import { docsApi, sheetsApi, slidesApi, diagramsApi, drawingApi } from '@/lib/api';
@@ -22,6 +22,7 @@ const ACTIONS = [
   { id: 'reminder', label: 'Reminder',     icon: Bell,         color: 'var(--color-purple, #7c3aed)',   driveOnly: false, app: 'calendar' },
   { id: 'folder',   label: 'New folder',   icon: FolderPlus,   color: 'var(--color-amber, #d97706)',    driveOnly: true,  app: null },
   { id: 'upload',   label: 'Upload',       icon: Upload,       color: 'var(--color-primary)',            driveOnly: true,  app: null },
+  { id: 'import',   label: 'Import folders', icon: FolderUp,   color: 'var(--color-primary)',            driveOnly: true,  app: null },
 ] as const;
 
 type ActionId = typeof ACTIONS[number]['id'];
@@ -56,6 +57,10 @@ export function NewItemFAB({ variant = 'topbar', compact = false }: NewItemFABPr
     }
     if (id === 'upload') {
       window.dispatchEvent(new CustomEvent('drive:upload'));
+      return;
+    }
+    if (id === 'import') {
+      window.dispatchEvent(new CustomEvent('drive:import-folders'));
       return;
     }
     setPending(true);

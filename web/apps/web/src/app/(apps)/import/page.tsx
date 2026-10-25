@@ -68,6 +68,7 @@ import {
   type TakeoutArchive,
 } from '@/lib/takeout';
 import { useImportRun, type ImportStep, type RetryTarget } from '@/components/ImportRun';
+import { LocalImport } from '@/components/LocalImport';
 import { logFail, logStep } from '@/lib/takeout/log';
 import styles from './page.module.css';
 
@@ -153,12 +154,16 @@ export default function ImportPage() {
    * page's own stage — which is how coming back mid-import lands on the
    * progress bar rather than on the file picker.
    */
+  // A local folder import's run is shown by its own component (the progress
+  // pill links here), so the Takeout stages below stay out of its way.
+  const localRun = run.state.status !== 'idle' && run.state.kind === 'local';
+  const takeoutState = localRun ? null : run.state;
   const stage =
-    run.state.status === 'running' ? 'running' : run.state.status === 'done' ? 'done' : pickStage;
+    takeoutState?.status === 'running' ? 'running' : takeoutState?.status === 'done' ? 'done' : pickStage;
 
-  const progress = run.state.status === 'running' ? run.state.progress : null;
-  const results = run.state.status === 'done' ? run.state.results : null;
-  const error = readError ?? (run.state.status === 'failed' ? run.state.error : null);
+  const progress = takeoutState?.status === 'running' ? takeoutState.progress : null;
+  const results = takeoutState?.status === 'done' ? takeoutState.results : null;
+  const error = readError ?? (takeoutState?.status === 'failed' ? takeoutState.error : null);
 
   // The open archive holds a zip reader and its worker pool. A ref rather than
   // reading `loaded`, so the unmount cleanup below closes whatever is open at
@@ -373,7 +378,7 @@ export default function ImportPage() {
   const skips = rowsOf('skipped');
   // Whether those failures can be run again: the archive holding their bytes
   // is open only while the provider says a retry would still find something.
-  const retryable = run.state.status === 'done' && run.state.retryable;
+  const retryable = takeoutState?.status === 'done' && takeoutState.retryable;
   const totals = (results ?? []).reduce(
     (acc, r) => ({
       imported: acc.imported + r.summary.imported,
@@ -405,10 +410,12 @@ export default function ImportPage() {
       </div>
 
       <div className={styles.body}>
-        {error && <Alert variant="error" className={styles.alert} message={error} />}
+        {localRun && <LocalImport showTakeout={false} />}
+
+        {!localRun && error && <Alert variant="error" className={styles.alert} message={error} />}
 
         {/* ── Stage 1: pick the archive ──────────────────────────────────── */}
-        {stage === 'pick' && (
+        {!localRun && stage === 'pick' && (
           <section className={styles.section}>
             {reading ? (
               <div className={styles.reading}>
@@ -463,7 +470,7 @@ export default function ImportPage() {
         )}
 
         {/* ── Stage 2: choose what comes across ──────────────────────────── */}
-        {stage === 'configure' && loaded && (
+        {!localRun && stage === 'configure' && loaded && (
           <section className={styles.section}>
             <div className={styles.archiveCard}>
               <Package size={18} className={styles.archiveIcon} aria-hidden="true" />
