@@ -758,7 +758,12 @@ const emptyPair = () => ({ header: emptySlots(), footer: emptySlots() });
 function bandFrom(doc: Document | null): HeaderFooterSlots {
   const slots = emptySlots();
   if (!doc) return slots;
-  const p = kids(doc.documentElement, 'p')[0];
+  // A watermark is a paragraph of its own ahead of the band. The iOS and Android writers put it
+  // straight under the root, so the band is the first paragraph that is not the watermark — taking
+  // the first paragraph read every native-written header with a watermark as empty.
+  const paragraphs = kids(doc.documentElement, 'p');
+  const isWatermark = (el: Element) => Array.from(el.getElementsByTagName('*')).some((n) => n.localName === 'pict');
+  const p = paragraphs.find((el) => !isWatermark(el)) ?? paragraphs[0];
   if (!p) return slots;
 
   const parts: string[] = [''];
