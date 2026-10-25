@@ -69,6 +69,7 @@ export const COMMANDS = [
   { id: 'shell.goto.calendar', title: 'Go to Calendar', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.settings', title: 'Open Settings', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.keyboard', title: 'Open keyboard shortcuts', app: 'global', defaultKeys: [] },
+  { id: 'shell.takeTour', title: 'Take the tour of this app', app: 'global', defaultKeys: [] },
 
   // ── All editors ───────────────────────────────────────────────────────────
   { id: 'editors.spellCheck.toggle', title: 'Turn spell check on or off', app: 'editors', defaultKeys: ['Mod+Shift+;'], whileTyping: 'run' },

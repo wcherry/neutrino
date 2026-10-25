@@ -60,15 +60,18 @@ export function ShellTopBar({
         <Lock size={13} strokeWidth={2.2} aria-hidden="true" />
         <span className={styles['pill-text']}>End-to-end encrypted</span>
       </span>
-      <SearchButton onOpenPalette={onOpenPalette} paletteShortcut={paletteShortcut} />
-      <NotificationsMenu
-        notifications={notifications}
-        unreadCount={unreadNotificationCount}
-        onRead={onNotificationRead}
-        onMarkAllRead={onMarkAllNotificationsRead}
-      />
-      {quickAccess && <QuickAccessMenu {...quickAccess} />}
-      {user && <AccountMenu user={user} {...account} />}
+      {/* One group, so a guided tour can point at the corner. */}
+      <div className={styles.end} data-tour="top-right">
+        <SearchButton onOpenPalette={onOpenPalette} paletteShortcut={paletteShortcut} />
+        <NotificationsMenu
+          notifications={notifications}
+          unreadCount={unreadNotificationCount}
+          onRead={onNotificationRead}
+          onMarkAllRead={onMarkAllNotificationsRead}
+        />
+        {quickAccess && <QuickAccessMenu {...quickAccess} />}
+        {user && <AccountMenu user={user} {...account} />}
+      </div>
     </header>
   );
 }

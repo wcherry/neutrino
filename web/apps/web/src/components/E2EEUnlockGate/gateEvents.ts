@@ -34,3 +34,33 @@ export function subscribeToGateRequests(listener: Listener): () => void {
     listeners.delete(listener);
   };
 }
+
+/**
+ * Whether the gate is still deciding or showing — `'pending'` from the moment it mounts until it
+ * has either rendered nothing (`unlocked`, a failed lookup) or been finished or dismissed, then
+ * `'clear'`. Anything that must not open over it (the guided tours) waits for `'clear'`.
+ *
+ * `'pending'` before the gate has mounted too: the shell mounts it once `/auth/me` answers, and a
+ * tour that started before then would start under the first-run "Set up encryption" modal.
+ */
+export type GateState = 'pending' | 'clear';
+
+let gateState: GateState = 'pending';
+const stateListeners = new Set<Listener>();
+
+export function setGateState(next: GateState): void {
+  if (next === gateState) return;
+  gateState = next;
+  stateListeners.forEach((l) => l());
+}
+
+export function getGateState(): GateState {
+  return gateState;
+}
+
+export function subscribeToGateState(listener: Listener): () => void {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
+}

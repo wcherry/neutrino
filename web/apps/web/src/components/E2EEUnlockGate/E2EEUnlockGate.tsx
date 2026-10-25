@@ -50,7 +50,7 @@ import {
   type KeyringState,
   type LocalKeystoreInfo,
 } from '@neutrino/auth';
-import { subscribeToGateRequests } from './gateEvents';
+import { setGateState, subscribeToGateRequests } from './gateEvents';
 import { RecoveryKitCopyButton } from '@/components/RecoveryKitCopyButton';
 import styles from './E2EEUnlockGate.module.css';
 
@@ -102,6 +102,13 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
   // Dismissing this is not final: Settings (and anything else that finds the
   // session locked) can ask for it back rather than telling the user to reload.
   useEffect(() => subscribeToGateRequests(() => void check()), [check]);
+
+  // Tell whatever waits on the gate (the guided tours) whether it is still deciding or showing.
+  // Unmounting — sign-out, a different user — puts it back to pending for the next one.
+  useEffect(() => {
+    setGateState(phase === 'done' || phase === 'dismissed' ? 'clear' : 'pending');
+  }, [phase]);
+  useEffect(() => () => setGateState('pending'), []);
 
   const runGuarded = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true);

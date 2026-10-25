@@ -38,8 +38,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { X } from 'lucide-react';
 import { ProgressBar } from '@neutrino/ui';
-import type { ImportProgress, ImportSummary, TakeoutArchive } from '@/lib/takeout';
+import type { ImportProgress, ImportSummary } from '@/lib/takeout';
 import { describeError, logFail, logStep } from '@/lib/takeout/log';
 import { mergeResults } from './mergeResults';
 import styles from './ImportRunIndicator.module.css';
@@ -77,22 +78,42 @@ export interface ProductResult {
   summary: ImportSummary;
 }
 
+/**
+ * Whatever a run reads its files out of, for the provider to release when the
+ * run no longer needs it. A `TakeoutArchive` is one (its zip readers); a local
+ * import's files are `File` handles the browser owns, so it passes a no-op.
+ */
+export interface ImportSource {
+  close(): Promise<void>;
+}
+
+/**
+ * Whose run it is. The provider treats both alike; `/import` and the local
+ * import component read it to tell which screen should show the run, and the
+ * pill stays once a `local` run is done (its results are not on a page the
+ * user is already on).
+ */
+export type ImportRunKind = 'takeout' | 'local';
+
 export interface ImportPlan {
-  /** The archive's file name, shown while the run is in progress. */
+  /** The archive's file name (or the picked folders), shown while the run is in progress. */
   fileName: string;
   /**
    * The open archive. Ownership transfers with the plan: the provider closes
    * it when the run ends, so the page must not close it after calling `start`.
    */
-  archive: TakeoutArchive;
+  archive: ImportSource;
   steps: ImportStep[];
+  /** Defaults to `'takeout'`. */
+  kind?: ImportRunKind;
 }
 
 export type ImportRunState =
   | { status: 'idle' }
-  | { status: 'running'; fileName: string; progress: ImportProgress }
+  | { status: 'running'; kind: ImportRunKind; fileName: string; progress: ImportProgress }
   | {
       status: 'done';
+      kind: ImportRunKind;
       fileName: string;
       results: ProductResult[];
       /**
@@ -101,7 +122,7 @@ export type ImportRunState =
        */
       retryable: boolean;
     }
-  | { status: 'failed'; fileName: string; error: string };
+  | { status: 'failed'; kind: ImportRunKind; fileName: string; error: string };
 
 interface ImportRunContextValue {
   state: ImportRunState;
@@ -127,6 +148,13 @@ interface Leg {
 }
 
 const ImportRunContext = createContext<ImportRunContextValue | null>(null);
+
+/** "12 imported · 1 failed" for the done pill. */
+function doneCounts(results: ProductResult[]): string {
+  const imported = results.reduce((sum, r) => sum + r.summary.imported, 0);
+  const failed = results.reduce((sum, r) => sum + r.summary.failed, 0);
+  return `${imported.toLocaleString()} imported · ${failed.toLocaleString()} failed`;
+}
 
 /**
  * The run state. Throws outside the provider rather than falling back to an
@@ -187,7 +215,8 @@ export function ImportRunProvider({ children }: { children: React.ReactNode }) {
       abortRef.current = controller;
 
       const total = legs.reduce((sum, leg) => sum + leg.count, 0);
-      setState({ status: 'running', fileName: plan.fileName, progress: { done: 0, total, current: '' } });
+      const kind: ImportRunKind = plan.kind ?? 'takeout';
+      setState({ status: 'running', kind, fileName: plan.fileName, progress: { done: 0, total, current: '' } });
 
       void (async () => {
         const done: ProductResult[] = [];
@@ -231,10 +260,21 @@ export function ImportRunProvider({ children }: { children: React.ReactNode }) {
 
           const results = previous ? mergeResults(previous, done) : done;
           retryable = results.some((r) => r.summary.items.some((i) => i.status === 'failed'));
-          setState({ status: 'done', fileName: plan.fileName, results, retryable });
+          setState({ status: 'done', kind, fileName: plan.fileName, results, retryable });
           // The notes, docs, sheets and photos lists and the drive tree all
-          // gained files.
-          for (const key of ['notes', 'docs', 'sheets', 'photos', 'albums', 'drive', 'folder-contents']) {
+          // gained files — and the storage meter went up.
+          for (const key of [
+            'notes',
+            'docs',
+            'sheets',
+            'photos',
+            'albums',
+            'drive',
+            'folder-contents',
+            'contents',
+            'files',
+            'quota',
+          ]) {
             queryClient.invalidateQueries({ queryKey: [key] });
           }
         } catch (err) {
@@ -242,7 +282,7 @@ export function ImportRunProvider({ children }: { children: React.ReactNode }) {
           // means the run stopped before it could report anything, so this is
           // the only record of it.
           logFail('page', 'the run threw and stopped', err, { completed: done.map((r) => r.product) });
-          setState({ status: 'failed', fileName: plan.fileName, error: describeError(err) });
+          setState({ status: 'failed', kind, fileName: plan.fileName, error: describeError(err) });
         } finally {
           runningRef.current = false;
           abortRef.current = null;
@@ -332,20 +372,23 @@ export function ImportRunProvider({ children }: { children: React.ReactNode }) {
   );
 
   // `/import` renders the run in full, so the floating copy would be a
-  // duplicate of what is already on screen.
-  const showIndicator = state.status === 'running' && pathname !== '/import';
+  // duplicate of what is already on screen. A local run keeps its pill once it
+  // is done too: its results are on `/import`, which nobody is looking at.
+  const offImportPage = pathname !== '/import';
+  const showRunning = state.status === 'running' && offImportPage;
+  const showDone = state.status === 'done' && state.kind === 'local' && offImportPage;
 
   return (
     <ImportRunContext.Provider value={value}>
       {children}
-      {showIndicator && (
+      {showRunning && (
         <button
           type="button"
           className={styles.indicator}
           onClick={() => router.push('/import')}
           aria-label="Go to the import in progress"
         >
-          <span className={styles.title}>Importing…</span>
+          <span className={styles.title}>{state.kind === 'local' ? 'Importing files…' : 'Importing…'}</span>
           <ProgressBar
             value={state.progress.total > 0 ? (state.progress.done / state.progress.total) * 100 : 0}
           />
@@ -354,6 +397,24 @@ export function ImportRunProvider({ children }: { children: React.ReactNode }) {
             {state.progress.current ? ` · ${state.progress.current}` : ''}
           </span>
         </button>
+      )}
+      {showDone && (
+        // Two sibling buttons rather than a dismiss nested inside the pill:
+        // a button inside a button is invalid and unreachable by keyboard.
+        <div className={`${styles.indicator} ${styles.indicatorDone}`}>
+          <button
+            type="button"
+            className={styles.doneMain}
+            onClick={() => router.push('/import')}
+            aria-label="Import finished — view the results"
+          >
+            <span className={styles.title}>Import finished</span>
+            <span className={styles.detail}>{doneCounts(state.results)}</span>
+          </button>
+          <button type="button" className={styles.dismiss} onClick={dismiss} aria-label="Dismiss">
+            <X size={14} aria-hidden="true" />
+          </button>
+        </div>
       )}
     </ImportRunContext.Provider>
   );

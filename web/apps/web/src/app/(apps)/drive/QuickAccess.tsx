@@ -56,7 +56,7 @@ export function QuickAccess({
   };
 
   return (
-    <section className={styles.region} aria-labelledby="quick-access-heading">
+    <section className={styles.region} aria-labelledby="quick-access-heading" data-tour="quick-access">
       <div className={styles.header}>
         <h2 id="quick-access-heading" className={styles.heading}>Quick access</h2>
         {(canScroll.left || canScroll.right) && (

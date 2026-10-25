@@ -61,6 +61,7 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 | `teamSpace.sortDirection` | — *(new, stage 3)* | `asc` \| `desc` | `asc` | team, user | plain | | As above. |
 | `listing.views` | — *(new, stage 4)* | object ≤ 4 KB: listing id → `{ view, sort, dir }` | `null` | user | plain | | Default views (U9): choosing a view or sort in a listing is setting its default (`lib/listingViews.ts`). Unset, the new looks open Drive's listings as a list. |
 | `drive.landing` | — *(new, stage 4)* | `drive` \| `recent` \| `starred` | `drive` | org, user | plain | | Where Drive opens: the logo, and the first `/drive` of a tab once preferences have loaded. |
+| `onboarding.toursSeen` | — *(new, onboarding phase 1)* | a set of tour ids (`drive` and every app in `apps.enabled`'s options) | `[]` | user | plain | | The guided tours this user has finished or skipped (`components/Tour`). A tour starts by itself only while its id is absent, and only once this has come from the server. Every app's id is an option from the start, so a new tour needs no catalog change. No Settings control (`section: none`); "Take the … tour" in the account menu replays one regardless. |
 | `ai.apiKey` | `neutrino.ai.settings` (`apiKey`) | string | `''` | user | **encrypted** | | Leaves plaintext `localStorage` (roadmap U12). `readAiSettings` in `@neutrino/api-core` keeps its signature and reads through the registry. |
 
 ## 2. Personal library content (encrypted tier)
@@ -100,6 +101,7 @@ These must **not** move into the registry or sync, and the stage 1 lint allowlis
 | `neutrino:diagram-template:<id>`, `neutrino:sheet-template:<id>` | One-shot handoff from a template picker to the editor it opens. |
 | `neutrino.prefs.accentCss` | The CSS derived from `appearance.accent` on this device, so the anti-FOUC script can paint it before React runs. Derived, not a preference: it is rebuilt from the synced value and ignored once that is cleared. |
 | `neutrino.landed` *(sessionStorage)* | Whether this tab has already been sent to `drive.landing`, so it happens once per tab. |
+| `neutrino.tours.autoStart` | `on` / `off` overrides whether guided tours start by themselves in this browser; unset, they do except under automation (`navigator.webdriver`). Exists so the Playwright suite runs without tours over every page, and the tour spec can opt back in. Machine behaviour, not a preference. |
 
 Not storage at all, listed so nobody migrates them: `neutrino:access-revoked` and
 `neutrino:drive-changed` are `window` events.

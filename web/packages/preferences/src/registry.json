@@ -611,6 +611,30 @@
       "section": "appearance"
     },
     {
+      "key": "onboarding.toursSeen",
+      "type": {
+        "kind": "set",
+        "options": [
+          "drive",
+          "docs",
+          "sheets",
+          "slides",
+          "notes",
+          "diagrams",
+          "drawing",
+          "photos",
+          "calendar"
+        ]
+      },
+      "default": [],
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Guided tours you have finished or skipped",
+      "section": "none"
+    },
+    {
       "key": "ai.apiKey",
       "type": {
         "kind": "string",
