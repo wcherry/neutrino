@@ -49,6 +49,8 @@ import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate, getGateState, subscribeToGateState } from '@/components/E2EEUnlockGate';
 import { TourControlsProvider, replayLabel, useTourController } from '@/components/Tour';
+import { useWelcomeWizard } from '@/components/WelcomeWizard/useWelcomeWizard';
+import type { WelcomeWizardProps } from '@/components/WelcomeWizard/WelcomeWizard';
 import { RequestStorageDialog } from '@/components/RequestStorageDialog';
 import { ImportRunProvider } from '@/components/ImportRun';
 import type { InviteFriendsDialogProps } from '@/components/InviteFriends/InviteFriendsDialog';
@@ -149,6 +151,13 @@ type AuthState =
 // nothing to any route's first-load JS (route budgets: scripts/check-route-budgets.mjs).
 const InviteFriendsDialog = dynamic<InviteFriendsDialogProps>(
   () => import('@/components/InviteFriends/InviteFriendsDialog').then((m) => ({ default: m.InviteFriendsDialog })),
+  { ssr: false },
+);
+
+// Shown once, to a new account: loaded the first time it opens, so no other account pays for it in
+// any route's first-load JS.
+const WelcomeWizard = dynamic<WelcomeWizardProps>(
+  () => import('@/components/WelcomeWizard/WelcomeWizard').then((m) => ({ default: m.WelcomeWizard })),
   { ssr: false },
 );
 
@@ -296,12 +305,25 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   // user's real `onboarding.toursSeen`; "Take the … tour" in the account menu and the palette
   // replays it.
   const gateState = useSyncExternalStore(subscribeToGateState, getGateState, () => 'pending' as const);
+  // The welcome wizard comes first: a new account sees it straight after the key dialog, and the
+  // Drive tour waits for it to close (`blocked`), then starts by itself on My Drive.
+  const wizard = useWelcomeWizard({
+    ready: auth.status === 'ready' && prefsLoaded,
+    blocked: gateState !== 'clear',
+  });
   const tours = useTourController({
     pathname,
     ready: auth.status === 'ready' && prefsLoaded,
-    blocked: gateState !== 'clear',
+    blocked: gateState !== 'clear' || wizard.open,
     navigate: (href) => router.push(href),
   });
+  const endWizard = wizard.finish;
+  const closeWizard = useCallback(() => {
+    endWizard();
+    // The tour of Drive runs on My Drive: a wizard reopened elsewhere (back from a calendar
+    // provider) ends there.
+    if (pathname.replace(/\/$/, '') !== '/drive') router.push('/drive');
+  }, [endWizard, pathname, router]);
   const startTour = tours.start;
   const tourAvailable = tours.available !== null;
 
@@ -620,6 +642,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         {ready && <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />}
         {/* The guided tour on screen, if one is running — over everything but toasts. */}
         {tours.overlay}
+        {wizard.open && <WelcomeWizard startStep={wizard.startStep} onClose={closeWizard} />}
         {/* The storage meter's "Request Additional" (issue #144). Mounted here
             rather than in the sidebar because @neutrino/layout has no API
             dependencies, so the ask belongs to the app. */}

@@ -102,6 +102,8 @@ These must **not** move into the registry or sync, and the stage 1 lint allowlis
 | `neutrino.prefs.accentCss` | The CSS derived from `appearance.accent` on this device, so the anti-FOUC script can paint it before React runs. Derived, not a preference: it is rebuilt from the synced value and ignored once that is cleared. |
 | `neutrino.landed` *(sessionStorage)* | Whether this tab has already been sent to `drive.landing`, so it happens once per tab. |
 | `neutrino.tours.autoStart` | `on` / `off` overrides whether guided tours start by themselves in this browser; unset, they do except under automation (`navigator.webdriver`). Exists so the Playwright suite runs without tours over every page, and the tour spec can opt back in. Machine behaviour, not a preference. |
+| `neutrino.wizard.autoStart` | `on` / `off` overrides whether the welcome wizard opens by itself in this browser for an account marked `onboarding.welcome: pending`; unset, it does except under automation (`navigator.webdriver`). The same rule as `neutrino.tours.autoStart`: every Playwright spec registers a fresh user, who would otherwise get the wizard over the page under test, and the wizard spec opts back in. |
+| `neutrino.wizard.returnTo` *(sessionStorage)* | The wizard step the user left for a calendar provider's sign-in page (Google and Outlook connect by leaving the app), so the wizard reopens there on the way back instead of at the start. Removed as soon as it is read; the wizard is otherwise not resumable. |
 
 Not storage at all, listed so nobody migrates them: `neutrino:access-revoked` and
 `neutrino:drive-changed` are `window` events.
