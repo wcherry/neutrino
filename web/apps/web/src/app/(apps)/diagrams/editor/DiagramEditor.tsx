@@ -876,6 +876,7 @@ export function DiagramEditor() {
       title: 'Shapes',
       icon: <Shapes size={14} />,
       side: 'left',
+      tour: 'diagrams-shapes',
       actions: (
         <button type="button" className={styles.panelAction} onClick={() => setShapeConfigOpen(true)} aria-label="Configure shape libraries" title="Configure libraries">
           <Settings size={13} />
@@ -954,6 +955,7 @@ export function DiagramEditor() {
       title: 'AI',
       icon: <Sparkles size={14} />,
       side: 'right',
+      tour: 'diagrams-ai',
       content: activePage ? (
         <AiDiagramPanel
           activePage={activePage}
@@ -1036,7 +1038,7 @@ export function DiagramEditor() {
           className={styles.panelHost}
         >
           {/* Center: infinite canvas */}
-          <div className={styles.canvasWrapper} ref={canvasWrapperRef}>
+          <div className={styles.canvasWrapper} ref={canvasWrapperRef} data-tour="diagrams-canvas">
             {pendingExport && (
               <ExportRegionOverlay
                 onRegionSelected={async (rect) => {

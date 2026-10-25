@@ -120,7 +120,7 @@ export function DrawingToolbar({ tool, onToolChange, onAddImage }: DrawingToolba
   ];
 
   return (
-    <div className={styles.rail}>
+    <div className={styles.rail} data-tour="drawing-tools">
       <ToolbarItems editor="drawing" vertical tools={tools} divider={<div className={styles.divider} />} />
     </div>
   );

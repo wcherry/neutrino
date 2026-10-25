@@ -2425,12 +2425,13 @@ export function DocEditor() {
     createdAt: new Date().toISOString(),
   };
   const railPanels: RailPanel[] = [
-    { id: 'outline', title: 'Outline', icon: <ListTree size={14} />, side: 'left', content: <DocOutline editor={editor} /> },
+    { id: 'outline', title: 'Outline', icon: <ListTree size={14} />, side: 'left', tour: 'docs-outline', content: <DocOutline editor={editor} /> },
     {
       id: 'comments',
       title: 'Comments',
       icon: <MessageSquare size={14} />,
       side: 'right',
+      tour: 'docs-comments',
       content: (
         <CommentsPanel
           fileId={docId}
@@ -2562,6 +2563,7 @@ export function DocEditor() {
         <input
           ref={titleInputRef}
           className={styles.titleInput}
+          data-tour="docs-title"
           value={title}
           onChange={e => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
@@ -2609,6 +2611,7 @@ export function DocEditor() {
               isWriter: u.clientId === remoteWriterClientId,
             }))}
             onShare={() => setShowShareDialog(true)}
+            data-tour="share"
           />
           <EditorShellActions />
 

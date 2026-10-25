@@ -226,5 +226,5 @@ export function DrawingMenuBar({
     },
   ];
 
-  return <HamburgerMenu items={items} />;
+  return <HamburgerMenu items={items} data-tour="drawing-menu" />;
 }

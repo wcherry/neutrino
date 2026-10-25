@@ -24,8 +24,18 @@ export interface TourDefinition {
   appName: string;
   /** The routes it starts on by itself — those where every step's target can be on screen. */
   startsOn: (pathname: string) => boolean;
-  /** Where a replay from elsewhere in the app goes first. */
-  home: string;
+  /**
+   * Where a replay from elsewhere in the app goes first. A tour without one runs on a document —
+   * an editor's — and there is no one document to send the user to, so it is offered only on the
+   * routes it starts on: "Take the Docs tour" is in the editor's menu, not the library's.
+   */
+  home?: string;
+  /**
+   * A target that says the page has drawn, for a page that draws after it opens (an editor
+   * decrypting its document). Until it is on screen the tour waits, without counting the wait
+   * against the tries a tour with nothing on screen gets, so a slow load does not leave steps out.
+   */
+  waitFor?: string;
   steps: readonly TourStep[];
 }
 

@@ -51,7 +51,8 @@ export function RemindersSidebar({
   const hiddenByRange = reminders.length - inRange.length;
 
   return (
-    <>
+    // One element for a guided tour to point at; `display: contents`, so the layout is as it was.
+    <div className={styles.tourGroup} data-tour="calendar-reminders">
       <div className={styles.sidebarHeading}>
         <span className={styles.sidebarTitle}>Reminders</span>
         <button className={styles.reminderNewBtn} onClick={onNew} title="New reminder">
@@ -106,7 +107,7 @@ export function RemindersSidebar({
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }
 

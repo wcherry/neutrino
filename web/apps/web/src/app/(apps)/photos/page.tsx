@@ -105,6 +105,7 @@ function PhotoCard({
   onTrash,
   onInfo,
   onPreview,
+  tour,
 }: {
   item: LibraryItem;
   onStar: (photo: PhotoResponse) => void;
@@ -112,6 +113,8 @@ function PhotoCard({
   onTrash: (photo: PhotoResponse) => void;
   onInfo: (item: LibraryItem) => void;
   onPreview: (photo: PhotoResponse) => void;
+  /** The guided tour's name for this card (the first one in the grid). */
+  tour?: string;
 }) {
   const photo = item.photo;
   const [active, setActive] = useState(false);
@@ -122,6 +125,7 @@ function PhotoCard({
   return (
     <div
       className={styles.photoCard}
+      data-tour={tour}
       onClick={() => onPreview(photo)}
       style={{ cursor: 'pointer' }}
       onPointerEnter={() => setActive(true)}
@@ -474,6 +478,7 @@ export default function PhotosPage() {
       title: 'Photo info',
       icon: <Info size={14} />,
       side: 'right',
+      tour: 'photos-info',
       content: selectedItem ? (
         <PhotoInfoPanel
           photo={selectedItem.photo}
@@ -554,6 +559,7 @@ export default function PhotosPage() {
           </div>
           <Button
             variant="secondary"
+            data-tour="photos-upload"
             onClick={() => setShowUploadModal(true)}
             disabled={uploadMutation.isPending}
             icon={<Upload size={16} />}
@@ -573,27 +579,37 @@ export default function PhotosPage() {
       )}
 
       <div className={styles.filterTabs}>
-        {(['all', 'favorites', 'archive', 'albums', 'people', 'memories'] as FilterTab[]).map((tab) => (
-          <button
-            key={tab}
-            className={`${styles.filterTab} ${activeTab === tab ? styles.filterTabActive : ''}`}
-            onClick={() => {
-              setActiveTab(tab);
-              if (tab !== 'all') {
-                setIncludePersonIds([]);
-                setExcludePersonIds([]);
-                setPersonFilterOpen(false);
-              }
-            }}
-          >
-            {tab === 'all' && 'All Photos'}
-            {tab === 'favorites' && 'Favorites'}
-            {tab === 'archive' && 'Archive'}
-            {tab === 'albums' && 'Albums'}
-            {tab === 'people' && 'People'}
-            {tab === 'memories' && 'Memories'}
-          </button>
-        ))}
+        {/* Grouped only so the guided tour can point at Favorites and Archive, and at Albums,
+            People and Memories, as one each; the groups are `display: contents`. */}
+        {([['all'], ['favorites', 'archive'], ['albums', 'people', 'memories']] as FilterTab[][]).map((group) => {
+          const tabs = group.map((tab) => (
+            <button
+              key={tab}
+              className={`${styles.filterTab} ${activeTab === tab ? styles.filterTabActive : ''}`}
+              onClick={() => {
+                setActiveTab(tab);
+                if (tab !== 'all') {
+                  setIncludePersonIds([]);
+                  setExcludePersonIds([]);
+                  setPersonFilterOpen(false);
+                }
+              }}
+            >
+              {tab === 'all' && 'All Photos'}
+              {tab === 'favorites' && 'Favorites'}
+              {tab === 'archive' && 'Archive'}
+              {tab === 'albums' && 'Albums'}
+              {tab === 'people' && 'People'}
+              {tab === 'memories' && 'Memories'}
+            </button>
+          ));
+          if (group[0] === 'all') return tabs;
+          return (
+            <span key={group[0]} className={styles.tourGroup} data-tour={group[0] === 'favorites' ? 'photos-keep' : 'photos-collections'}>
+              {tabs}
+            </span>
+          );
+        })}
       </div>
 
       {activeTab === 'all' && persons.length > 0 && (
@@ -831,10 +847,11 @@ export default function PhotosPage() {
         </div>
       ) : (
         <div className={styles.photoGrid}>
-          {items.map((item) => (
+          {items.map((item, i) => (
             <PhotoCard
               key={item.photo.id}
               item={item}
+              tour={i === 0 ? 'photos-photo' : undefined}
               onStar={(p) => starMutation.mutate(p)}
               onArchive={(p) => archiveMutation.mutate(p)}
               onTrash={(p) => trashMutation.mutate(p)}

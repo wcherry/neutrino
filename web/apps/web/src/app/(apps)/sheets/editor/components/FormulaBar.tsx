@@ -51,7 +51,7 @@ export function FormulaBar({
     const isOpen = fns.length > 0 && (showFunctions || showAllFunctions);
 
     return (
-        <div className={styles.formulaBar}>
+        <div className={styles.formulaBar} data-tour="sheets-formula-bar">
             <span className={styles.cellAddress}>{addressDisplay}</span>
             <button
                 className={`${styles.fxButton} ${showAllFunctions ? styles.fxButtonActive : ''}`}

@@ -5,7 +5,8 @@ import { preferences as defaultStore, usePreference, type PreferenceStore } from
 import { appForPath } from '@/lib/appForPath';
 import { TourOverlay } from './TourOverlay';
 import { otherModalOpen, resolveSteps } from './targets';
-import { TOURS, tourForApp } from './tours';
+import { findTarget } from './targets';
+import { TOURS, tourForApp, tourOffered } from './tours';
 import type { ResolvedStep, TourDefinition, TourId } from './types';
 
 /**
@@ -32,6 +33,8 @@ export function autoStartAllowed(): boolean {
 export const SETTLE_MS = 400;
 /** Tries before giving up on a tour none of whose targets are on screen (a phone, say). */
 const MAX_TRIES = 10;
+/** How long, in tries, a tour waits for its `waitFor` target — an editor still opening — at most. */
+export const MAX_WAIT_TRIES = 75;
 
 export interface TourControllerOptions {
   pathname: string;
@@ -86,7 +89,8 @@ export function useTourController({
   const replayNavigated = useRef(false);
   const runs = useRef(0);
 
-  const available = tourForApp(appForPath(pathname), tours);
+  const appTour = tourForApp(appForPath(pathname), tours);
+  const available = appTour && tourOffered(appTour, pathname) ? appTour : null;
 
   useEffect(() => {
     if (active) return;
@@ -111,6 +115,7 @@ export function useTourController({
     // growing, so a step is not left out only because its part of the page had not rendered yet.
     const immediate = isReplay && !replayNavigated.current;
     let tries = 0;
+    let waited = 0;
     let previous = -1;
     let timer: ReturnType<typeof setTimeout>;
     const settle = (steps: ResolvedStep[]) => {
@@ -123,6 +128,13 @@ export function useTourController({
       // Another dialog opened first (an upload, a share): wait for it rather than cover it.
       if (!isReplay && otherModalOpen()) {
         timer = setTimeout(attempt, SETTLE_MS);
+        return;
+      }
+      // The page has not drawn yet (an editor decrypting its document): wait, and do not count it.
+      // Never drawn (it failed to open, say): that is not the page the tour is about, so give up.
+      if (chosen.waitFor && !findTarget(chosen.waitFor)) {
+        if (++waited >= MAX_WAIT_TRIES) settle([]);
+        else timer = setTimeout(attempt, SETTLE_MS);
         return;
       }
       const steps = resolveSteps(chosen.steps);
@@ -148,7 +160,11 @@ export function useTourController({
       const tour = id ? tours.find((t) => t.id === id) : available;
       if (!tour || live.current.active) return;
       replayNavigated.current = !tour.startsOn(live.current.pathname);
-      if (replayNavigated.current) live.current.navigate?.(tour.home);
+      if (replayNavigated.current) {
+        // An editor's tour has nowhere to go: it runs on whichever document is open.
+        if (tour.home === undefined) return;
+        live.current.navigate?.(tour.home);
+      }
       setReplay(tour.id);
     },
     [tours, available],

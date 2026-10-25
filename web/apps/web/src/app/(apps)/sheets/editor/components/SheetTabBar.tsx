@@ -102,7 +102,7 @@ export function SheetTabBar({
 
     return (
         <>
-            <div className={styles.sheetTabBar}>
+            <div className={styles.sheetTabBar} data-tour="sheets-tabs">
                 {sheetNames.map((name, i) => {
                     const tabColor = sheetColors[i] ?? null;
                     return (

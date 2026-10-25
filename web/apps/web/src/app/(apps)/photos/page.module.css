@@ -635,3 +635,8 @@
   height: 100%;
   object-fit: cover;
 }
+
+/* A wrapper that only gives a guided tour one element to point at (`data-tour`); it draws nothing. */
+.tourGroup {
+  display: contents;
+}

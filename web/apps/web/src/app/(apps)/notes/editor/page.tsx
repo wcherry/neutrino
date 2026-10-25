@@ -651,6 +651,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
         <input
           ref={titleInputRef}
           className={styles.titleInput}
+          data-tour="notes-title"
           value={title}
           onChange={handleTitleChange}
           placeholder="Untitled note"
@@ -667,7 +668,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
 
       {/* ── Main area ── */}
       <div className={styles.body}>
-        <div className={styles.editorArea}>
+        <div className={styles.editorArea} data-tour="notes-editor">
           <BlockEditor
             ref={blockEditorRef}
             blocks={blocks}

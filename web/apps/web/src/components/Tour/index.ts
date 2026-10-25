@@ -10,7 +10,20 @@ export {
   type TourControllerOptions,
   type TourControls,
 } from './useTours';
-export { DRIVE_TOUR, TOURS, tourForApp } from './tours';
-export { findTarget, isTargetVisible, otherModalOpen, resolveSteps, targetSelector } from './targets';
+export {
+  CALENDAR_TOUR,
+  DIAGRAMS_TOUR,
+  DOCS_TOUR,
+  DRAWING_TOUR,
+  DRIVE_TOUR,
+  NOTES_TOUR,
+  PHOTOS_TOUR,
+  SHEETS_TOUR,
+  SLIDES_TOUR,
+  TOURS,
+  tourForApp,
+  tourOffered,
+} from './tours';
+export { findTarget, isTargetVisible, otherModalOpen, resolveSteps, targetRect, targetSelector } from './targets';
 export { placeCard, type Box, type Size } from './position';
 export { replayLabel, tourName, type ResolvedStep, type TourDefinition, type TourId, type TourPlacement, type TourStep } from './types';

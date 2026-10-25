@@ -473,7 +473,7 @@ export function DiagramToolbar({
         <ToolbarItems editor="diagrams" region="end" tools={tools} divider={<div className={styles.divider} />} />
 
         <EditorSaveState state={isSaving ? 'saving' : 'saved'} />
-        <ShareButton users={remoteUsers} onShare={onShare} />
+        <ShareButton users={remoteUsers} onShare={onShare} data-tour="share" />
 
         <button
           className={styles.saveBtn}
