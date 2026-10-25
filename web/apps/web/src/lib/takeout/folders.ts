@@ -22,7 +22,8 @@ const LISTING_LIMIT = 1000;
 export interface FolderResolver {
   /**
    * The id of the folder at `path`, creating any missing folder along the way.
-   * An empty path is the Drive root, which has no id of its own (`null`).
+   * The path is relative to the resolver's base folder; an empty path is the
+   * base itself, which for the Drive root has no id of its own (`null`).
    */
   folderFor(path: string[]): Promise<string | null>;
 }
@@ -37,8 +38,19 @@ export function sanitiseFolderName(name: string): string {
     .trim();
 }
 
-export function createFolderResolver(): FolderResolver {
-  const cache = new Map<string, string | null>();
+/**
+ * A resolver for folder paths under `baseFolderId` (the Drive root when it is
+ * absent or `null`). An empty path is the base itself.
+ *
+ * Answers are cached as **promises**, not ids. The Takeout runners ask one
+ * question at a time, but the local folder import uploads several files at once,
+ * and two files landing in a folder that does not exist yet would otherwise both
+ * miss the cache and both create it. A creation that fails is dropped from the
+ * cache, so the next file in that folder tries again rather than inheriting the
+ * failure.
+ */
+export function createFolderResolver(baseFolderId: string | null = null): FolderResolver {
+  const cache = new Map<string, Promise<string | null>>();
 
   async function child(parentId: string | null, name: string): Promise<string> {
     const rootId = parentId ?? getCurrentUserId();
@@ -65,18 +77,25 @@ export function createFolderResolver(): FolderResolver {
     return created.id;
   }
 
-  async function folderFor(path: string[]): Promise<string | null> {
-    const names = path.map(sanitiseFolderName).filter((n) => n.length > 0);
-    if (names.length === 0) return null;
+  function resolve(names: string[]): Promise<string | null> {
+    if (names.length === 0) return Promise.resolve(baseFolderId);
 
     const key = names.join('/').toLowerCase();
     const cached = cache.get(key);
-    if (cached !== undefined) return cached;
+    if (cached) return cached;
 
-    const parentId = await folderFor(names.slice(0, -1));
-    const id = await child(parentId, names[names.length - 1]);
-    cache.set(key, id);
-    return id;
+    const pending = resolve(names.slice(0, -1)).then((parentId) => child(parentId, names[names.length - 1]));
+    cache.set(key, pending);
+    // Evict a failure so a later file in the same folder can try again. The
+    // identity check keeps a retry's own promise if it was cached meanwhile.
+    pending.catch(() => {
+      if (cache.get(key) === pending) cache.delete(key);
+    });
+    return pending;
+  }
+
+  function folderFor(path: string[]): Promise<string | null> {
+    return resolve(path.map(sanitiseFolderName).filter((n) => n.length > 0));
   }
 
   return { folderFor };
