@@ -20,12 +20,12 @@ const LOOKS: { id: Look; name: string; description: string }[] = [
  * real shell uses, not a picture of them. The three new looks are an early opt-in until the
  * editors are restyled (ui-roadmap.md, stage 5).
  */
-export function LookPicker() {
+export function LookPicker({ className }: { className?: string }) {
   const [look, setLook] = usePreference('appearance.look');
   const locked = useLocked('appearance.look');
   return (
     <div>
-      <div className={styles.grid} role="radiogroup" aria-label="Look">
+      <div className={[styles.grid, className].filter(Boolean).join(' ')} role="radiogroup" aria-label="Look">
         {LOOKS.map((l) => (
           <button
             key={l.id}

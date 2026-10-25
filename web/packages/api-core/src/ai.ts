@@ -96,6 +96,11 @@ export function aiCredentials(): AiSettings {
 export interface AiCompleteOptions {
   systemPrompt?: string;
   maxTokens?: number;
+  /**
+   * Use these instead of the saved settings — for trying a key before it is saved ("Test key"
+   * in the welcome wizard). Nothing is stored.
+   */
+  credentials?: AiSettings;
 }
 
 export const aiApi = {
@@ -108,11 +113,11 @@ export const aiApi = {
    */
   async complete(
     userMessage: string,
-    { systemPrompt = '', maxTokens }: AiCompleteOptions = {},
+    { systemPrompt = '', maxTokens, credentials }: AiCompleteOptions = {},
   ): Promise<string> {
     const resp = await request<{ text: string }>('/api/v1/ai/complete', {
       method: 'POST',
-      body: JSON.stringify({ ...aiCredentials(), systemPrompt, userMessage, maxTokens }),
+      body: JSON.stringify({ ...(credentials ?? aiCredentials()), systemPrompt, userMessage, maxTokens }),
     });
     return resp.text;
   },

@@ -26,6 +26,8 @@ import styles from './InviteFriends.module.css';
 export interface InviteFriendsPanelProps {
   /** Called after a batch is sent. */
   onSent?: (invites: Invite[]) => void;
+  /** Called when the personal link is copied or handed to the share sheet. */
+  onLinkUsed?: () => void;
   /** Show the list of invites already sent (default true). */
   showSentList?: boolean;
   /** Focus the email field on mount. */
@@ -65,6 +67,7 @@ function isAbort(err: unknown): boolean {
 
 export function InviteFriendsPanel({
   onSent,
+  onLinkUsed,
   showSentList = true,
   autoFocus = false,
   className,
@@ -193,6 +196,7 @@ export function InviteFriendsPanel({
     try {
       await navigator.clipboard.writeText(linkUrl);
       setCopied(true);
+      onLinkUsed?.();
     } catch {
       setError('Could not copy the link. Select it and copy it yourself.');
     }
@@ -202,6 +206,7 @@ export function InviteFriendsPanel({
     if (!linkUrl) return;
     try {
       await navigator.share({ title: 'Join me on Neutrino', url: linkUrl });
+      onLinkUsed?.();
     } catch (err) {
       // Closing the share sheet is a choice, not an error.
       if (!isAbort(err)) setError(messageOf(err, 'Could not share the link.'));
