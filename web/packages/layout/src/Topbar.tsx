@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, Bell, Bug, Search, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
+import { Menu, Bell, Bug, Search, Settings, Import, LogOut, User, UserPlus, ChevronDown } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
 import { usePresence } from '@neutrino/ui';
 import { Avatar } from '@neutrino/ui';
@@ -65,6 +65,8 @@ export interface TopbarProps {
   /** Issue tracker URL, opened in a new tab by the bug button. Hidden when unset. */
   bugReportHref?: string;
   onSettings?: () => void;
+  /** Opens the Invite friends dialog; the item is left out without it. */
+  onInvite?: () => void;
   onImport?: () => void;
   onSignOut?: () => void;
   onProfileClick?: () => void;
@@ -84,6 +86,7 @@ export function Topbar({
   onMarkAllNotificationsRead,
   bugReportHref,
   onSettings,
+  onInvite,
   onImport,
   onSignOut,
   onProfileClick,
@@ -355,6 +358,36 @@ export function Topbar({
                   >
                     <Settings size={16} aria-hidden="true" />
                     Settings
+                  </button>
+                )}
+                {onInvite && (
+                  <button
+                    type="button"
+                    onClick={() => { setUserMenuOpen(false); onInvite(); }}
+                    role="menuitem"
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-3)',
+                      padding: 'var(--space-2) var(--space-4)',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: 'var(--text-sm)',
+                      color: 'var(--color-text-primary)',
+                      textAlign: 'left',
+                      transition: 'background-color var(--duration-fast) var(--ease-default)',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-subtle)';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <UserPlus size={16} aria-hidden="true" />
+                    Invite friends
                   </button>
                 )}
                 {onImport && (

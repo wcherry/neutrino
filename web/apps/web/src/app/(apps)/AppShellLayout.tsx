@@ -4,6 +4,7 @@ import { useTeamCommands, useTeamPins } from '@/lib/teamResources';
 import { createDocFromTemplate } from '@/lib/docTemplates';
 import React, { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AppShell,
@@ -49,6 +50,7 @@ import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
 import { RequestStorageDialog } from '@/components/RequestStorageDialog';
 import { ImportRunProvider } from '@/components/ImportRun';
+import type { InviteFriendsDialogProps } from '@/components/InviteFriends/InviteFriendsDialog';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useDriveLiveUpdates } from '@/hooks/useDriveLiveUpdates';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
@@ -142,6 +144,13 @@ type AuthState =
   // storage request dialog has to be able to tell those apart.
   | { status: 'ready'; user: UserProfile; quota: StorageQuota; quotaInfo: QuotaInfo | null };
 
+// Opened from the account menu only, so it is loaded on first open and adds
+// nothing to any route's first-load JS (route budgets: scripts/check-route-budgets.mjs).
+const InviteFriendsDialog = dynamic<InviteFriendsDialogProps>(
+  () => import('@/components/InviteFriends/InviteFriendsDialog').then((m) => ({ default: m.InviteFriendsDialog })),
+  { ssr: false },
+);
+
 export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -149,6 +158,10 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [requestingStorage, setRequestingStorage] = useState(false);
+  const [invitingFriends, setInvitingFriends] = useState(false);
+  // Stays true after the first open so the dialog can animate out; until then
+  // nothing is mounted and its chunk is never fetched.
+  const [inviteDialogLoaded, setInviteDialogLoaded] = useState(false);
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const [searchPending, setSearchPending] = useState(false);
   const { search } = useClientSearch();
@@ -440,9 +453,15 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   // (or by the first request that 401s, whichever is first).
   const ready = auth.status === 'ready';
 
+  function openInviteFriends() {
+    setInviteDialogLoaded(true);
+    setInvitingFriends(true);
+  }
+
   const accountActions = {
     onProfile: () => router.push('/profile'),
     onSettings: () => router.push('/settings'),
+    onInvite: openInviteFriends,
     onImport: () => router.push('/import'),
     onSignOut: handleSignOut,
     bugReportHref: BUG_REPORT_URL,
@@ -542,6 +561,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       onMarkAllNotificationsRead={markAllRead}
       bugReportHref={BUG_REPORT_URL}
       onSettings={() => router.push('/settings')}
+      onInvite={openInviteFriends}
       onImport={() => router.push('/import')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}
@@ -584,6 +604,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
             onClose={() => setRequestingStorage(false)}
             quota={auth.quotaInfo}
           />
+        )}
+        {ready && inviteDialogLoaded && (
+          <InviteFriendsDialog open={invitingFriends} onClose={() => setInvitingFriends(false)} />
         )}
       </AppShell>
     </ImportRunProvider>
