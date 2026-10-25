@@ -37,11 +37,28 @@ interface Props {
    * has no route for anything else.
    */
   teams?: Team[];
-  onMove: (targetFolderId: string | null) => void;
+  /** Called with the chosen My Drive folder. Not called when `onPick` is given. */
+  onMove?: (targetFolderId: string | null) => void;
+  /**
+   * For a caller that is choosing a folder rather than moving anything (the
+   * local import's "Save in"): receives the folder's name too, "My Drive" at
+   * the root. Called instead of `onMove`.
+   */
+  onPick?: (folder: { id: string | null; name: string }) => void;
   /** Required for `teams` to have any effect. */
   onMoveIntoTeam?: (teamId: string, folderId: string | null) => void;
   onClose: () => void;
   isPending?: boolean;
+  /** The heading. Defaults to `Move "<itemName>"`. */
+  title?: string;
+  /** The confirm button's label in My Drive. Defaults to "Move here". */
+  confirmLabel?: string;
+  /**
+   * Let the confirm button pick the folder the item is already in. A move
+   * there would do nothing, so it is disabled by default; a picker that is
+   * choosing a destination rather than moving anything wants it.
+   */
+  allowCurrentLocation?: boolean;
 }
 
 interface BreadcrumbEntry {
@@ -60,9 +77,13 @@ export function MoveFolderDialog({
   currentFolderId,
   teams = [],
   onMove,
+  onPick,
   onMoveIntoTeam,
   onClose,
   isPending,
+  title,
+  confirmLabel = 'Move here',
+  allowCurrentLocation = false,
 }: Props) {
   const currentUser = useUser();
   const [location, setLocation] = useState<Location>({ team: null, folderId: null });
@@ -119,11 +140,11 @@ export function MoveFolderDialog({
 
   // Only meaningful in My Drive: a team library is never where the file already is, since a file
   // that has been moved into a team is no longer in the mover's Drive to be moved again.
-  const isCurrentLocation = !team && folderId === (currentFolderId ?? null);
+  const isCurrentLocation = !allowCurrentLocation && !team && folderId === (currentFolderId ?? null);
 
   return (
     <Modal open onClose={onClose} size="sm">
-      <ModalHeader title={`Move "${itemName}"`} onClose={onClose} />
+      <ModalHeader title={title ?? `Move "${itemName}"`} onClose={onClose} />
       <ModalBody>
         {breadcrumbs.length > 0 && (
           <div className={styles.breadcrumbs}>
@@ -225,11 +246,15 @@ export function MoveFolderDialog({
             variant={team ? 'danger' : 'primary'}
             size="sm"
             onClick={() =>
-              team ? onMoveIntoTeam?.(team.id, folderId) : onMove(folderId)
+              team
+                ? onMoveIntoTeam?.(team.id, folderId)
+                : onPick
+                  ? onPick({ id: folderId, name: breadcrumbs[breadcrumbs.length - 1]?.name ?? 'My Drive' })
+                  : onMove?.(folderId)
             }
             disabled={isPending || isCurrentLocation}
           >
-            {isPending ? 'Moving…' : team ? 'Move into team' : 'Move here'}
+            {isPending ? 'Moving…' : team ? 'Move into team' : confirmLabel}
           </Button>
         </div>
       </ModalBody>

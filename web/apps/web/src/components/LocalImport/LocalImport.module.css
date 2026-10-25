@@ -1,0 +1,309 @@
+/* The local folder import panel: sources, scan summary, run status.
+   Tokens only, so light and dark both follow the theme. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-error);
+}
+
+/* ── Sources ─────────────────────────────────────────────────────────────── */
+
+.sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.sourcesSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: calc(10px * var(--radius-scale));
+  background: var(--color-surface);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--font-size-15);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.cardText {
+  flex: 1;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.dropArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 132px;
+  padding: var(--space-4);
+  text-align: center;
+  border: 1px dashed var(--color-border);
+  border-radius: calc(8px * var(--radius-scale));
+  background: var(--color-bg-subtle);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.dropAreaActive {
+  border-color: var(--color-primary);
+  background: var(--color-bg-hover);
+}
+
+.dropText {
+  margin: 0;
+  max-width: 36ch;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.pickButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.scanning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Scan summary ────────────────────────────────────────────────────────── */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.foundBox {
+  padding: var(--space-3) var(--space-4);
+  border-radius: calc(8px * var(--radius-scale));
+  background: var(--color-bg-subtle);
+}
+
+.foundTitle {
+  font-size: var(--font-size-15);
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.foundMeta {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: calc(8px * var(--radius-scale));
+}
+
+.kindLabel {
+  font-size: var(--font-size-13);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.kindCount {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.saveIn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.saveInLabel {
+  color: var(--color-text-secondary);
+}
+
+.saveInFolder {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.actionsHint {
+  flex: 1;
+  min-width: 12rem;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+/* ── Run status ──────────────────────────────────────────────────────────── */
+
+.runBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.runCurrent {
+  min-height: 1.2em;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resultHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.resultIcon {
+  flex-shrink: 0;
+  color: var(--color-success);
+}
+
+.resultTitle {
+  font-size: var(--font-size-15);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.resultCounts {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.failList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.failHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.failHeading {
+  margin: 0;
+  font-size: var(--font-size-13);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.failRows {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: calc(8px * var(--radius-scale));
+}
+
+.failRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.failRow + .failRow {
+  border-top: 1px solid var(--color-border);
+}
+
+.failTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.failReason {
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+  .sources,
+  .kinds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .failRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .failReason {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
