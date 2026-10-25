@@ -10,7 +10,8 @@
     "report": "pnpm exec playwright show-report",
     "perf": "./scripts/run-perf.sh",
     "perf:skip-build": "./scripts/run-perf.sh --skip-build",
-    "perf:summarize": "pnpm exec tsx perf/report/summarize.ts"
+    "perf:summarize": "pnpm exec tsx perf/report/summarize.ts",
+    "screenshots": "playwright test -c screenshots.config.ts"
   },
   "devDependencies": {
     "@jridgewell/trace-mapping": "^0.3.31",

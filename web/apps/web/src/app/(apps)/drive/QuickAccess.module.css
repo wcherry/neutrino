@@ -1,4 +1,5 @@
-/* Quick access in the new looks — the region and preview cards of the Drive boards. */
+/* Quick access — the region and preview cards of the Drive boards, in every look (the tokens are
+   what differ). */
 
 .region {
   background: var(--surface-region);
@@ -8,26 +9,76 @@
   padding: var(--drive-section-pad);
 }
 
+.header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
 .heading {
-  margin: 0 0 12px;
+  margin: 0 6px 0 0;
   font-size: calc(var(--ui-font-size) - 1px);
   font-weight: var(--font-semibold);
   color: var(--text-2);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.arrow {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--button-border-rest);
+  background: var(--button-bg-rest);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.arrow:hover:not(:disabled) {
+  border-color: var(--button-border-hover);
+  background: var(--button-bg-hover);
+}
+
+.arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.arrow:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: 2px;
+}
+
+/* One row of cards, four to a view on a wide screen, that scrolls sideways for the rest. */
+.row {
+  --quick-card-width: calc((100% - 3 * 14px) / 4);
+  display: flex;
   gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  /* Room for the focus ring, which the scroller would otherwise clip. */
+  padding: 3px;
+  margin: -3px;
+}
+
+.row::-webkit-scrollbar {
+  display: none;
 }
 
 @media (max-width: 900px) {
-  .grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .row {
+    --quick-card-width: calc((100% - 14px) / 2);
   }
 }
 
 .card {
+  flex: 0 0 var(--quick-card-width);
+  min-width: 0;
+  scroll-snap-align: start;
   display: block;
   padding: 6px;
   border-radius: calc(12px * var(--radius-scale));
@@ -123,8 +174,17 @@
 }
 
 .when {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--text-xs);
   color: var(--text-3);
+}
+
+.star {
+  flex-shrink: 0;
+  color: var(--color-warning);
+  fill: currentColor;
 }
 
 /* The row's height while loading, and kept when it turns out empty, so the files below do not
@@ -135,12 +195,13 @@
 }
 
 .skeleton {
+  flex: 0 0 var(--quick-card-width);
   border-radius: calc(12px * var(--radius-scale));
   background: var(--card-preview-bg);
 }
 
 .empty {
-  grid-column: 1 / -1;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;

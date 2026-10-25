@@ -157,6 +157,22 @@ test.describe('Drive file lifecycle', () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 
+  test("the top bar's Quick access menu lists the same files and opens one", async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    const token = await getAuthToken(page);
+    const fileName = uniqueFilename();
+    await uploadFileViaApi(request, token, fileName);
+
+    await page.goto('/drive');
+    const quickAccess = page.locator('[aria-labelledby="quick-access-heading"]');
+    await expect(quickAccess.getByRole('button', { name: `Open ${fileName}` })).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole('button', { name: 'Quick access', exact: true }).click();
+    const menu = page.getByRole('dialog', { name: 'Quick access' });
+    await menu.getByRole('button', { name: new RegExp(fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
+    await expect(menu).toBeHidden();
+  });
+
   test('starred file appears on the Starred page', async ({ page, request }) => {
     await registerAndLogin(request, page);
     const token = await getAuthToken(page);

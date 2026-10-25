@@ -32,6 +32,7 @@ import { provisionKeyring, currentRecoveryKit } from '@neutrino/auth';
 import { storeUnderPasskey, getSessionKeyring } from '@neutrino/e2e-crypto';
 import { isPasskeySupported } from '@neutrino/e2e-crypto';
 import { defaultPasskeyLabel } from '@/lib/passkeyLabel';
+import { RecoveryKitCopyButton } from '@/components/RecoveryKitCopyButton';
 import styles from './EncryptionSetupDialog.module.css';
 
 interface EncryptionSetupDialogProps {
@@ -204,6 +205,9 @@ export function EncryptionSetupDialog({
               down — it will not be shown again.
             </p>
             <pre className={styles.recoveryKit}>{recoveryKit}</pre>
+            <div className={styles.kitActions}>
+              <RecoveryKitCopyButton kit={recoveryKit} />
+            </div>
             <label className={styles.confirmRow}>
               <input
                 type="checkbox"

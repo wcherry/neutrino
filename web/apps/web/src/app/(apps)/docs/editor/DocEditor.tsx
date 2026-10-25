@@ -4,9 +4,12 @@ import './remoteCursors.css';
 import './caretFontSize.css';
 import React, { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { spellSuggestionsFor, useNspell } from '@/hooks/useNspell';
 import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { useDocumentCounts } from './useDocumentCounts';
+import { EditorShellActions } from '@/components/editorChrome/EditorShellActions';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
@@ -555,32 +558,6 @@ const AUTO_SAVE_DELAY_MS = 2000;
  */
 const RERENDER_AFTER_TYPING_MS = 300;
 
-/** Word and character counts, recounted once typing pauses rather than on every render. */
-function useDocumentCounts(editor: ReturnType<typeof useEditor>): { words: number; characters: number } {
-  const [counts, setCounts] = useState({ words: 0, characters: 0 });
-  useEffect(() => {
-    if (!editor) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const count = () => {
-      timer = null;
-      if (editor.isDestroyed) return;
-      const storage = editor.storage.characterCount;
-      setCounts({ words: storage.words(), characters: storage.characters() });
-    };
-    const onUpdate = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(count, 300);
-    };
-    count();
-    editor.on('update', onUpdate);
-    return () => {
-      editor.off('update', onUpdate);
-      if (timer) clearTimeout(timer);
-    };
-  }, [editor]);
-  return counts;
-}
-
 /** Docs' panels and the rails they start in — today's places: the outline left, the rest right. */
 const DOC_SIDES: RailSide[] = ['left', 'right'];
 const DOC_PANEL_SPEC: RailSpec = {
@@ -598,6 +575,7 @@ const DOC_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'outline' };
 export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const exitEditor = useEditorExit();
   const currentUser = useUser();
   const docId = searchParams.get('id') ?? '';
   useAccessRevocation(docId);
@@ -1488,8 +1466,8 @@ export function DocEditor() {
       await officeAutosaveMutation.mutateAsync();
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
-    router.push('/drive');
-  }, [officeAutosaveMutation, queryClient, router]);
+    exitEditor();
+  }, [officeAutosaveMutation, queryClient, exitEditor]);
 
   const handleManualSave = useCallback(() => {
     if (!editor || !isLocalWriterRef.current) return;
@@ -1511,8 +1489,8 @@ export function DocEditor() {
     'docs.clearFormatting': () => { editor?.chain().focus().clearNodes().unsetAllMarks().run(); },
   }, { phase: 'capture' });
 
-  // Stopped as well, or macOS Chrome takes Ctrl+K in the contenteditable as "delete to end of
-  // line" before the link prompt opens.
+  // Stopped as well, so the contenteditable does not act on the chord before the link prompt opens
+  // (macOS Chrome took the old Ctrl+K as "delete to end of line").
   useCommand('docs.insertLink', () => {
     if (!editor) return;
     const { anchor, head } = editor.state.selection;
@@ -2429,7 +2407,7 @@ export function DocEditor() {
       <div className={styles.shell} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
         <div style={{ textAlign: 'center' }}>
           <p>Document not found</p>
-          <button className={styles.backBtn} onClick={() => router.push('/drive')}>
+          <button className={styles.backBtn} onClick={exitEditor}>
             <ArrowLeft size={16} />
             Back to Drive
           </button>
@@ -2632,6 +2610,7 @@ export function DocEditor() {
             }))}
             onShare={() => setShowShareDialog(true)}
           />
+          <EditorShellActions />
 
           <input
             ref={importInputRef}

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useEditorExit } from '@/lib/editorReturn';
 import { Spinner, ZoomSlider, AlertDialog } from '@neutrino/ui';
 import type { Background } from '@neutrino/ui';
 import { useToast } from '@neutrino/ui';
@@ -190,7 +191,7 @@ function failureDetail(err: unknown): string {
 
 export function PhotoEditor() {
   const searchParams = useSearchParams();
-  const router = useRouter();
+  const exitEditor = useEditorExit('/photos');
   const { success: toastSuccess, error: toastError } = useToast();
   const { user: currentUser } = useAuth();
   const keyPair = useSessionKeyPair(currentUser?.id);
@@ -954,7 +955,7 @@ export function PhotoEditor() {
       <div className={styles.errorState}>
         <AlertDialog
           open
-          onClose={() => router.back()}
+          onClose={exitEditor}
           variant="error"
           title={fileName ? `Couldn’t open ${fileName}` : 'Couldn’t open this photo'}
           description={loadError}
@@ -972,7 +973,7 @@ export function PhotoEditor() {
         isSaving={isSaving}
         hasSelection={selectedStrokeIds.length > 0}
         hasClipboard={clipboardStrokes.length > 0}
-        onBack={() => router.back()}
+        onBack={exitEditor}
         onSave={handleSave}
         onDuplicate={handleDuplicate}
         onExport={handleExport}

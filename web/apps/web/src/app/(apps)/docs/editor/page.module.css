@@ -281,6 +281,15 @@
 .editorContent :global(ol) { padding-left: 24px; margin: 6px 0; }
 .editorContent :global(li) { margin: 2px 0; }
 
+/* Markers back on: the UI reset (`@neutrino/ui` reset.css) sets `list-style: none` on every list,
+   and ListStyleExtension writes an inline `list-style-type` only for a non-default style — so a
+   plain bullet or numbered list, which is nearly all of them, drew no marker at all. Nested
+   bullets step disc → circle → square as Word's do; an inline style still wins over these. */
+.editorContent :global(ul) { list-style-type: disc; }
+.editorContent :global(ul ul) { list-style-type: circle; }
+.editorContent :global(ul ul ul) { list-style-type: square; }
+.editorContent :global(ol) { list-style-type: decimal; }
+
 .editorContent :global(blockquote) {
   border-left: 4px solid var(--palette-gray-88);
   margin: 8px 0;

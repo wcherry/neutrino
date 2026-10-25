@@ -38,9 +38,9 @@ async function openNewDoc(page: Page): Promise<void> {
 }
 
 test.describe('Docs keyboard shortcuts', () => {
-  // ── Ctrl+K (link) ───────────────────────────────────────────────────────────
+  // ── Ctrl+Shift+K (link) ──────────────────────────────────────────────────────
 
-  test('Ctrl+K sets a link on selected text', async ({ page, request }) => {
+  test('Ctrl+Shift+K sets a link on selected text', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openNewDoc(page);
 
@@ -53,13 +53,13 @@ test.describe('Docs keyboard shortcuts', () => {
 
     // Handle the window.prompt dialog before pressing the shortcut
     page.once('dialog', (dialog) => dialog.accept('https://example.com'));
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+K');
 
     // The selected text should now be wrapped in an anchor tag
     await expect(editor.locator('a')).toBeVisible({ timeout: 5_000 });
   });
 
-  test('Ctrl+K with empty string removes an existing link', async ({ page, request }) => {
+  test('Ctrl+Shift+K with empty string removes an existing link', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openNewDoc(page);
 
@@ -71,13 +71,13 @@ test.describe('Docs keyboard shortcuts', () => {
     await page.keyboard.press('Meta+A');
 
     page.once('dialog', (dialog) => dialog.accept('https://example.com'));
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+K');
     await expect(editor.locator('a')).toBeVisible({ timeout: 5_000 });
 
-    // Now select the linked text and press Ctrl+K with an empty string to remove it
+    // Now select the linked text and press Ctrl+Shift+K with an empty string to remove it
     await page.keyboard.press('Meta+A');
     page.once('dialog', (dialog) => dialog.accept(''));
-    await page.keyboard.press('Control+K');
+    await page.keyboard.press('Control+Shift+K');
 
     // The anchor tag should be gone
     await expect(editor.locator('a')).toHaveCount(0, { timeout: 5_000 });

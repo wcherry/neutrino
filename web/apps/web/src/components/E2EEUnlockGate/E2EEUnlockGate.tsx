@@ -51,6 +51,7 @@ import {
   type LocalKeystoreInfo,
 } from '@neutrino/auth';
 import { subscribeToGateRequests } from './gateEvents';
+import { RecoveryKitCopyButton } from '@/components/RecoveryKitCopyButton';
 import styles from './E2EEUnlockGate.module.css';
 
 interface E2EEUnlockGateProps {
@@ -200,6 +201,9 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
               for us to recover your files without it.
             </p>
             <pre className={styles.recoveryKit}>{recoveryKit}</pre>
+            <div className={styles.kitActions}>
+              <RecoveryKitCopyButton kit={recoveryKit} />
+            </div>
             <label className={styles.confirmRow}>
               <input
                 type="checkbox"

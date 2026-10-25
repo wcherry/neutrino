@@ -86,8 +86,9 @@ async function chooseLook(page: Page, name: string): Promise<void> {
 test.describe('The new shell', () => {
   test('a new look swaps the shell for one top bar with the encryption pill and Apps in the sidebar', async ({ page, request }) => {
     await registerAndLogin(request, page, 'shell_look');
-    // Classic is the default: today's top bar, with its own search box.
-    await expect(page.getByPlaceholder('Search in Drive...')).toBeVisible();
+    // Classic is the default: today's top bar, with search as an icon like every other look.
+    await expect(page.getByRole('button', { name: 'Search and commands' })).toBeVisible();
+    await expect(page.getByRole('searchbox')).toHaveCount(0);
     await expect(page.getByText('End-to-end encrypted')).toHaveCount(0);
 
     await chooseLook(page, 'Quiet Precision');
@@ -104,7 +105,7 @@ test.describe('The new shell', () => {
     await expect(page.getByText('End-to-end encrypted')).toBeVisible();
   });
 
-  test('an editor gets the editor frame: no top bar, the sidebar keeps search and the account', async ({ page, request }) => {
+  test('an editor gets the editor frame: no top bar, its title bar carries search, notifications and the account', async ({ page, request }) => {
     await registerAndLogin(request, page, 'shell_editor');
     await chooseLook(page, 'Light Flow');
     await page.goto('/drive');
@@ -112,9 +113,12 @@ test.describe('The new shell', () => {
     await page.getByRole('menuitem', { name: 'Document' }).click();
     await expect(page).toHaveURL(/\/docs\/editor/, { timeout: 15_000 });
     await expect(page.getByText('End-to-end encrypted')).toHaveCount(0);
+    // Not in the sidebar any more: in the corner the top bar has everywhere else.
     const sidebar = page.getByRole('complementary', { name: 'Application navigation' });
-    await expect(sidebar.getByRole('button', { name: 'Search and commands' })).toBeVisible();
-    await expect(sidebar.getByRole('button', { name: 'Account' })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Search and commands' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Search and commands' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Account', exact: true })).toBeVisible();
   });
 });
 
@@ -133,6 +137,39 @@ test.describe('The command palette', () => {
       await expect(palette).toBeHidden();
     });
   }
+
+  // An editor's grid, canvas or ProseMirror stops the keys it handles; ⌘K must still get through.
+  test('⌘K opens the palette from inside the Docs and Sheets editors, and their title bars carry search', async ({ page, request }) => {
+    await registerAndLogin(request, page, 'palette_editors');
+    await chooseLook(page, 'Blended Flow');
+    const palette = page.getByRole('dialog', { name: 'Search and commands' });
+
+    await page.goto('/drive');
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Document' }).click();
+    await expect(page).toHaveURL(/\/docs\/editor\/?\?id=/, { timeout: 15_000 });
+    const prose = page.locator('.ProseMirror');
+    await prose.click();
+    await prose.pressSequentially('Hello');
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(palette).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden();
+    // The editor frame has no top bar: search, notifications and account are in the title bar.
+    await page.getByRole('button', { name: 'Search and commands' }).click();
+    await expect(palette).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Account', exact: true })).toBeVisible();
+
+    await page.goto('/drive');
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
+    await expect(page).toHaveURL(/\/sheets\/editor\/?\?id=/, { timeout: 15_000 });
+    await page.locator('[data-type="cell"]').first().click();
+    await page.keyboard.press('ControlOrMeta+k');
+    await expect(palette).toBeVisible();
+  });
 
   test('lists the commands of the screen underneath, and Escape closes only the palette', async ({ page, request }) => {
     await registerAndLogin(request, page, 'palette_scope');

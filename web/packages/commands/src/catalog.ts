@@ -11,10 +11,11 @@
  * (the editors' own text is one). A binding without Ctrl, ⌘ or ⌥ never fires there, whatever
  * this says, so remapping a command to a bare letter cannot eat keystrokes.
  *
- * `yields: true` marks a global command that gives a key up to an app's own command for it — the
- * command palette's ⌘K is Docs' "insert link" inside Docs, as it is in Google Docs and Word. The
- * dispatcher already runs the app's command first (it mounts later, and Docs' runs in the capture
- * phase); `yields` is what tells conflict detection that this is intended.
+ * `yields: true` marks a global command that gives a key up to an app's own command for it, should
+ * the user bind one to the same chord: the dispatcher runs the most recently mounted handler first,
+ * which is the app's, and `yields` is what tells conflict detection that this is intended. By
+ * default nothing shares the palette's ⌘K — it opens the palette everywhere, the editors included,
+ * so Docs' "insert link" is ⌘⇧K rather than the ⌘K of Google Docs and Word.
  *
  * `palette: false` keeps a command out of the command palette: the palette runs a command by
  * calling its handler, and these only make sense as a key press (clipboard events, presenting).
@@ -76,7 +77,7 @@ export const COMMANDS = [
   { id: 'docs.save', title: 'Save a version', app: 'docs', defaultKeys: ['Mod+S'], whileTyping: 'run' },
   { id: 'docs.find', title: 'Find and replace', app: 'docs', defaultKeys: ['Mod+F'], whileTyping: 'run' },
   { id: 'docs.focusMode', title: 'Distraction-free writing', app: 'docs', defaultKeys: ['Mod+Shift+F'], whileTyping: 'run' },
-  { id: 'docs.insertLink', title: 'Insert or edit link', app: 'docs', defaultKeys: ['Mod+K'], whileTyping: 'run' },
+  { id: 'docs.insertLink', title: 'Insert or edit link', app: 'docs', defaultKeys: ['Mod+Shift+K'], whileTyping: 'run' },
   { id: 'docs.clearFormatting', title: 'Clear formatting', app: 'docs', defaultKeys: ['Mod+\\'], whileTyping: 'run' },
 
   // ── Sheets ────────────────────────────────────────────────────────────────
