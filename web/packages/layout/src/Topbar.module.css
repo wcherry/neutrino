@@ -48,6 +48,13 @@
   margin-left: auto;
 }
 
+/* Search through the account menu, spaced as the row is. */
+.end-group {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+}
+
 .icon-btn {
   display: inline-flex;
   align-items: center;

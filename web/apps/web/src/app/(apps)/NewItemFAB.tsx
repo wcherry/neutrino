@@ -117,6 +117,7 @@ export function NewItemFAB({ variant = 'topbar', compact = false }: NewItemFABPr
           onClick={() => setOpen((v) => !v)}
           disabled={pending}
           aria-label="Create new item"
+          data-tour="new"
           aria-expanded={open}
           aria-haspopup="menu"
           title={compact ? 'New' : undefined}
