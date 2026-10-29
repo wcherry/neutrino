@@ -24,7 +24,7 @@ linked and kept.
 | Editor | **Native editor** on each platform | macOS and iOS share one Swift editor (TextKit 2); web uses Tiptap; Android uses Compose. Three editors must agree on one Markdown dialect (see constraint 3). |
 | Storage | **Markdown files live on the server** | Every page is an encrypted `.md` file in Drive. Devices keep only an encrypted cache for offline use, with no plaintext folder on disk. Markdown is the canonical format on every platform. |
 | Monetisation | **No paid tier, no feature gating** | Every feature ships to every user; no feature-flag tiering to design. |
-| Shared Swift code | **New `AtlasKit` package** on top of a macOS-enabled `NeutrinoShared` | Editor, parser, index and sync live outside `neutrino_shared_ios`, so editor changes don't rebuild the seven existing iOS apps. Auth, keychain and crypto come from `NeutrinoShared` on both Mac and iOS. Prerequisite: [neutrino_drive_mac_desktop#35](https://github.com/wcherry/neutrino_drive_mac_desktop/issues/35). |
+| Shared Swift code | **New `AtlasKit` package** on top of a macOS-enabled `NeutrinoShared` | Editor, parser, index and sync live outside `neutrino_shared_ios`, so editor changes don't rebuild the seven existing iOS apps. Auth, keychain and crypto come from `NeutrinoShared` on both Mac and iOS. Prerequisite done: [neutrino_drive_mac_desktop#35](https://github.com/wcherry/neutrino_drive_mac_desktop/issues/35). |
 | Web client | **Part of the existing web app** | Atlas is a new route area in `neutrino/web/apps/web`, alongside Notes, Docs and Sheets. |
 | Windows | **Eventually, out of scope here** | A native Windows client is planned but not covered by this roadmap. |
 
@@ -93,14 +93,16 @@ These come from the existing platform and the decisions above. They drive the sh
    - `AtlasEditor`: TextKit 2 editor, with platform adapters for AppKit and UIKit.
    - `AtlasUI`: shared SwiftUI views (sidebar, backlinks, search, switcher).
 
-   **Prerequisite (blocks Phase 1):**
-   [wcherry/neutrino_drive_mac_desktop#35](https://github.com/wcherry/neutrino_drive_mac_desktop/issues/35).
-   `NeutrinoShared` is iOS-only today (`platforms: [.iOS(.v16)]`). The macOS Drive app shares
-   no code with it: `NeutrinoDriveCore` has its own copy of the auth, keychain and E2EE code.
-   That ticket makes `NeutrinoCore`, `NeutrinoAuth` and `NeutrinoCrypto` build for macOS 13
-   and moves the Drive app onto them, which drops the E2EE implementation count from five to
-   four. Atlas then builds on the same, already-proven macOS foundation and adds no
-   implementation of its own. Do not start AtlasKit's sync or crypto work until #35 lands.
+   **Prerequisite — done:**
+   [wcherry/neutrino_drive_mac_desktop#35](https://github.com/wcherry/neutrino_drive_mac_desktop/issues/35)
+   ([neutrino_shared_ios#14](https://github.com/wcherry/neutrino_shared_ios/pull/14),
+   [neutrino_drive_mac_desktop#36](https://github.com/wcherry/neutrino_drive_mac_desktop/pull/36)). `NeutrinoShared` declares `.macOS(.v13)`; `NeutrinoCore`,
+   `NeutrinoAuth` and `NeutrinoCrypto` build and are tested on macOS and iOS in CI, while
+   `NeutrinoUI` and `NeutrinoPrint` stay iOS-only. The macOS Drive app now runs on them and its
+   own copies are deleted, so there are four E2EE implementations, not five. The keychain's
+   macOS behaviour (data-protection keychain, the -34018 fallback, `refuseInteraction()` for a
+   headless process) lives in `NeutrinoCore` — Atlas inherits it. Atlas adds its own
+   `NeutrinoAppConfig` entry beside `macDrive` (in `desktopApps`) and adds no crypto of its own.
 7. **Cross-repo checklist for a new app** (root `CLAUDE.md`): OAuth client migrations, the
    `natlas` keychain/prefs prefix, an `NeutrinoAppConfig+Apps.swift` entry, and an
    `NeutrinoApps` entry on Android when that phase arrives. New repos are
