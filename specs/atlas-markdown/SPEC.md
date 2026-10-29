@@ -1,6 +1,6 @@
 # Atlas Markdown — Specification v1
 
-**Status:** Draft (`1.0.0-draft`)
+**Status:** Draft (`1.0.0-draft.2`)
 **Date:** 2026-10-29
 **Roadmap:** [`agent_docs/neutrino-atlas.md`](../../agent_docs/neutrino-atlas.md), constraint 3
 
@@ -41,8 +41,11 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119
 
 ## 2. Base dialect
 
-Atlas Markdown is **CommonMark 0.31.2** plus these **GitHub Flavored Markdown** extensions:
-tables, task list items, strikethrough (`~~`) and autolinks (extended www/URL/email).
+Atlas Markdown is **CommonMark 0.31.2** plus these **GitHub Flavored Markdown** extensions, as
+the GFM spec 0.29 defines them: tables, task list items, strikethrough (`~~`) and extended
+autolinks (`www.`, `http://`, `https://`, `ftp://` and email addresses). That GFM spec
+version is the one GitHub's own cmark-gfm implements. Where an mdast-based parser (micromark)
+differs from it, the GFM spec wins; the corpus pins each such case (§3.3).
 GFM's "disallowed raw HTML" filter does **not** apply. Raw HTML is parsed as CommonMark parses
 it, and renderers MUST sanitize it.
 
@@ -81,7 +84,9 @@ nodes in §4. Corpus files serialise it as JSON. The conformance comparison rule
   **not** equivalent in the corpus. Always write the key.
 - Adjacent `text` nodes are always merged, and a `text` node never has an empty `value`.
 - Character references and backslash escapes are resolved in `text` values, as CommonMark
-  requires (`\[\[x]]` → text `[[x]]`).
+  requires (`\[\[x]]` → text `[[x]]`). An escaped character never starts an Atlas
+  extension: `\#tag`, `\==x==`, `\[[x]]`, `\$x$`, `\^id` and `> \[!note]` are all
+  ordinary text.
 - Soft line breaks stay in `text` values as `"\n"`, whatever line ending the source used.
   Leading whitespace on continuation lines is stripped, as CommonMark requires.
 
@@ -92,19 +97,54 @@ The tree is made of the standard mdast and GFM nodes:
 - **Block nodes:** `root`, `paragraph`, `heading` (`depth`), `thematicBreak`, `blockquote`,
   `list` (`ordered`, `start`, `spread`), `listItem` (`checked`, `spread`),
   `code` (`lang`, `meta`, `value`), `html` (`value`), `table` (`align`), `tableRow`,
-  `tableCell`, `definition` (`identifier`, `label`, `url`, `title`) and
-  `footnoteDefinition` (`identifier`, `label`).
+  `tableCell` and `footnoteDefinition` (`identifier`, `label`).
 - **Inline nodes:** `text`, `emphasis`, `strong`, `delete`, `inlineCode` (`value`), `break`,
-  `link` (`url`, `title`), `image` (`url`, `title`, `alt`), `linkReference`, `imageReference`
-  and `footnoteReference`.
+  `link` (`url`, `title`), `image` (`url`, `title`, `alt`) and `footnoteReference`
+  (`identifier`, `label`).
 
-`spread` follows mdast: a list is spread (loose) if any of its items are separated by a blank
-line, or any item directly contains two block children separated by a blank line.
+**Reference links are resolved.** A full, collapsed or shortcut reference (`[text][ref]`,
+`[ref][]`, `[ref]`) becomes a `link` or `image` carrying its definition's `url` and `title`.
+Link reference definitions (`[ref]: url`) are not part of the tree. mdast's
+`linkReference`, `imageReference` and `definition` nodes are therefore never produced. The
+definitions' bytes are kept by source preservation (§8.1).
+
+`spread` uses mdast's definitions, which split CommonMark's "loose" in two. A **list** is
+spread when a blank line separates two of its items. A **list item** is spread when a blank
+line separates two of its direct children in the tree. A renderer shows a list loose when the
+list or any of its items is spread.
+
+Footnote `identifier` is the label lowercased; `label` is the label as written. A footnote
+label is one or more letters, digits, `-` or `_`. Any other `[^…]` is not a footnote and means
+what plain CommonMark says: text, or a link if a reference definition matches it. `footnoteDefinition` nodes are always children
+of `root`, in source order by their first line. A definition written inside a container
+comes right after the top-level block that contains it. A definition that no reference uses
+is not part of the tree, as on GitHub. Its bytes are kept by source preservation (§8.1).
 
 `list.start` is the start number for ordered lists and `null` for bullet lists.
 `listItem.checked` is `true`/`false` for task items and `null` otherwise.
 
 `table.align` is an array with one entry per column: `"left"`, `"right"`, `"center"` or `null`.
+Every `tableRow` has exactly as many cells as the header row: a short row is padded with empty
+`tableCell`s and extra cells are dropped, as the GFM spec says.
+
+**Values.** `inlineCode.value` is the code span's content as CommonMark defines it: line endings
+become spaces, and one leading and trailing space is stripped when both are present. The `value`
+of `code`, `math` and `html` never ends with a line ending, even for a block that runs to the end
+of the file.
+
+### 3.3 Where mdast tools differ
+
+An implementation built on micromark/mdast (the likely TypeScript choice) gets a few of these
+wrong out of the box and MUST normalise its output. The corpus covers each one:
+- reference links (left as `linkReference` + `definition`);
+- inline code line endings (kept as `\n`);
+- short table rows (not padded);
+- `ftp://` extended autolinks (not linked);
+- a trailing line ending on an HTML block at the end of the file;
+- footnote definitions that no reference uses (kept), or that are nested in a container (left
+  in place);
+- footnote labels with characters other than letters, digits, `-` and `_` (accepted);
+- `$$` math blocks inside a list item or blockquote (recognised by micromark's math extension).
 
 Extension nodes and fields are defined in §4.
 
@@ -259,10 +299,12 @@ title        = rest of the first line (inline content)
 
 - **Inline:** `$…$`, using pandoc's rule. The opening `$` must be followed by a non-space
   character. The closing `$` must be preceded by a non-space character and must not be
-  followed by an ASCII digit. Content may not span a blank line. `\$` is a literal dollar.
+  followed by an ASCII digit. Inline math is on **one line**: it never spans a line ending.
+  `\$` is a literal dollar.
   Example: `costs $5 and $10` contains no math.
 - **Block:** a line that is exactly `$$` (after up to 3 spaces of indentation), up to the next
-  line that is exactly `$$`. `value` is the lines between. `$$x$$` on one line is **inline**
+  line that is exactly `$$`. Math blocks are recognised only at the **top level** of the page
+  in v1. Inside a list item, blockquote or callout, `$$` lines are ordinary text. `value` is the lines between. `$$x$$` on one line is **inline**
   math with value `x`, not a block. There is no info string, so `meta` is always `null`.
 
 ```json
@@ -358,7 +400,8 @@ This lets a writer pick a target that means the same thing everywhere.
    - A target containing `/` matches every file whose path equals it, or ends with `/` + it.
      The match is on whole segments only.
 4. **Choose one** when several match:
-   1. A candidate whose whole path equals the target wins.
+   1. A candidate whose whole path equals the target wins. (This always has the fewest
+      segments of any match, so rule 2 implies it. It is stated for clarity.)
    2. Otherwise the candidate with the fewest path segments wins.
    3. Otherwise the lowest by code-point order of the normalised path wins.
 5. **No match** means the link is unresolved. It renders as a "create page" link. Creating a page
@@ -429,7 +472,7 @@ Atlas makes automatically on the user's behalf, so they must never reformat anyt
 | Blockquote / callout | `> ` before every line (`>` alone on blank lines inside). Callout first line: `> [!type]` + fold + (space + title if any). |
 | Thematic break | `---` |
 | Table | `\| a \| b \|` rows, one space of padding, no column alignment padding. Delimiter row uses `---`, `:--`, `--:` or `:-:` per `align`. A `\|` inside a cell is written `\|`. |
-| Links / images | `[text](url)` / `![alt](url)`, with `"title"` when set. Write `url` in `<…>` if it contains spaces or parentheses. Reference-style links stay reference-style. |
+| Links / images | `[text](url)` / `![alt](url)`, with `"title"` when set. Write `url` in `<…>` if it contains spaces or parentheses. The tree has no references (§3.2), so a changed block writes reference-style links inline; unchanged blocks and the definitions keep their bytes (§8.1). |
 | Autolinks | A `link` with no title and a single `text` child is written as an autolink when the child text and `url` correspond: `<url>` when the text equals the url, `<text>` when the url is `mailto:` + text, and bare `text` when the url is `http://` + text and text starts with `www.`. Every other link uses `[text](url)`. |
 | Wiki links / embeds | `[[target#heading\|alias]]` (`#^id` for block refs), with fields written as stored (already trimmed). `\|` inside a table cell. |
 | Tags | `#name`. |
