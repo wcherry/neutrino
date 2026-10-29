@@ -1,0 +1,25 @@
+# Keeps the Atlas Markdown conformance corpus consistent with its spec (specs/atlas-markdown/SPEC.md):
+# node shapes, canonical bytes, extraction and link resolution. No dependencies to install.
+name: Atlas Markdown spec
+
+on:
+  pull_request:
+    paths:
+      - 'specs/atlas-markdown/**'
+      - '.github/workflows/atlas-markdown-spec.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'specs/atlas-markdown/**'
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23
+      - name: Corpus matches the spec
+        run: node specs/atlas-markdown/check.mjs
