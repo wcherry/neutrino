@@ -1,0 +1,268 @@
+/* 960×640 at most, smaller on a small screen (the Modal's own max-width and max-height cap it). */
+.dialog {
+  height: 640px;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 17.5rem 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    'rail main'
+    'footer footer';
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── the list of steps ─────────────────────────────────────────────────── */
+.rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  background: var(--color-bg-subtle);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+/* The Modal's header, restyled as the list's title. */
+.rail .railTitle {
+  padding: 0 var(--space-2);
+  border-bottom: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.item[data-status='current'] {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-weight: var(--font-semibold);
+  box-shadow: var(--shadow-sm);
+}
+
+.item[data-status='done'] {
+  color: var(--color-text-primary);
+}
+
+.marker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-strong);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.item[data-status='current'] .marker {
+  border-color: var(--primary-bg);
+  background: var(--primary-bg);
+  color: var(--primary-fg);
+}
+
+.item[data-status='done'] .marker {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemNote {
+  font-size: var(--text-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.footnote {
+  margin: auto 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border-strong);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── the step ──────────────────────────────────────────────────────────── */
+.main {
+  grid-area: main;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-primary);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.head {
+  padding: var(--space-6) var(--space-8) var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stepCount {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-6) var(--space-6);
+}
+
+/* ── the footer ────────────────────────────────────────────────────────── */
+.footer {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-6);
+  border-top: var(--dialog-rule);
+}
+
+.progress {
+  flex: 1;
+}
+
+/* The bar's own track is a fixed neutral that is near-white in a dark theme. */
+.progress [role='progressbar'] {
+  background-color: var(--color-border);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'rail'
+      'main'
+      'footer';
+  }
+
+  .rail {
+    flex-direction: row;
+    padding: var(--space-3);
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+    overflow-x: auto;
+  }
+
+  .rail .railTitle,
+  .footnote {
+    display: none;
+  }
+
+  .list {
+    flex-direction: row;
+  }
+
+  .itemLabel,
+  .itemNote {
+    display: none;
+  }
+
+  .item[data-status='current'] .itemLabel {
+    display: inline;
+  }
+
+  .head {
+    padding: var(--space-4);
+  }
+
+  .body {
+    padding: var(--space-2) var(--space-4) var(--space-4);
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .actions {
+    justify-content: flex-end;
+  }
+}

@@ -2,8 +2,9 @@
 
 import { useTeamCommands, useTeamPins } from '@/lib/teamResources';
 import { createDocFromTemplate } from '@/lib/docTemplates';
-import React, { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AppShell,
@@ -46,9 +47,13 @@ import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessag
 import { APP_ITEMS, getNavSections, withActiveItem } from './navSections';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
-import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
+import { E2EEUnlockGate, getGateState, subscribeToGateState } from '@/components/E2EEUnlockGate';
+import { TourControlsProvider, replayLabel, useTourController } from '@/components/Tour';
+import { useWelcomeWizard } from '@/components/WelcomeWizard/useWelcomeWizard';
+import type { WelcomeWizardProps } from '@/components/WelcomeWizard/WelcomeWizard';
 import { RequestStorageDialog } from '@/components/RequestStorageDialog';
 import { ImportRunProvider } from '@/components/ImportRun';
+import type { InviteFriendsDialogProps } from '@/components/InviteFriends/InviteFriendsDialog';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useDriveLiveUpdates } from '@/hooks/useDriveLiveUpdates';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
@@ -142,6 +147,20 @@ type AuthState =
   // storage request dialog has to be able to tell those apart.
   | { status: 'ready'; user: UserProfile; quota: StorageQuota; quotaInfo: QuotaInfo | null };
 
+// Opened from the account menu only, so it is loaded on first open and adds
+// nothing to any route's first-load JS (route budgets: scripts/check-route-budgets.mjs).
+const InviteFriendsDialog = dynamic<InviteFriendsDialogProps>(
+  () => import('@/components/InviteFriends/InviteFriendsDialog').then((m) => ({ default: m.InviteFriendsDialog })),
+  { ssr: false },
+);
+
+// Shown once, to a new account: loaded the first time it opens, so no other account pays for it in
+// any route's first-load JS.
+const WelcomeWizard = dynamic<WelcomeWizardProps>(
+  () => import('@/components/WelcomeWizard/WelcomeWizard').then((m) => ({ default: m.WelcomeWizard })),
+  { ssr: false },
+);
+
 export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -149,6 +168,10 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [requestingStorage, setRequestingStorage] = useState(false);
+  const [invitingFriends, setInvitingFriends] = useState(false);
+  // Stays true after the first open so the dialog can animate out; until then
+  // nothing is mounted and its chunk is never fetched.
+  const [inviteDialogLoaded, setInviteDialogLoaded] = useState(false);
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const [searchPending, setSearchPending] = useState(false);
   const { search } = useClientSearch();
@@ -277,6 +300,33 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     return chord ? formatChord(chord, platform) : undefined;
   }, [preset, bindings, platform]);
 
+  // ── Guided tours (onboarding) ────────────────────────────────────────────
+  // Each app's tour starts by itself once, after the encryption gate has settled and only on this
+  // user's real `onboarding.toursSeen`; "Take the … tour" in the account menu and the palette
+  // replays it.
+  const gateState = useSyncExternalStore(subscribeToGateState, getGateState, () => 'pending' as const);
+  // The welcome wizard comes first: a new account sees it straight after the key dialog, and the
+  // Drive tour waits for it to close (`blocked`), then starts by itself on My Drive.
+  const wizard = useWelcomeWizard({
+    ready: auth.status === 'ready' && prefsLoaded,
+    blocked: gateState !== 'clear',
+  });
+  const tours = useTourController({
+    pathname,
+    ready: auth.status === 'ready' && prefsLoaded,
+    blocked: gateState !== 'clear' || wizard.open,
+    navigate: (href) => router.push(href),
+  });
+  const endWizard = wizard.finish;
+  const closeWizard = useCallback(() => {
+    endWizard();
+    // The tour of Drive runs on My Drive: a wizard reopened elsewhere (back from a calendar
+    // provider) ends there.
+    if (pathname.replace(/\/$/, '') !== '/drive') router.push('/drive');
+  }, [endWizard, pathname, router]);
+  const startTour = tours.start;
+  const tourAvailable = tours.available !== null;
+
   const shellCommands = useMemo(() => {
     const runs: Partial<Record<CommandId, () => void>> = {
       'shell.toggleSidebar': () => setSidebarCollapsed(!preferences.get('shell.sidebarCollapsed')),
@@ -285,8 +335,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       if (g.app && !enabledApps.includes(g.app)) continue;
       runs[g.id] = () => router.push(g.href);
     }
+    if (tourAvailable) runs['shell.takeTour'] = () => startTour();
     return runs;
-  }, [setSidebarCollapsed, enabledApps, router]);
+  }, [setSidebarCollapsed, enabledApps, router, tourAvailable, startTour]);
   useCommands(shellCommands);
   // In the capture phase, so ⌘K reaches the palette from inside every editor: the sheet grid, the
   // canvases and ProseMirror all stop keys they handle before they bubble up to the window.
@@ -440,12 +491,21 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   // (or by the first request that 401s, whichever is first).
   const ready = auth.status === 'ready';
 
+  function openInviteFriends() {
+    setInviteDialogLoaded(true);
+    setInvitingFriends(true);
+  }
+
   const accountActions = {
     onProfile: () => router.push('/profile'),
     onSettings: () => router.push('/settings'),
+    onInvite: openInviteFriends,
     onImport: () => router.push('/import'),
     onSignOut: handleSignOut,
     bugReportHref: BUG_REPORT_URL,
+    // No Help menu in the shell: the current app's tour is replayed from the account menu.
+    onTakeTour: tours.available ? () => startTour() : undefined,
+    tourLabel: tours.available ? replayLabel(tours.available) : undefined,
   };
   const shellUser = ready
     ? { name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }
@@ -542,9 +602,12 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       onMarkAllNotificationsRead={markAllRead}
       bugReportHref={BUG_REPORT_URL}
       onSettings={() => router.push('/settings')}
+      onInvite={openInviteFriends}
       onImport={() => router.push('/import')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}
+      onTakeTour={accountActions.onTakeTour}
+      tourLabel={accountActions.tourLabel}
     >
       <NewItemFAB />
     </Topbar>
@@ -557,7 +620,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     // is what keeps it — and its progress bar — alive across an app switch.
     <ImportRunProvider>
       <AppShell sidebar={sidebar} topbar={topbar} variant={flow ? 'flow' : 'classic'} chrome={chrome}>
-        <EditorShellActionsProvider value={editorShellActions}>{children}</EditorShellActionsProvider>
+        <TourControlsProvider value={tours.controls}>
+          <EditorShellActionsProvider value={editorShellActions}>{children}</EditorShellActionsProvider>
+        </TourControlsProvider>
         {/* Remembers the folder or library an editor was opened from, for its back button. */}
         <Suspense fallback={null}>
           <EditorReturnTracker />
@@ -575,6 +640,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         {/* Overlays the shell when the identity key is missing or locked. Renders
             nothing once unlocked, and is dismissable — see the component notes. */}
         {ready && <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />}
+        {/* The guided tour on screen, if one is running — over everything but toasts. */}
+        {tours.overlay}
+        {wizard.open && <WelcomeWizard startStep={wizard.startStep} onClose={closeWizard} />}
         {/* The storage meter's "Request Additional" (issue #144). Mounted here
             rather than in the sidebar because @neutrino/layout has no API
             dependencies, so the ask belongs to the app. */}
@@ -584,6 +652,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
             onClose={() => setRequestingStorage(false)}
             quota={auth.quotaInfo}
           />
+        )}
+        {ready && inviteDialogLoaded && (
+          <InviteFriendsDialog open={invitingFriends} onClose={() => setInvitingFriends(false)} />
         )}
       </AppShell>
     </ImportRunProvider>

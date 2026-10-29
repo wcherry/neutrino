@@ -19,6 +19,10 @@ export type Scope = 'user' | 'device' | 'org' | 'team';
 export const APPS = ['docs', 'sheets', 'slides', 'notes', 'diagrams', 'drawing', 'photos', 'calendar'] as const;
 export type AppKey = (typeof APPS)[number];
 
+/** Every app with a guided tour, Drive first — the options of `onboarding.toursSeen`. */
+export const TOUR_IDS = ['drive', ...APPS] as const;
+export type TourId = (typeof TOUR_IDS)[number];
+
 export type PreferenceType =
   | { kind: 'enum'; options: readonly string[] }
   | { kind: 'boolean' }
@@ -101,6 +105,10 @@ export interface PreferenceValues {
   'drive.landing': 'drive' | 'recent' | 'starred';
   /** Days back Quick access looks for edited files, before it fills up with starred ones. */
   'drive.quickAccessDays': '3' | '7' | '30' | '90';
+  /** The guided tours this user has finished or skipped, so each starts on its own only once. */
+  'onboarding.toursSeen': TourId[];
+  /** `pending` from the moment the server creates the account until the welcome wizard is finished or closed. */
+  'onboarding.welcome': 'pending' | 'done';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];
   'library.sheets.cfVariables': unknown[];

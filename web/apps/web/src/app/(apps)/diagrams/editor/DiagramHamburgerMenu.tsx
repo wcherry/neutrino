@@ -45,5 +45,5 @@ export function DiagramHamburgerMenu({
     { kind: 'action', label: 'Delete', danger: true, action: onDeleteClick },
   ];
 
-  return <HamburgerMenu items={items} />;
+  return <HamburgerMenu items={items} data-tour="diagrams-menu" />;
 }

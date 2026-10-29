@@ -46,7 +46,16 @@ function Segmented<K extends PreferenceKey>({ prefKey, label, options }: {
 }
 
 /** Distinct hues that each stay legible; any colour can still be typed or picked. */
-const SWATCHES = ['#3346e8', '#2f6fe4', '#0e7a4a', '#0e8c8c', '#7a4fdb', '#d6336c', '#c2410c', '#16181d'];
+export const ACCENT_SWATCHES: { value: string; name: string }[] = [
+  { value: '#3346e8', name: 'Indigo' },
+  { value: '#2f6fe4', name: 'Blue' },
+  { value: '#0e7a4a', name: 'Green' },
+  { value: '#0e8c8c', name: 'Teal' },
+  { value: '#7a4fdb', name: 'Violet' },
+  { value: '#d6336c', name: 'Rose' },
+  { value: '#c2410c', name: 'Orange' },
+  { value: '#16181d', name: 'Ink' },
+];
 
 function AccentPicker() {
   const [accent, setAccent] = usePreference('appearance.accent');
@@ -68,7 +77,7 @@ function AccentPicker() {
         >
           Look&rsquo;s own
         </button>
-        {SWATCHES.map((c) => (
+        {ACCENT_SWATCHES.map(({ value: c }) => (
           <button
             key={c}
             type="button"

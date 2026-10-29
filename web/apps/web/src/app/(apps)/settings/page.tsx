@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, Upload } from 'lucide-react';
-import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
+import { Button, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest, type CalendarResponse } from '@/lib/api';
 import { initSodium, loadKeyPair, hasKeyPair, subscribeToLockState, toBase64, fromBase64, toBase64url, fingerprintFor, keyPairMatches, clearSession } from '@neutrino/e2e-crypto';
 import { clearSearchIndex } from '@neutrino/search';
@@ -16,6 +16,8 @@ import { KeyManagementPanel } from './KeyManagementPanel';
 import { HolidaysSection } from './HolidaysSection';
 import { SavedPlacesSection } from './SavedPlacesSection';
 import { PROVIDER_LABELS, connectFailureMessage } from './connectErrors';
+import { AppleConnectModal } from './AppleConnectModal';
+import { AI_KEY_PAGES } from '@/lib/aiKeyPages';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
@@ -70,19 +72,6 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
 /** Read by `useSearchIndexSync` to skip the periodic background index sync. */
 
 /**
- * Where each provider hands out an API key.
- *
- * Every one of them needs a key — Gemini included. Its free tier is a free *key* with rate
- * limits, not anonymous access, and this field used to say "optional" for it, which sent people
- * to a request that could only fail at Google.
- */
-const AI_KEY_PAGES: Record<AiSettings['provider'], { url: string; label: string }> = {
-  gemini: { url: 'https://aistudio.google.com/apikey', label: 'Google AI Studio' },
-  claude: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic Console' },
-  openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
-};
-
-/**
  * Account used to hold identity, the password section, the whole end-to-end
  * encryption panel and the danger zone at once — the tab issue #60 named as the
  * one that had grown too big. Security is where the encryption panel and
@@ -105,56 +94,6 @@ const TABS: { id: Tab; label: string }[] = [
 // ---------------------------------------------------------------------------
 // Calendar sub-components
 // ---------------------------------------------------------------------------
-
-function AppleConnectModal({
-  onClose,
-  onConnect,
-  isPending,
-}: {
-  onClose: () => void;
-  onConnect: (req: CreateAppleConnectionRequest) => void;
-  isPending: boolean;
-}) {
-  const [caldavUrl, setCaldavUrl] = useState('https://caldav.icloud.com');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!caldavUrl.trim() || !username.trim() || !password.trim()) return;
-    onConnect({ caldavUrl: caldavUrl.trim(), username: username.trim(), password });
-  }
-
-  return (
-    <Modal open onClose={onClose} size="sm">
-      <ModalHeader title="Connect Apple Calendar" onClose={onClose} />
-      <ModalBody>
-        <p className={styles.modalNote}>
-          Apple Calendar uses CalDAV. Generate an app-specific password at
-          appleid.apple.com and use your Apple ID email as the username.
-        </p>
-        <form id="apple-connect-form" onSubmit={handleSubmit} className={styles.modalForm}>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>CalDAV Server URL</label>
-            <input className={styles.formInput} value={caldavUrl} onChange={(e) => setCaldavUrl(e.target.value)} placeholder="https://caldav.icloud.com" required />
-          </div>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Apple ID (email)</label>
-            <input className={styles.formInput} type="email" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="you@icloud.com" autoFocus required />
-          </div>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>App-specific password</label>
-            <input className={styles.formInput} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="xxxx-xxxx-xxxx-xxxx" required />
-          </div>
-        </form>
-      </ModalBody>
-      <ModalFooter>
-        <Button type="button" onClick={onClose}>Cancel</Button>
-        <Button form="apple-connect-form" type="submit" disabled={isPending}>{isPending ? 'Connecting…' : 'Connect'}</Button>
-      </ModalFooter>
-    </Modal>
-  );
-}
 
 function ConnectionRow({
   provider, connection, calendar, onConnect, onDisconnect, onSync, onRecolor, isSyncing, isDisconnecting,

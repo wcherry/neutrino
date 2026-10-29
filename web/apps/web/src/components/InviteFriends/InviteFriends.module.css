@@ -1,0 +1,579 @@
+/*
+ * Invite friends — the panel that sits in the "Invite friends" dialog (inside ModalBody), on the
+ * standalone /invite page (inside .pageWrap) and in the onboarding wizard's step column. It sizes
+ * to its container and never sets its own outer width or background, so all three hosts work.
+ *
+ * Buttons: use `<Button>` from `@neutrino/ui` for every real button —
+ *   Copy  → <Button variant="secondary" size="md" className={styles.copyButton}>
+ *   Share → <Button variant="primary"   size="md" className={styles.shareButton}>
+ *   Send  → <Button variant="secondary" size="md" className={styles.sendButton} loading={sending}>
+ * `copyButton` / `shareButton` are layout tweaks only (no shrink, touch height). `sendButton` adds
+ * the accent-outline treatment on top of the secondary variant. The small text buttons
+ * (`resetLink`, `revokeButton`, `chipRemove`) are plain <button type="button"> styled here.
+ *
+ * Colour: every value is a token that flips with the theme, so there are no dark-mode blocks.
+ * Two status hues are mixed toward the text colour so they pass 4.5:1 as text in every theme
+ * (the raw --color-success is ~3:1 on white, --color-error ~3.9:1 on the dark surface).
+ *
+ * Motion: transitions use the duration tokens only; motion.css / a11y.css still them for
+ * prefers-reduced-motion and the user's own reduce-motion setting (a local media query here would
+ * override the user's "off" choice, so there is none).
+ */
+
+.panel {
+  --invite-success-text: color-mix(in srgb, var(--color-success) 70%, var(--color-text-primary));
+  --invite-error-text: color-mix(in srgb, var(--color-error) 80%, var(--color-text-primary));
+  --invite-touch: 36px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+@media (pointer: coarse) {
+  .panel {
+    --invite-touch: 44px;
+  }
+}
+
+/* One labelled group: label, control(s), helper/error lines. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sectionLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+  line-height: var(--leading-tight);
+}
+
+/* ── Invite link ─────────────────────────────────────────────────────────── */
+
+.linkRow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.linkInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 2.5rem;
+  padding: 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--field-border, var(--color-border));
+  border-radius: var(--control-radius, var(--radius-md));
+  text-overflow: ellipsis;
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-default),
+    box-shadow var(--duration-fast) var(--ease-default);
+}
+
+.linkInput:focus {
+  color: var(--color-text-primary);
+  border-color: var(--field-border-focus, var(--color-accent));
+  box-shadow: 0 0 0 3px var(--field-ring, color-mix(in srgb, var(--color-accent) 15%, transparent));
+}
+
+/* Layout only — the look comes from <Button variant="secondary" | "primary">. */
+.copyButton,
+.shareButton {
+  flex: 0 0 auto;
+  min-width: 5.5rem;
+}
+
+/* Small text button under the link row. */
+.resetLink {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--invite-touch);
+  margin-block: calc(var(--space-2) * -1);
+  padding: 0 var(--space-1);
+  margin-inline-start: calc(var(--space-1) * -1);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-default);
+}
+
+.resetLink:hover:not(:disabled) {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+}
+
+.resetLink:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.resetLink:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── Email chip field ────────────────────────────────────────────────────── */
+
+/* Looks like a text input; chips and the real <input> wrap inside it. Clicking the empty area
+   should focus .chipInput (frontend). :focus-within gives the ring even without the JS class. */
+.chipField {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--field-bg, var(--color-surface));
+  border: 1px solid var(--field-border, var(--color-border));
+  border-radius: var(--control-radius, var(--radius-md));
+  cursor: text;
+  transition:
+    border-color var(--duration-fast) var(--ease-default),
+    box-shadow var(--duration-fast) var(--ease-default);
+}
+
+.chipField:hover {
+  border-color: var(--field-border-hover, var(--color-border-strong));
+}
+
+.chipField:focus-within,
+.chipFieldFocused {
+  border-color: var(--field-border-focus, var(--color-accent));
+  box-shadow: 0 0 0 3px var(--field-ring, color-mix(in srgb, var(--color-accent) 15%, transparent));
+}
+
+.chipFieldInvalid,
+.chipFieldInvalid:hover {
+  border-color: var(--color-error);
+}
+
+.chipFieldInvalid:focus-within,
+.chipFieldInvalid.chipFieldFocused {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 15%, transparent);
+}
+
+/* One address. Pill, accent-tinted; the text truncates so a long address can't burst the row. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+  height: 1.75rem;
+  padding-inline: var(--space-3) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  line-height: 1;
+  color: var(--color-accent-text);
+  background-color: var(--color-accent-subtle);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.chip > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The × inside a chip: 20px to the eye, a 36px (44px coarse) hit area via ::after. */
+.chipRemove {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-default),
+    color var(--duration-fast) var(--ease-default);
+}
+
+.chipRemove::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--invite-touch) - 1.25rem) / -2);
+}
+
+.chipRemove:hover {
+  color: var(--color-text-on-accent);
+  background-color: var(--color-accent);
+}
+
+.chipRemove:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.chipRemove svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+/* The bare input that fills the rest of the row; the field draws the border and ring. */
+.chipInput {
+  flex: 1 1 160px;
+  min-width: 160px;
+  height: 1.75rem;
+  padding: 0 var(--space-1);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.chipInput::placeholder {
+  color: var(--color-text-secondary);
+}
+
+/* "<text> doesn't look like an email address" — directly under the chip field. */
+.fieldError {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--invite-error-text);
+}
+
+/* ── Note ────────────────────────────────────────────────────────────────── */
+
+.noteInput {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: calc(2lh + var(--space-2) * 2 + 2px);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  background-color: var(--field-bg, var(--color-surface));
+  border: 1px solid var(--field-border, var(--color-border));
+  border-radius: var(--control-radius, var(--radius-md));
+  resize: none;
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-default),
+    box-shadow var(--duration-fast) var(--ease-default);
+}
+
+.noteInput::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.noteInput:hover {
+  border-color: var(--field-border-hover, var(--color-border-strong));
+}
+
+.noteInput:focus {
+  border-color: var(--field-border-focus, var(--color-accent));
+  box-shadow: 0 0 0 3px var(--field-ring, color-mix(in srgb, var(--color-accent) 15%, transparent));
+}
+
+/* ── Send ────────────────────────────────────────────────────────────────── */
+
+.sendRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* Secondary button, outlined in the accent. `.sendRow` raises specificity over Button's own
+   `.secondary` / `.secondary:hover:not(:disabled)` regardless of stylesheet order. */
+.sendRow .sendButton {
+  flex: 0 0 auto;
+  color: var(--color-accent-text);
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.sendRow .sendButton:hover:not(:disabled) {
+  color: var(--color-accent-text);
+  background-color: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+}
+
+.footnote {
+  flex: 1 1 14rem;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+/* role="status" — "Sent N invites." */
+.statusLine,
+.errorLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.statusLine {
+  color: var(--invite-success-text);
+}
+
+/* role="alert" — the server's message. */
+.errorLine {
+  color: var(--invite-error-text);
+}
+
+.statusLine svg,
+.errorLine svg {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+}
+
+.statusLine:empty,
+.errorLine:empty {
+  display: none;
+}
+
+/* ── Invites you've sent ─────────────────────────────────────────────────── */
+
+.sentSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.sentHeading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  line-height: var(--leading-tight);
+}
+
+.sentList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.sentRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.sentRow + .sentRow {
+  border-top: 1px solid var(--color-border);
+}
+
+/* Rows without a Revoke button keep the badge in the same column as rows with one. */
+.sentRow > .statusBadge:last-child {
+  grid-column: 2 / span 2;
+  justify-self: end;
+}
+
+.sentEmail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+/* Shape shared by every status; pair with one of the four modifiers below. */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+}
+
+.statusPending {
+  color: var(--color-accent-text);
+  background-color: var(--color-accent-subtle);
+}
+
+.statusAccepted {
+  color: var(--invite-success-text);
+  background-color: var(--color-success-subtle);
+}
+
+/* Muted states: outline only, secondary text (muted-grey text would fail contrast). */
+.statusExpired {
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  border-color: var(--color-border-strong);
+}
+
+.statusRevoked {
+  color: var(--color-text-secondary);
+  background-color: transparent;
+  border-color: var(--color-border-strong);
+  border-style: dashed;
+}
+
+.revokeButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--invite-touch);
+  padding: 0 var(--space-2);
+  margin-inline-end: calc(var(--space-2) * -1);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-default),
+    background-color var(--duration-fast) var(--ease-default);
+}
+
+.revokeButton:hover:not(:disabled) {
+  color: var(--invite-error-text);
+  background-color: var(--color-error-subtle);
+}
+
+.revokeButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.revokeButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* "No invites sent yet." */
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  text-align: center;
+  background-color: var(--color-bg-subtle);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+/* ── Standalone /invite page ─────────────────────────────────────────────── */
+
+.pageWrap {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640px;
+  margin: var(--space-8) auto;
+  padding: var(--space-8);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm, none);
+}
+
+.pageHeading {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-semibold);
+  letter-spacing: -0.01em;
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+}
+
+.pageIntro {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .pageWrap {
+    margin: var(--space-4) auto;
+    padding: var(--space-5) var(--space-4);
+    border-radius: var(--radius-lg);
+  }
+
+  /* Link takes its own line; the two buttons share the next. */
+  .linkRow {
+    flex-wrap: wrap;
+  }
+
+  .linkInput {
+    flex-basis: 100%;
+  }
+
+  .copyButton,
+  .shareButton {
+    flex: 1 1 0;
+  }
+
+  .chipInput {
+    min-width: 120px;
+  }
+}
+
+@media (pointer: coarse) {
+  .linkInput,
+  .chipField {
+    min-height: 44px;
+  }
+
+  .copyButton,
+  .shareButton,
+  .sendRow .sendButton {
+    min-height: 44px;
+  }
+
+  .chip,
+  .chipInput {
+    height: 2rem;
+  }
+}

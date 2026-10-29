@@ -1182,6 +1182,7 @@ mod tests {
             email: email.to_string(),
             password: password.to_string(),
             name: name.to_string(),
+            invite_token: None,
         }
     }
 

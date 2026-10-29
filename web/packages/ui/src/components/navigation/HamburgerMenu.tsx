@@ -56,9 +56,11 @@ function PanelItem({ item, onClose }: { item: HamburgerMenuItem; onClose: () => 
 
 export interface HamburgerMenuProps {
   items: HamburgerMenuItem[];
+  /** A guided tour's name for the menu's button. */
+  'data-tour'?: string;
 }
 
-export function HamburgerMenu({ items }: HamburgerMenuProps) {
+export function HamburgerMenu({ items, 'data-tour': tour }: HamburgerMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +86,7 @@ export function HamburgerMenu({ items }: HamburgerMenuProps) {
         aria-label="Open menu"
         aria-expanded={open}
         aria-haspopup="true"
+        data-tour={tour}
       >
         <Menu size={18} />
       </button>

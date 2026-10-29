@@ -17,6 +17,8 @@ export interface ShareButtonProps {
   onShare?: () => void;
   className?: string;
   'aria-label'?: string;
+  /** A guided tour's name for the button. */
+  'data-tour'?: string;
 }
 
 const MAX_VISIBLE = 3;
@@ -26,13 +28,14 @@ export function ShareButton({
   onShare,
   className = '',
   'aria-label': ariaLabel = 'Share',
+  'data-tour': tour,
 }: ShareButtonProps) {
   const hasOverflow = users.length > MAX_VISIBLE;
   const visibleUsers = hasOverflow ? users.slice(0, 2) : users;
   const overflowCount = hasOverflow ? users.length - 2 : 0;
 
   return (
-    <div className={[styles.root, className].filter(Boolean).join(' ')}>
+    <div className={[styles.root, className].filter(Boolean).join(' ')} data-tour={tour}>
       {users.length > 0 && (
         <div className={styles.avatarStack} aria-label={`${users.length} people have access`}>
           {visibleUsers.map((user, i) => (

@@ -336,6 +336,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
         },
         {
             id: 'numberFormat',
+            tour: 'sheets-number-format',
             render: () => (
                 <ToolbarGroup>
                     <ToolbarButton
@@ -405,6 +406,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
         },
         {
             id: 'chart',
+            tour: 'sheets-chart',
             render: () => onInsertChart ? (
                 <ToolbarButton
                     onClick={onInsertChart}

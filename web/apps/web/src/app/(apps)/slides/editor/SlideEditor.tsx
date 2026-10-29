@@ -2187,6 +2187,7 @@ export function SlideEditor() {
       title: 'Layout',
       icon: <LayoutTemplate size={14} />,
       side: 'right',
+      tour: 'slides-layout',
       content: (
           <div className={styles.layoutPanel}>
             <div className={styles.layoutGrid}>
@@ -2511,7 +2512,7 @@ export function SlideEditor() {
 
           {/* Export + Import */}
           <div className={styles.dropdownTrigger} ref={exportRef}>
-            <Button variant="secondary" icon={<Download size={16} />} onClick={() => setExportOpen((v) => !v)}>
+            <Button variant="secondary" icon={<Download size={16} />} onClick={() => setExportOpen((v) => !v)} data-tour="slides-export">
               Export <ChevronDown size={14} />
             </Button>
             {exportOpen && (
@@ -2548,9 +2549,9 @@ export function SlideEditor() {
             Import
           </Button>
 
-          <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
+          <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} data-tour="share" />
 
-          <Button icon={<Play size={16} />} onClick={() => setPresenterMode(true)}>
+          <Button icon={<Play size={16} />} onClick={() => setPresenterMode(true)} data-tour="slides-present">
             Present
           </Button>
           <EditorShellActions />
@@ -2573,7 +2574,7 @@ export function SlideEditor() {
       {/* Main area */}
       <div className={styles.mainArea}>
         {/* Slide panel */}
-        <div className={styles.slidePanel}>
+        <div className={styles.slidePanel} data-tour="slides-list">
           <div className={styles.slidePanelHeader}>
             <span>Slides ({presentation.slides.length})</span>
             <button className={styles.slidePanelBtn} onClick={addSlide} title="Add slide"><Plus size={14} /></button>
@@ -2666,7 +2667,7 @@ export function SlideEditor() {
       </div>
 
       {/* Bottom notes bar */}
-      <div className={styles.notesBar}>
+      <div className={styles.notesBar} data-tour="slides-notes">
         <span className={styles.notesBarLabel}>Notes</span>
         <textarea
           className={styles.notesArea}

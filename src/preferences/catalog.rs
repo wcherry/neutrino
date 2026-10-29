@@ -59,6 +59,17 @@ pub struct Spec {
 /// Every app an instance can offer, in sidebar order — the options of `apps.enabled`.
 pub const APPS: &[&str] = &["docs", "sheets", "slides", "notes", "diagrams", "drawing", "photos", "calendar"];
 
+/// Every app with a guided tour, Drive first — the options of `onboarding.toursSeen`. All of them
+/// from the start, so a client that adds a tour does not need a catalog change to remember it.
+pub const TOURS: &[&str] = &["drive", "docs", "sheets", "slides", "notes", "diagrams", "drawing", "photos", "calendar"];
+
+/// `onboarding.welcome`: the server writes `pending` when it creates an account (`auth::signup`),
+/// and the welcome wizard writes `done` when it is finished or closed. The client's default is
+/// `done`, so an account the server never marked — every account that predates the wizard — never
+/// sees it.
+pub const WELCOME_PENDING: &str = "pending";
+pub const WELCOME_DONE: &str = "done";
+
 const ACCENT_PATTERN: &str = "^#[0-9a-fA-F]{6}$";
 
 const THEME_PATTERN: &str =
@@ -98,6 +109,8 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "team.library", kind: Kind::Object { max_bytes: 1024 }, scopes: TEAM },
     Spec { key: "drive.landing", kind: Kind::Enum(&["drive", "recent", "starred"]), scopes: USER_ORG },
     Spec { key: "drive.quickAccessDays", kind: Kind::Enum(&["3", "7", "30", "90"]), scopes: USER_ORG },
+    Spec { key: "onboarding.toursSeen", kind: Kind::Set(TOURS), scopes: USER },
+    Spec { key: "onboarding.welcome", kind: Kind::Enum(&[WELCOME_PENDING, WELCOME_DONE]), scopes: USER },
 ];
 
 pub fn spec(key: &str) -> Option<&'static Spec> {
@@ -198,6 +211,28 @@ mod tests {
         assert!(check("apps.enabled", json!(["docs", "docs"])).is_err());
         assert!(check("apps.enabled", json!(["docs", "mail"])).is_err());
         assert!(check("apps.enabled", json!("docs")).is_err());
+    }
+
+    #[test]
+    fn the_tours_seen_are_known_tours_once_each() {
+        assert!(check("onboarding.toursSeen", json!([])).is_ok());
+        assert!(check("onboarding.toursSeen", json!(["drive", "calendar"])).is_ok());
+        assert!(check("onboarding.toursSeen", json!(["drive", "drive"])).is_err());
+        assert!(check("onboarding.toursSeen", json!(["mail"])).is_err());
+        assert!(check("onboarding.toursSeen", json!("drive")).is_err());
+        // The user's own record of what they have seen; an administrator cannot pre-mark it.
+        let scopes = spec("onboarding.toursSeen").expect("declared").scopes;
+        assert!(scopes.user && !scopes.org && !scopes.team);
+    }
+
+    #[test]
+    fn the_welcome_mark_is_pending_or_done_and_only_the_user_owns_it() {
+        assert!(check("onboarding.welcome", json!("pending")).is_ok());
+        assert!(check("onboarding.welcome", json!("done")).is_ok());
+        assert!(check("onboarding.welcome", json!("later")).is_err());
+        assert!(check("onboarding.welcome", json!(true)).is_err());
+        let scopes = spec("onboarding.welcome").expect("declared").scopes;
+        assert!(scopes.user && !scopes.org && !scopes.team);
     }
 
     #[test]

@@ -576,7 +576,7 @@ export function Toolbar({
   ];
 
   return (
-    <RickTextToolbar>
+    <RickTextToolbar data-tour="docs-toolbar">
       <ToolbarItems editor="docs" tools={tools} divider={<ToolbarDivider />} />
     </RickTextToolbar>
   );

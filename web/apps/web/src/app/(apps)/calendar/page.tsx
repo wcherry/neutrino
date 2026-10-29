@@ -589,6 +589,7 @@ export default function CalendarPage() {
       <div className={styles.toolbar}>
         <div className={styles.toolbarLeft}>
           <Button
+            data-tour="calendar-new"
             icon={<Plus size={16} />}
             onClick={() => {
                       setNewEventDate(new Date());
@@ -613,7 +614,7 @@ export default function CalendarPage() {
         </div>
 
         <div className={styles.toolbarRight}>
-          <div className={styles.viewToggle}>
+          <div className={styles.viewToggle} data-tour="calendar-views">
             {(['month', 'week', 'agenda'] as View[]).map((v) => (
               <button
                 key={v}

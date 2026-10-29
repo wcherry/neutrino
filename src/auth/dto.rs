@@ -8,6 +8,17 @@ pub struct RegisterRequest {
     pub email: String,
     pub password: String,
     pub name: String,
+    /// An invite token from `/register?invite=…`. Required when the server's
+    /// public sign-up is closed; ignored if unusable while it is open.
+    #[serde(default, rename = "inviteToken")]
+    pub invite_token: Option<String>,
+}
+
+/// Whether anyone may create an account without an invite.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SignupPolicyResponse {
+    pub public_signup: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

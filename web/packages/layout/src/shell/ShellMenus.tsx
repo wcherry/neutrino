@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Bug, History, Import, LogOut, Search, Settings, Star, User } from 'lucide-react';
+import { Bell, Bug, Compass, History, Import, LogOut, Search, Settings, Star, User, UserPlus } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
 import { Avatar, usePresence } from '@neutrino/ui';
 import type { TopbarNotification, TopbarUser } from '../Topbar';
@@ -45,6 +45,7 @@ export function SearchButton({ onOpenPalette, paletteShortcut }: SearchButtonPro
       aria-haspopup="dialog"
       aria-label="Search and commands"
       title={paletteShortcut ? `Search files, people and commands (${paletteShortcut})` : 'Search files, people and commands'}
+      data-tour="search"
     >
       <Search size={18} strokeWidth={1.8} aria-hidden="true" />
     </button>
@@ -214,14 +215,33 @@ export interface AccountMenuProps {
   user: TopbarUser;
   onProfile?: () => void;
   onSettings?: () => void;
+  /** Opens the Invite friends dialog; the item is left out without it. */
+  onInvite?: () => void;
   onImport?: () => void;
   onSignOut?: () => void;
   /** Issue tracker, opened in a new tab. */
   bugReportHref?: string;
+  /**
+   * Replays the current app's guided tour, labelled `tourLabel` ("Take the Drive tour"). The shell
+   * has no Help menu, so it sits here beside Report a bug; shown only with both.
+   */
+  onTakeTour?: () => void;
+  tourLabel?: string;
   placement?: 'below' | 'above';
 }
 
-export function AccountMenu({ user, onProfile, onSettings, onImport, onSignOut, bugReportHref, placement = 'below' }: AccountMenuProps) {
+export function AccountMenu({
+  user,
+  onProfile,
+  onSettings,
+  onInvite,
+  onImport,
+  onSignOut,
+  bugReportHref,
+  onTakeTour,
+  tourLabel,
+  placement = 'below',
+}: AccountMenuProps) {
   const { open, setOpen, ref, presence } = usePopup();
   const item = (label: string, Icon: typeof User, run?: () => void, danger = false) =>
     run && (
@@ -263,7 +283,9 @@ export function AccountMenu({ user, onProfile, onSettings, onImport, onSignOut, 
           <div className={styles.group}>
             {item('Profile', User, onProfile)}
             {item('Settings', Settings, onSettings)}
+            {item('Invite friends', UserPlus, onInvite)}
             {item('Import', Import, onImport)}
+            {tourLabel && item(tourLabel, Compass, onTakeTour)}
             {bugReportHref && (
               <a
                 role="menuitem"

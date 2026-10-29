@@ -118,7 +118,7 @@ export function ShellSidebar({
       </nav>
       <div className={styles.foot}>
         {quota && !collapsed && (
-          <div className={styles.quota}>
+          <div className={styles.quota} data-tour="storage">
             <div className={styles['quota-row']}>
               <span>Storage</span>
               <span className={styles.mono}>

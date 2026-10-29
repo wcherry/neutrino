@@ -611,6 +611,47 @@
       "section": "appearance"
     },
     {
+      "key": "onboarding.toursSeen",
+      "type": {
+        "kind": "set",
+        "options": [
+          "drive",
+          "docs",
+          "sheets",
+          "slides",
+          "notes",
+          "diagrams",
+          "drawing",
+          "photos",
+          "calendar"
+        ]
+      },
+      "default": [],
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Guided tours you have finished or skipped",
+      "section": "none"
+    },
+    {
+      "key": "onboarding.welcome",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "pending",
+          "done"
+        ]
+      },
+      "default": "done",
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Whether the welcome wizard is still to be shown",
+      "section": "none"
+    },
+    {
       "key": "ai.apiKey",
       "type": {
         "kind": "string",
