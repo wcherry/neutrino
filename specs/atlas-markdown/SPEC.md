@@ -1,6 +1,6 @@
 # Atlas Markdown — Specification v1
 
-**Status:** Draft (`1.0.0-draft.3`)
+**Status:** Draft (`1.0.0-draft.4`)
 **Date:** 2026-10-29
 **Roadmap:** [`agent_docs/neutrino-atlas.md`](../../agent_docs/neutrino-atlas.md), constraint 3
 
@@ -121,7 +121,12 @@ comes right after the top-level block that contains it. A definition that no ref
 is not part of the tree, as on GitHub. Its bytes are kept by source preservation (§8.1).
 
 `list.start` is the start number for ordered lists and `null` for bullet lists.
-`listItem.checked` is `true`/`false` for task items and `null` otherwise.
+`listItem.checked` is `true`/`false` for task items and `null` otherwise. A **task item** is a
+list item whose first line, after the list marker and its spaces, is `[ ]`, `[x]` or `[X]`
+followed by a space or tab. This holds in any container, blockquotes and callouts included.
+`checked` comes from that box alone: `- [ ] see [x] here` is unchecked. The box and the
+whitespace after it are not part of the item's text. A box followed only by its space
+(`- [ ] `) is an empty task, with no children.
 
 `table.align` is an array with one entry per column: `"left"`, `"right"`, `"center"` or `null`.
 Every `tableRow` has exactly as many cells as the header row: a short row is padded with empty
@@ -144,7 +149,8 @@ wrong out of the box and MUST normalise its output. The corpus covers each one:
 - footnote definitions that no reference uses (kept), or that are nested in a container (left
   in place);
 - footnote labels with characters other than letters, digits, `-` and `_` (accepted);
-- `$$` math blocks inside a list item or blockquote (recognised by micromark's math extension).
+- `$$` math blocks inside a list item or blockquote (recognised by micromark's math extension);
+- an empty task item, `- [ ] ` (read by micromark as a plain item whose text is `[ ]`).
 
 Extension nodes and fields are defined in §4.
 
@@ -419,9 +425,18 @@ The `.md` of a page is never written; an attachment keeps its extension. Example
 and `[[Projects/Roadmap]]`.
 
 **Renames.** When a page or attachment is renamed or moved, the client rewrites every link
-that resolved to it before the change. Each rewritten link gets the shortest target as
-above, keeping its `heading`, `blockId` and `alias`. Only the bytes of the rewritten link
-change (§8.2). The client syncs all rewritten pages as one batch.
+that resolved to it before the change. Each rewritten link gets the shortest target that
+resolves to the file in the vault *after* the change, keeping its `heading`, `blockId` and
+`alias`. Only the bytes of the rewritten link change (§8.2). The client syncs all rewritten
+pages as one batch.
+
+- **Links rewritten:** wiki links, embeds, and internal markdown links (§6), including the
+  destinations of the reference definitions those links use.
+- **Same-page links** (`[[#Heading]]`, `[[#^id]]`) are never rewritten. Their empty target
+  "resolves" to the linking page, which may itself be the file being renamed.
+- **A markdown link** keeps its `#fragment`. Its new path is the target plus `.md`. The path is
+  percent-encoded if the old one used percent-encoding, and written in `<…>` if it was before
+  or now contains a space or parenthesis.
 
 ---
 
@@ -457,6 +472,20 @@ A link rewrite (§7) or a toggled task checkbox MUST change only the bytes of th
 even in implementations that otherwise re-serialize whole blocks. These are the two edits
 Atlas makes automatically on the user's behalf, so they must never reformat anything else.
 
+- **Task toggle:** only the character between the brackets changes, ` ` → `x` or `x`/`X` → ` `.
+  Toggling to the state the box already has changes nothing.
+- **Wiki link or embed:** only the target changes. Whitespace inside the brackets around it,
+  the `#heading` or `#^id`, the alias and its separator (`|` or `\|`) stay byte for byte:
+  `[[ Old #H| a ]]` → `[[ New #H| a ]]`.
+- **Markdown link or reference definition:** only the destination changes (§7). Link text and
+  title stay as they were.
+
+An edit is checked by parsing the whole page afterwards: everything must read as before,
+except the edited construct. If it doesn't, which happens only for source a byte-level edit
+can't express (for example text that cmark-gfm itself reads inconsistently), the edit is
+undone, and the affected block is written canonically instead (§8.1). The implementation MUST
+report that the edit wasn't made in place.
+
 ### 8.3 Canonical form (for new and changed blocks)
 
 | Construct | Canonical form |
@@ -474,7 +503,7 @@ Atlas makes automatically on the user's behalf, so they must never reformat anyt
 | Bullet list | `-` marker plus one space. If the previous sibling block is also a bullet list, use the other marker of the pair (`-` ↔ `*`). Two adjacent lists with the same marker would merge into one. |
 | Ordered list | `N.` markers, numbered consecutively from `start`. After another ordered list, alternate `.` ↔ `)` in the same way. |
 | Nested content | Indented by the parent item's content offset (2 spaces for `- `, 3 for `1. `, 4 for `10. `), with spaces, never tabs. Blank lines inside are empty, not indented. |
-| Task item | `- [ ] ` / `- [x] ` (lowercase `x`). |
+| Task item | `- [ ] ` / `- [x] ` (lowercase `x`). An empty task keeps the space after its box (`- [ ] `), the one place canonical output has trailing whitespace: without it, it isn't a task. |
 | Code block | Fenced with backticks: three, or one more than the longest backtick run in the content. If the info string contains a backtick, use tildes instead (one more than the longest tilde run). The info string is `lang` and `meta` separated by one space, escaped like a link destination. Indented code is never written. |
 | Math block | `$$`, the value, `$$`. |
 | HTML | The value, as is. |
@@ -533,7 +562,10 @@ the block is a footnote definition, a reference to it is prepended first.
 every platform. For every tree a conforming parser produces from an ordinary page, the
 canonical text parses back to that tree (`C`, §9). A small set of trees no canonical text can
 express exists, all built from characters decoded out of unusual entity references next to
-emphasis or autolinks. For those, attempt 5 is written. An implementation MUST report this to
+emphasis or autolinks. For those, attempt 5 is written. More generally, an edit is **exact** when
+the whole page's bytes parse to the editor's tree afterwards, not just the edited block. A
+change can alter how a neighbour reads. If an edit isn't exact, an implementation MUST report
+it to
 the caller rather than save silently, because reopening the page would give a slightly
 different tree.
 
