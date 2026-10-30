@@ -1,6 +1,6 @@
 # Atlas Markdown — Specification v1
 
-**Status:** Draft (`1.0.0-draft.2`)
+**Status:** Draft (`1.0.0-draft.4`)
 **Date:** 2026-10-29
 **Roadmap:** [`agent_docs/neutrino-atlas.md`](../../agent_docs/neutrino-atlas.md), constraint 3
 
@@ -121,7 +121,12 @@ comes right after the top-level block that contains it. A definition that no ref
 is not part of the tree, as on GitHub. Its bytes are kept by source preservation (§8.1).
 
 `list.start` is the start number for ordered lists and `null` for bullet lists.
-`listItem.checked` is `true`/`false` for task items and `null` otherwise.
+`listItem.checked` is `true`/`false` for task items and `null` otherwise. A **task item** is a
+list item whose first line, after the list marker and its spaces, is `[ ]`, `[x]` or `[X]`
+followed by a space or tab. This holds in any container, blockquotes and callouts included.
+`checked` comes from that box alone: `- [ ] see [x] here` is unchecked. The box and the
+whitespace after it are not part of the item's text. A box followed only by its space
+(`- [ ] `) is an empty task, with no children.
 
 `table.align` is an array with one entry per column: `"left"`, `"right"`, `"center"` or `null`.
 Every `tableRow` has exactly as many cells as the header row: a short row is padded with empty
@@ -144,7 +149,8 @@ wrong out of the box and MUST normalise its output. The corpus covers each one:
 - footnote definitions that no reference uses (kept), or that are nested in a container (left
   in place);
 - footnote labels with characters other than letters, digits, `-` and `_` (accepted);
-- `$$` math blocks inside a list item or blockquote (recognised by micromark's math extension).
+- `$$` math blocks inside a list item or blockquote (recognised by micromark's math extension);
+- an empty task item, `- [ ] ` (read by micromark as a plain item whose text is `[ ]`).
 
 Extension nodes and fields are defined in §4.
 
@@ -419,9 +425,18 @@ The `.md` of a page is never written; an attachment keeps its extension. Example
 and `[[Projects/Roadmap]]`.
 
 **Renames.** When a page or attachment is renamed or moved, the client rewrites every link
-that resolved to it before the change. Each rewritten link gets the shortest target as
-above, keeping its `heading`, `blockId` and `alias`. Only the bytes of the rewritten link
-change (§8.2). The client syncs all rewritten pages as one batch.
+that resolved to it before the change. Each rewritten link gets the shortest target that
+resolves to the file in the vault *after* the change, keeping its `heading`, `blockId` and
+`alias`. Only the bytes of the rewritten link change (§8.2). The client syncs all rewritten
+pages as one batch.
+
+- **Links rewritten:** wiki links, embeds, and internal markdown links (§6), including the
+  destinations of the reference definitions those links use.
+- **Same-page links** (`[[#Heading]]`, `[[#^id]]`) are never rewritten. Their empty target
+  "resolves" to the linking page, which may itself be the file being renamed.
+- **A markdown link** keeps its `#fragment`. Its new path is the target plus `.md`. The path is
+  percent-encoded if the old one used percent-encoding, and written in `<…>` if it was before
+  or now contains a space or parenthesis.
 
 ---
 
@@ -429,13 +444,20 @@ change (§8.2). The client syncs all rewritten pages as one batch.
 
 ### 8.1 Source preservation (MUST)
 
-An editor keeps, for each **top-level block**, the exact source bytes it was parsed from, and
-the bytes between blocks. Top-level blocks are the children of `root`, plus the frontmatter
-as its own unit. When saving:
+An editor keeps, for each **top-level block**, the exact source bytes it was parsed from. It
+also keeps the **gaps**: every byte between and around blocks, including blank lines,
+reference definitions (§3.2) and unused footnote definitions. Top-level blocks are the
+children of `root`, with the frontmatter as the first one when present. A block's bytes run
+from the start of its first line to the end of its last, without the final line ending.
 
-- An **unchanged** top-level block is written back from its original bytes.
-- A **changed or new** top-level block is written in canonical form (§8.3), with **one blank
-  line** separating it from its neighbours, unless the original separator is still valid.
+When saving:
+
+- An **unchanged** block, and every gap, is written back exactly.
+- A **changed or inserted** block is written in canonical form (§8.3), with the file's line
+  endings. A gap next to it that has no blank line in it becomes exactly one blank line.
+- An inserted block gets one blank line before it. A removed block takes the gap after it
+  with it, or the gap before it if it was last.
+- A UTF-8 BOM belongs to the gap before the first block, so it survives edits to that block.
 - Saving with no edits therefore reproduces the input exactly, BOM and line endings included.
   The corpus checks this for every case (`R`, §9).
 
@@ -450,40 +472,102 @@ A link rewrite (§7) or a toggled task checkbox MUST change only the bytes of th
 even in implementations that otherwise re-serialize whole blocks. These are the two edits
 Atlas makes automatically on the user's behalf, so they must never reformat anything else.
 
+- **Task toggle:** only the character between the brackets changes, ` ` → `x` or `x`/`X` → ` `.
+  Toggling to the state the box already has changes nothing.
+- **Wiki link or embed:** only the target changes. Whitespace inside the brackets around it,
+  the `#heading` or `#^id`, the alias and its separator (`|` or `\|`) stay byte for byte:
+  `[[ Old #H| a ]]` → `[[ New #H| a ]]`.
+- **Markdown link or reference definition:** only the destination changes (§7). Link text and
+  title stay as they were.
+
+An edit is checked by parsing the whole page afterwards: everything must read as before,
+except the edited construct. If it doesn't, which happens only for source a byte-level edit
+can't express (for example text that cmark-gfm itself reads inconsistently), the edit is
+undone, and the affected block is written canonically instead (§8.1). The implementation MUST
+report that the edit wasn't made in place.
+
 ### 8.3 Canonical form (for new and changed blocks)
 
 | Construct | Canonical form |
 |---|---|
 | Line endings | The file's existing style, taken from its first line ending. New files use `\n`. Corpus `canonical.md` files always use `\n`. |
 | End of file | Exactly one line ending after the last block. |
-| Between blocks | One blank line. A list's items have no blank line between them unless the list is spread. |
-| Headings | ATX: `#`×depth, one space, content. No closing `#`s. Setext is never written. |
-| Paragraphs | Content as written, soft line breaks kept as line endings. No trailing whitespace. |
+| Between blocks | One blank line. In a list item that isn't spread, its blocks follow each other with no blank line. A list's items have no blank line between them unless the list is spread. |
+| Headings | ATX: `#`×depth, one space, content (`#` alone when empty). No closing `#`s. A heading whose text spans lines, which only setext can express, is written setext with `===` or `---`. |
+| Paragraphs | Content as written, soft line breaks kept as line endings. |
 | Hard break | `\` at the end of the line, never trailing spaces. |
-| Emphasis / strong | `*text*` / `**text**`. |
+| Emphasis / strong | `*text*` / `**text**`. An emphasis directly inside an emphasis or strong uses `_text_`, unless a character next to it is a letter or digit (`*_a_*`, `**_b_**`). Otherwise `**a**` would read as strong. A strong is always `**`. |
 | Strikethrough / highlight | `~~text~~` / `==text==`. |
-| Inline code | Backticks: one more than the longest backtick run inside, with one padding space each side only when the content starts or ends with a backtick or space. |
+| Inline code | Backticks: one more than the longest backtick run inside. One padding space each side when the content starts or ends with a backtick or space, unless it is all spaces. |
+| Inline math | `$value$` if that reads back as exactly `value` (§4.8, with the character after it), otherwise `$$value$$`. |
 | Bullet list | `-` marker plus one space. If the previous sibling block is also a bullet list, use the other marker of the pair (`-` ↔ `*`). Two adjacent lists with the same marker would merge into one. |
 | Ordered list | `N.` markers, numbered consecutively from `start`. After another ordered list, alternate `.` ↔ `)` in the same way. |
-| Nested content | Indented by the parent item's content offset (2 spaces for `- `, 3 for `1. `, 4 for `10. `), with spaces, never tabs. |
-| Task item | `- [ ] ` / `- [x] ` (lowercase `x`). |
-| Code block | Fenced with backticks (three, or one more than the longest backtick run in the content), followed by `lang` and `meta` separated by one space. Indented code is never written. |
+| Nested content | Indented by the parent item's content offset (2 spaces for `- `, 3 for `1. `, 4 for `10. `), with spaces, never tabs. Blank lines inside are empty, not indented. |
+| Task item | `- [ ] ` / `- [x] ` (lowercase `x`). An empty task keeps the space after its box (`- [ ] `), the one place canonical output has trailing whitespace: without it, it isn't a task. |
+| Code block | Fenced with backticks: three, or one more than the longest backtick run in the content. If the info string contains a backtick, use tildes instead (one more than the longest tilde run). The info string is `lang` and `meta` separated by one space, escaped like a link destination. Indented code is never written. |
 | Math block | `$$`, the value, `$$`. |
-| Blockquote / callout | `> ` before every line (`>` alone on blank lines inside). Callout first line: `> [!type]` + fold + (space + title if any). |
-| Thematic break | `---` |
-| Table | `\| a \| b \|` rows, one space of padding, no column alignment padding. Delimiter row uses `---`, `:--`, `--:` or `:-:` per `align`. A `\|` inside a cell is written `\|`. |
-| Links / images | `[text](url)` / `![alt](url)`, with `"title"` when set. Write `url` in `<…>` if it contains spaces or parentheses. The tree has no references (§3.2), so a changed block writes reference-style links inline; unchanged blocks and the definitions keep their bytes (§8.1). |
-| Autolinks | A `link` with no title and a single `text` child is written as an autolink when the child text and `url` correspond: `<url>` when the text equals the url, `<text>` when the url is `mailto:` + text, and bare `text` when the url is `http://` + text and text starts with `www.`. Every other link uses `[text](url)`. |
+| HTML | The value, as is. |
+| Blockquote | `> ` before every line, `>` alone on blank lines inside. An empty blockquote is `>`. |
+| Callout | First line `> [!type]` + fold + (space + title if any). A first child that is a paragraph continues on the next line; any other first child comes after a `>` line. |
+| Thematic break | `---`, except where `---` would be read as something else: on the first line of the file (frontmatter), as the first line of a `-` list item (a break of its own), or directly under a paragraph line in a tight list item (a setext underline). There it is `***`. |
+| Table | `\| a \| b \|` rows, one space of padding, no column alignment padding. An empty cell is `\|  \|`. Delimiter row uses `---`, `:--`, `--:` or `:-:` per `align`. A `\|` inside a cell, including inside a code span or a wiki link's alias separator, is written `\|`. |
+| Links / images | `[text](url)` / `![alt](url)`, with `"title"` when set. The destination is written in `<…>` when empty or when it contains a space, parenthesis or angle bracket. In destinations, titles and code info strings, `\` is written `\\`, an `&` that would start an entity is written `\&`, and line endings are written `&#10;` / `&#13;`. In titles, `"` is written `\"`. The tree has no references (§3.2), so a changed block writes reference-style links inline; unchanged blocks and the definitions keep their bytes (§8.1). |
+| Autolinks | A `link` with no title and a single `text` child whose text matches its `url` is written in shorthand: `<url>` when the text equals the url, `<text>` when the url is `mailto:` + text, and bare `text` when the url is `http://` + text and the text starts with `www.`. `<…>` is only used when the url has no whitespace, `<`, `>`, `&` or `\`. If the block can't round-trip with these, url autolinks (`http://`, `https://`, `ftp://`) are written bare instead, and failing that every autolink is written `[text](url)` (§8.3.1). Text right after a bare link, up to and including the next whitespace, is written as is: cmark-gfm's autolinker reads raw source, so a `\` or `&#32;` there would become part of the link. |
+| Footnote definition | `[^label]: ` followed by its first block; the rest indented four spaces. |
 | Wiki links / embeds | `[[target#heading\|alias]]` (`#^id` for block refs), with fields written as stored (already trimmed). `\|` inside a table cell. |
 | Tags | `#name`. |
 | Block ids | Trailing form: one space + `^id` at the end of the paragraph's last line. Standalone form: a blank line, then `^id` on its own line. |
 | Frontmatter | `---`, the value verbatim, `---`, then one blank line before the first block. |
-| Escaping | Escape a character only if writing it unescaped would parse to a different tree. When escaping any one of several characters would work, escape the leftmost (for literal `[[x]]`, write `\[[x]]`). Escape with `\`, never with a character reference. |
+| Escaping | Exactly the procedure in §8.3.1. |
 
-### 8.4 Determinism
+#### 8.3.1 Escaping
+
+A character is escaped only where writing it plainly would change the tree. "Would change the
+tree" is decided by parsing, so every conforming implementation escapes the same characters.
+
+**Candidates** are characters in `text` values and image `alt` text, numbered in the order they
+are written:
+- ASCII punctuation, escaped with a backslash (`\#`);
+- spaces, tabs, line endings, and non-ASCII punctuation and symbols, escaped as a decimal
+  character reference (`&#10;`). A decoded entity such as `∓` doesn't flank emphasis the way the
+  `&mp;` it came from did.
+
+Text right after a bare autolink, up to and including the next whitespace, has no candidates
+(see Autolinks).
+
+**The pass.** Start from a version of the block that round-trips, with some candidates
+escaped. Visit those candidates **right to left**. Unescape each one, and keep it unescaped
+only if the block still parses back to the same block. The candidates to its left are still
+escaped at that point, so the result escapes the leftmost character of any construct that
+needs breaking: `\[[x]]`, `\==mark==`, `\#tag`, `\$5$`.
+
+**Round-trips** means: the block's text, written after the previous top-level block's text
+and a blank line, parses to that previous block followed by exactly this block. When the
+block contains footnote references, definitions for their labels are appended first. When
+the block is a footnote definition, a reference to it is prepended first.
+
+**Order of attempts**, stopping at the first that applies:
+1. ASCII punctuation escaped, everything else literal. If that round-trips, run the pass
+   over the ASCII punctuation.
+2. Every candidate escaped. If that round-trips, run the pass over all candidates. Escaping
+   whitespace isn't neutral (`&#32;` before `www.` stops it being an autolink), so it is only
+   considered when attempt 1 can't round-trip.
+3. Attempts 1 and 2 again, with url autolinks written bare.
+4. Attempts 1 and 2 again, with every autolink written `[text](url)`.
+5. Every candidate escaped, with autolinks as `[text](url)`, as written.
+
+### 8.4 Determinism and exactness
 
 `serializeCanonical(tree)` is a pure function: the same tree always produces the same bytes on
-every platform. Parsing canonical output returns the same tree (`C`, §9).
+every platform. For every tree a conforming parser produces from an ordinary page, the
+canonical text parses back to that tree (`C`, §9). A small set of trees no canonical text can
+express exists, all built from characters decoded out of unusual entity references next to
+emphasis or autolinks. For those, attempt 5 is written. More generally, an edit is **exact** when
+the whole page's bytes parse to the editor's tree afterwards, not just the edited block. A
+change can alter how a neighbour reads. If an edit isn't exact, an implementation MUST report
+it to
+the caller rather than save silently, because reopening the page would give a slightly
+different tree.
 
 ---
 

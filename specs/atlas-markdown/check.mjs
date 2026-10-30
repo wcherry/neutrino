@@ -192,7 +192,9 @@ for (const { id, description } of manifest.cases) {
   if (canonical.startsWith('﻿')) fail(`${where}/${canonicalFile}`, 'canonical output never has a BOM')
   if (canonical.includes('\r')) fail(`${where}/${canonicalFile}`, 'canonical output uses LF only')
   if (!canonical.endsWith('\n') || canonical.endsWith('\n\n')) fail(`${where}/${canonicalFile}`, 'canonical output ends with exactly one newline')
-  if (/[ \t]\n/.test(canonical.replace(/```[\s\S]*?```/g, ''))) fail(`${where}/${canonicalFile}`, 'trailing whitespace outside code')
+  // Trailing whitespace is never canonical, except the space after an empty task's box (§8.3).
+  const withoutCode = canonical.replace(/```[\s\S]*?```/g, '').replace(/^([ \t>]*(?:[-*+]|\d+[.)]) \[[ xX]\]) $/gm, '$1')
+  if (/[ \t]\n/.test(withoutCode)) fail(`${where}/${canonicalFile}`, 'trailing whitespace outside code')
 
   // extract.json must be what §6 derives from ast.json. Frontmatter-derived tags and
   // aliases need a YAML parser, so for pages with frontmatter only the rest is derived.
