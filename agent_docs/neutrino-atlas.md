@@ -17,7 +17,7 @@ linked and kept.
 |---|---|---|
 | Name | **Neutrino Atlas** | Keychain/prefs prefix `natlas`; OAuth client ids `neutrino-atlas-mac`, `neutrino-atlas-ios`, later `neutrino-atlas-android`. The web client uses the existing web app's auth. |
 | Relationship to Notes | Separate app | New file type, OAuth clients and prefix. Import from Notes is a feature, not a migration. |
-| Encryption | **E2EE by default** | The server never sees titles, content, tags or properties. Search, link resolution, AI and the graph all run on the client. |
+| Encryption | **E2EE by default** | The server never sees page content, tags, properties or links. It does see page titles and folder names, as file and folder names (constraint 1). Search, link resolution, AI and the graph all run on the client. |
 | Audience | Individual PKM first | Team features (shared vaults, permissions, real-time co-editing) come in Phase 2. |
 | Platform order | **Desktop → iOS → Web → Android** | Desktop is the primary surface and must work offline. Every other client syncs against the same encrypted vault. |
 | Desktop stack | **Native** (SwiftUI on macOS) | Matches `neutrino_drive_mac_desktop`; shares Swift code with iOS. |
@@ -50,15 +50,28 @@ These come from the existing platform and the decisions above. They drive the sh
 
 1. **Pages are encrypted Markdown files in Drive.** Same pattern as the Notes redesign
    (`notes-redesign.md`): no Atlas-specific CRUD API. Content, versions, trash, sharing and
-   quota come from Drive. A vault is a Drive folder tree; each page is one `.md` file, and
-   attachments are ordinary Drive files beside it. Drive only ever stores the encrypted blob.
-   Clients keep an **encrypted** local cache (SQLite or similar, keyed from the key vault) for
-   offline reads and queued writes. There is never a plaintext copy on disk.
-2. **The link graph stays on the client.** Titles are encrypted (`encrypted_metadata`,
-   `end-to-end-encryption.md`), so the server can't resolve `[[Title]]`. Even id-to-id link rows
-   would leak the graph's shape. Atlas therefore **does not use `src/links/` / `file_links`**.
-   Links, backlinks and the graph are computed from the Markdown in each client's encrypted
-   local index.
+   quota come from Drive.
+   - **Layout:** a vault mirrors a Drive folder tree, with real folder and file names. Each
+     page is one `.md` file; attachments are ordinary Drive files beside it.
+   - **What's encrypted:** content and `encrypted_metadata`, end to end.
+   - **What isn't: page titles and folder names.** Drive stores file and folder names in
+     plaintext, for encrypted files too, and has no way to update encrypted metadata. This is a
+     known trade-off across Drive, accepted for Atlas on 2026-10-29 over an opaque flat layout
+     that would have needed backend changes. It keeps vaults browsable in Drive's own apps.
+   - **Conflicts:** writes use Drive's `content_version` and `?expectedContentVersion=`, which
+     returns 409 `CONTENT_VERSION_CONFLICT` (`src/shared/content_version.rs`). No backend work
+     is needed.
+   - **Change detection:** there is no change feed, so clients list the vault's folder tree,
+     as the Mac Drive client does. A `changes since` endpoint would make large vaults cheaper
+     to poll.
+   - **Local cache:** clients keep an **encrypted** cache for offline reads and queued writes
+     (AtlasKit's `SealedDiskStorage`: sealed blobs with random names plus a sealed journal).
+     There is never a plaintext copy on disk.
+2. **The link graph stays on the client.** The server can see titles (constraint 1), but not
+   content, so it can't tell which pages link to which. Storing id-to-id link rows on the
+   server would hand it the graph's shape. Atlas therefore **does not use `src/links/` /
+   `file_links`**. Links, backlinks and the graph are computed from the Markdown in each
+   client's encrypted local index.
 3. **One Markdown dialect, three editors.** Swift (macOS + iOS), Tiptap (web) and Compose
    (Android) all read and write the same `.md` files. Define a written **Atlas Markdown spec**
    in Phase 1, covering CommonMark + GFM plus extensions:
@@ -72,9 +85,11 @@ These come from the existing platform and the decisions above. They drive the sh
    keep five implementations in agreement. Round-tripping must be byte-stable, or three
    editors will keep reformatting each other's files and generating spurious versions and
    conflicts.
-4. **Search is client-side.** This matches the design in `search.md`: a per-user local index,
-   synced as an encrypted hidden file, with SSE to tell other devices to refresh. Atlas should be
-   the first full implementation of that design, not a one-off.
+4. **Search is client-side.** The index (AtlasKit's `VaultIndex`) is a **per-device cache**,
+   rebuilt from the pages, which takes about 1.2 s at 5,000 pages, and sealed at rest. It is not
+   synced. The server's one search-snapshot slot per user (`/api/v1/search/index`) already holds
+   the web app's search index, and the two would overwrite each other. Revisit if rebuild time
+   ever matters, for example with a per-vault snapshot endpoint.
 5. **Live collaboration can't use the Docs collab server as-is.** `src/docs/collab/` keeps a live
    plaintext `yrs::Doc` per room. E2EE co-editing needs the server to *relay and persist encrypted
    CRDT updates* without reading them. Clients periodically compact those updates and write the
@@ -159,11 +174,12 @@ phone with no data loss and no plaintext reaching the server or the disk.
 ### Sync, offline, security
 - **Offline-first:** the vault is cached encrypted on device. Every action works offline;
   writes queue and sync in the background.
-- E2EE for content, titles, tags and attachments using the existing key vault; key setup and
-  recovery reuse the existing flows (QR key transfer, recovery key).
+- E2EE for content, tags and attachments using the existing key vault; key setup and recovery
+  reuse the existing flows (QR key transfer, recovery key). Titles and folder names are file
+  and folder names, visible to the server (constraint 1).
 - Conflict handling: a line-level three-way merge of the Markdown where possible; otherwise
-  keep both versions and show a conflict banner (needs the optimistic-concurrency save token
-  from `search.md`).
+  keep both versions and show a conflict banner. Drive's `content_version` is the save token.
+  An edit always wins over a deletion elsewhere. AtlasKit's `VaultSync` implements this.
 - App lock (Touch ID/Face ID/passcode) on Mac and iOS.
 
 ### Import / export (trust and switching)
