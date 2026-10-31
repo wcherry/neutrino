@@ -14,6 +14,7 @@ import { NoteCardPreview } from './NoteCardPreview';
 import styles from './page.module.css';
 import contextMenuStyles from '../drive/FileContextMenu.module.css';
 import { useListingView } from '@/lib/listingViews';
+import { copyNoteLink } from './copyNoteLink';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -184,9 +185,8 @@ export default function NotesPage() {
     setContextMenu({ id: item.id, title: item.name, x, y });
   }
 
-  function handleCopyLink(id: string) {
-    const url = `${window.location.origin}/notes/editor?id=${id}`;
-    navigator.clipboard.writeText(url).then(
+  function handleCopyLink(id: string, title: string) {
+    copyNoteLink(id, title).then(
       () => toast.success('Link copied to clipboard'),
       () => toast.error('Failed to copy link'),
     );
@@ -266,7 +266,7 @@ export default function NotesPage() {
             setRenaming({ id: contextMenu.id, title: contextMenu.title });
             setContextMenu(null);
           }}
-          onCopyLink={() => handleCopyLink(contextMenu.id)}
+          onCopyLink={() => handleCopyLink(contextMenu.id, contextMenu.title)}
           onDelete={() => deleteMutation.mutate(contextMenu.id)}
         />
       )}

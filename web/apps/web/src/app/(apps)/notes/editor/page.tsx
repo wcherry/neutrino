@@ -30,6 +30,7 @@ import { useFileSync } from '@/hooks/useFileSync';
 import BlockEditor, { Block, type BlockEditorHandle, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles, blocksToMarkdown, blocksToHtml, type NoteLinkTarget } from './blockEditorHelpers';
 import { HamburgerMenu } from './MenuBar';
+import { copyNoteLink } from '../copyNoteLink';
 import { useCommands } from '@neutrino/commands';
 import styles from './page.module.css';
 
@@ -587,6 +588,13 @@ function NoteEditor({ noteId }: { noteId: string }) {
     router.push(`/notes/editor?id=${newNote.id}`);
   }, [blocks, title, currentUser?.id, queryClient, router, toast]);
 
+  const handleCopyLink = useCallback(() => {
+    copyNoteLink(noteId, title).then(
+      () => toast.success('Link copied to clipboard'),
+      () => toast.error('Failed to copy link'),
+    );
+  }, [noteId, title, toast]);
+
   const handleDelete = useCallback(async () => {
     await storageApi.deleteFile(noteId);
     queryClient.invalidateQueries({ queryKey: ['notes'] });
@@ -636,6 +644,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
           onSave={handleManualSave}
           onNewNote={handleNewNote}
           onDuplicate={handleDuplicate}
+          onCopyLink={handleCopyLink}
           onDelete={handleDelete}
           onExport={handleExport}
           onPrint={handlePrint}
