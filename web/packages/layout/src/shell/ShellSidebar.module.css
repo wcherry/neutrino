@@ -238,6 +238,68 @@
   color: var(--text-1);
 }
 
+/* The running build, at the left of the foot row. The ellipsis is on the label so the copy
+   button is never what gets clipped. */
+.version {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.version-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-copy {
+  position: relative;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(6px * var(--radius-scale));
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.version-copy:hover {
+  background: var(--button-bg-hover);
+  color: var(--text-1);
+}
+
+.version-copy:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: 1px;
+}
+
+/* Stacked and cross-faded, so the box never resizes as the icons swap. */
+.copy-icon,
+.check-icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  transition: opacity var(--duration-slow) var(--ease-default);
+}
+
+.check-icon,
+.version-copy[data-copied] .copy-icon {
+  opacity: 0;
+}
+
+.version-copy[data-copied] .check-icon {
+  opacity: 1;
+  color: var(--color-success);
+}
+
 /* A team's pinned resources, under the team (customization roadmap T5). */
 .itemNested {
   height: calc(var(--nav-item-height) - 6px);

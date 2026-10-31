@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Check, Copy, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useShell } from '../AppShell';
 import type { NavItem, NavSection, StorageQuota } from '../Sidebar';
 import { BrandMark, type ShellBrand } from './BrandMark';
@@ -23,7 +23,17 @@ export interface ShellSidebarProps {
   showBrand?: boolean;
   /** Below everything — in the editor frame, the search, notification and account buttons. */
   footer?: React.ReactNode;
+  /**
+   * The running build's short label (`v0.1.42`), shown at the foot. Omitted or empty renders
+   * nothing, so a build with no version to report shows none.
+   */
+  version?: string;
+  /** The long form for the tooltip and the copy button, e.g. `Neutrino v0.1.42 (a1b2c3d)`. */
+  versionTitle?: string;
 }
+
+/** How long the copy button shows its checkmark before fading back. */
+const COPIED_FEEDBACK_MS = 3000;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
@@ -81,8 +91,33 @@ export function ShellSidebar({
   logoHref = '/drive',
   showBrand = false,
   footer,
+  version,
+  versionTitle,
 }: ShellSidebarProps) {
   const { sidebarCollapsed: collapsed, toggleSidebarCollapsed } = useShell();
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Collapsing unmounts the version, and the timer must not set state after that.
+  useEffect(() => () => {
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+  }, []);
+
+  /** Copies the long form: the commit is the half of it that identifies the build in a bug report. */
+  async function copyVersion() {
+    const text = versionTitle ?? version;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // No clipboard (insecure origin, permission refused): no checkmark for a copy that didn't happen.
+      return;
+    }
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+  }
+
   const percent = quota && quota.totalBytes > 0 ? Math.min(100, (quota.usedBytes / quota.totalBytes) * 100) : 0;
   const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
   const collapse = (
@@ -143,6 +178,25 @@ export function ShellSidebar({
           </div>
         )}
         <div className={styles['foot-row']}>
+          {/* The running build, without opening Settings. Hidden on the rail, as the quota is. */}
+          {version && !collapsed && (
+            <div className={styles.version}>
+              <span className={styles['version-label']} title={versionTitle ?? version}>
+                {version}
+              </span>
+              <button
+                type="button"
+                className={styles['version-copy']}
+                data-copied={copied || undefined}
+                onClick={copyVersion}
+                title={copied ? 'Copied' : 'Copy version'}
+                aria-label={copied ? 'Version copied' : 'Copy version'}
+              >
+                <Copy className={styles['copy-icon']} size={13} aria-hidden="true" />
+                <Check className={styles['check-icon']} size={13} aria-hidden="true" />
+              </button>
+            </div>
+          )}
           {footer}
           {(!showBrand || collapsed) && collapse}
         </div>
