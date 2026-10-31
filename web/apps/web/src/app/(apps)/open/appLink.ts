@@ -71,3 +71,15 @@ export function hrefForKind(kind: AppLinkKind, id: string): string | null {
   if (kind === 'file') return null;
   return hrefForMime(id, MIME_FOR_KIND[kind]);
 }
+
+/**
+ * The link to a file, on `origin` (the deployment this page is served from).
+ *
+ * On production the origin is `https://www.getneutrino.app`, so this is exactly the Universal
+ * Link the iOS apps mint (`NeutrinoAppLink.url`), and it opens the owning app on a phone. On any
+ * other deployment it still lands on this deployment's `/open` redirector, where the file lives,
+ * rather than on production, where it doesn't.
+ */
+export function appLinkUrl(kind: AppLinkKind, id: string, origin: string): string {
+  return `${origin.replace(/\/+$/, '')}/open/${kind}/${encodeURIComponent(id)}`;
+}

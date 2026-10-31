@@ -112,6 +112,7 @@ export interface HamburgerMenuProps {
   onSave: () => void;
   onNewNote: () => void;
   onDuplicate: () => void;
+  onCopyLink: () => void;
   onDelete: () => void;
   onExport: (format: 'md' | 'txt') => void;
   onPrint: () => void;
@@ -126,6 +127,7 @@ export function HamburgerMenu({
   onSave,
   onNewNote,
   onDuplicate,
+  onCopyLink,
   onDelete,
   onExport,
   onPrint,
@@ -147,6 +149,7 @@ export function HamburgerMenu({
         { kind: 'separator' },
         { kind: 'action', label: 'Rename',                             action: () => { titleInputRef.current?.focus(); titleInputRef.current?.select(); } },
         { kind: 'action', label: 'Duplicate',                          action: () => onDuplicate() },
+        { kind: 'action', label: 'Copy link',                          action: () => onCopyLink() },
         { kind: 'separator' },
         { kind: 'action', label: 'Save',            shortcut: 'Ctrl+S', action: () => onSave() },
         {
