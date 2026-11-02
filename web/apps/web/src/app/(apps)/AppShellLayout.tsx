@@ -562,6 +562,8 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       brand={brand}
       logoHref={landingHref}
       showBrand={chrome === 'editor'}
+      version={VERSION_LABEL}
+      versionTitle={FULL_VERSION_LABEL ? `Neutrino ${FULL_VERSION_LABEL}` : undefined}
     />
   ) : (
     <Sidebar
