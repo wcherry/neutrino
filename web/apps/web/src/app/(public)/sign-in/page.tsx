@@ -142,6 +142,9 @@ function SignInForm() {
             ← Back to home
           </Link>
         </p>
+        <p className={styles.legal}>
+          <Link href="/terms">Terms of Service</Link> · <Link href="/privacy">Privacy Policy</Link>
+        </p>
       </div>
     </div>
   );
