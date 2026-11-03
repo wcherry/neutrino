@@ -16,7 +16,11 @@ vi.mock('@/lib/driveImages', () => ({
 
 vi.mock('@/app/(apps)/diagrams/editor/diagramSvg', () => ({
   diagramPageToSvg: vi.fn(),
-  fetchDiagramPage: vi.fn(),
+}));
+
+vi.mock('@/components/CanvasEmbeds/useEmbeddedCanvas', () => ({
+  loadDiagramPage: vi.fn(),
+  loadDrawing: vi.fn(),
 }));
 
 import {

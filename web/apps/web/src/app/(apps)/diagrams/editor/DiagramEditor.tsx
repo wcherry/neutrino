@@ -49,6 +49,8 @@ import {
   type SvgBackedDocument,
 } from './io/svgFormat';
 import { resolveFillImages } from './utils/fillImages';
+import { pageToPng, selectionPage, selectionSize } from './io/selectionImage';
+import { writeCanvasClip } from '@/lib/canvasClipboard';
 import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
 import { MermaidPanel } from './developer/MermaidPanel';
 import { AiDiagramPanel } from './ai/AiDiagramPanel';
@@ -706,6 +708,18 @@ export function DiagramEditor() {
         editor.removeConnectors(Array.from(selection.connectorIds));
         setSelection({ shapeIds: new Set(), connectorIds: new Set() });
       }
+    },
+    // The selection as a picture any app can paste, and as a clip Docs and Slides can paste
+    // live. Silent when nothing is selected, so ⌘C on an empty canvas does what it always did.
+    'diagrams.copy': () => {
+      const page = editor.document.pages[editor.activePageIndex];
+      if (!page || !diagramId || selection.shapeIds.size === 0) return;
+      const shapeIds = Array.from(selection.shapeIds);
+      const picked = selectionPage(page, shapeIds);
+      writeCanvasClip(
+        { v: 1, kind: 'diagram', fileId: diagramId, title, pageIndex: editor.activePageIndex, shapeIds, ...selectionSize(picked) },
+        pageToPng(picked),
+      ).catch(() => toast.error('Could not copy the selection to the clipboard'));
     },
     'diagrams.duplicate': () => {
       if (selection.shapeIds.size > 0) {

@@ -304,7 +304,7 @@ export const commentBookmarkName = (n: number): string => `_NxC${n}`;
  * about the schema rather than about any document, so it is derived here
  * instead of being written into the extras.
  */
-export const BLOCK_PLACEHOLDER_KINDS = new Set(['sheetEmbed', 'diagramEmbed']);
+export const BLOCK_PLACEHOLDER_KINDS = new Set(['sheetEmbed', 'diagramEmbed', 'drawingEmbed']);
 
 /**
  * The character style every placeholder run carries.

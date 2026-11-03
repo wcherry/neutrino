@@ -180,6 +180,7 @@ function inlineChildren(
         break;
       case 'sheetEmbed':
       case 'diagramEmbed':
+      case 'drawingEmbed':
         out.push(...embedRuns(node, d, ctx));
         break;
       default:
@@ -278,7 +279,8 @@ function fieldRun(node: DocNode, d: Docx, ctx: WriteContext): ParagraphChild {
  */
 function embedRuns(node: DocNode, d: Docx, ctx: WriteContext): ParagraphChild[] {
   ctx.extras.placeholder(node.type, node.attrs ?? {});
-  const label = String(node.attrs?.title ?? (node.type === 'sheetEmbed' ? 'Embedded sheet' : 'Embedded diagram'));
+  const fallback = { sheetEmbed: 'Embedded sheet', diagramEmbed: 'Embedded diagram', drawingEmbed: 'Embedded drawing' }[node.type];
+  const label = String(node.attrs?.title || fallback || 'Embedded content');
   return [new d.TextRun({ text: `[${label}]`, italics: true, style: PLACEHOLDER_STYLE_ID })];
 }
 
@@ -420,7 +422,8 @@ function blockNode(node: DocNode, d: Docx, ctx: WriteContext, list?: ListContext
 
     case 'sheetEmbed':
     case 'diagramEmbed':
-      // Both are block nodes in the editor's schema, so the placeholder gets a
+    case 'drawingEmbed':
+      // All three are block nodes in the editor's schema, so the placeholder gets a
       // paragraph of its own — `restorePlaceholders` replaces that paragraph
       // rather than its contents, which is what keeps a block node out of an
       // inline position on the way back.

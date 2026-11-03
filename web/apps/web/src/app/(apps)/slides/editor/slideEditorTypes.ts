@@ -1,3 +1,5 @@
+import type { DrawingClipSelection } from '@/lib/canvasClipboard';
+
 export interface TextStyle {
   fontSize: number;
   bold: boolean;
@@ -129,10 +131,27 @@ export interface DiagramElement {
   h: number;
   diagramId: string;
   pageIndex: number;
+  /** Only these shapes, when the element came from a pasted selection; absent is the whole page. */
+  shapeIds?: string[];
   animation?: ElementAnimation;
 }
 
-export type SlideElement = TextElement | ShapeElement | LineElement | SheetEmbedElement | VideoElement | ImageElement | DiagramElement;
+/** A live view of part of a drawing — made by pasting a copied Drawing selection. */
+export interface DrawingElement {
+  id: string;
+  type: 'drawing';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  drawingId: string;
+  title?: string;
+  /** What was copied; absent shows everything drawn. */
+  selection?: DrawingClipSelection;
+  animation?: ElementAnimation;
+}
+
+export type SlideElement = TextElement | ShapeElement | LineElement | SheetEmbedElement | VideoElement | ImageElement | DiagramElement | DrawingElement;
 
 export type SlideBackground =
   | { type: 'color'; value: string }

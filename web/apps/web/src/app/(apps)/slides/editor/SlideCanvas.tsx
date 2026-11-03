@@ -2,32 +2,36 @@
 
 'use client';
 
-import React, { useEffect, useState as useStateHook, useRef, useState } from 'react';
-import type { Slide, SlideElement, TextElement, ShapeElement, LineElement, SheetEmbedElement, VideoElement, ImageElement, DiagramElement } from './slideEditorTypes';
+import React, { useMemo, useRef, useState } from 'react';
+import type { Slide, SlideElement, TextElement, ShapeElement, LineElement, SheetEmbedElement, VideoElement, ImageElement, DiagramElement, DrawingElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
 import { getVideoEmbedInfo } from './slideEditorHelpers';
 import { useSlideBackgroundStyle } from './useSlideBackgroundStyle';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
 import type { CellValue } from '@neutrino/sheet-embed';
 import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
-import { fetchDiagramPage } from '@/app/(apps)/diagrams/editor/diagramSvg';
-import type { DiagramPage } from '@/app/(apps)/diagrams/types';
+import { selectionPage } from '@/app/(apps)/diagrams/editor/io/selectionImage';
+import { useEmbeddedDiagramPage, useEmbeddedDrawing } from '@/components/CanvasEmbeds/useEmbeddedCanvas';
+import { LazyEmbeddedDrawingView as EmbeddedDrawingView } from '@/components/CanvasEmbeds/LazyEmbeddedDrawingView';
 import styles from './page.module.css';
 import { DriveImage } from '@/components/DriveImage';
 
+// Both read through the shared embed loaders, which decrypt: this element used to fetch the
+// diagram body as plaintext, so every encrypted diagram on a slide drew as an empty box.
 function DiagramSlideElement({ el }: { el: DiagramElement }) {
-  const [page, setPage] = useStateHook<DiagramPage | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchDiagramPage(el.diagramId, el.pageIndex)
-      .then((p) => { if (!cancelled) setPage(p); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [el.diagramId, el.pageIndex, setPage]);
-
+  const loaded = useEmbeddedDiagramPage(el.diagramId, el.pageIndex);
+  const page = useMemo(
+    () => (loaded.status === 'ready' ? selectionPage(loaded.value, el.shapeIds) : null),
+    [loaded, el.shapeIds],
+  );
   if (!page) return <div style={{ width: '100%', height: '100%', background: 'var(--palette-sky-98-2)', borderRadius: 'calc(4px * var(--radius-scale))' }} />;
   return <EmbeddedDiagramView page={page} width="100%" height="100%" />;
+}
+
+function DrawingSlideElement({ el }: { el: DrawingElement }) {
+  const loaded = useEmbeddedDrawing(el.drawingId);
+  if (loaded.status !== 'ready') return <div style={{ width: '100%', height: '100%', background: 'var(--palette-sky-98-2)', borderRadius: 'calc(4px * var(--radius-scale))' }} />;
+  return <EmbeddedDrawingView drawing={loaded.value} selection={el.selection ?? null} />;
 }
 
 // ── ShapeRenderer ─────────────────────────────────────────────────────────────
@@ -349,6 +353,7 @@ export default function SlideCanvas({
   return (
     <div
       ref={canvasRef}
+      data-slide-canvas=""
       className={`${styles.slideCanvas} ${isDragOver ? styles.slideCanvasDragOver : ''}`}
       style={backgroundStyle}
       onClick={onClickBackground}
@@ -778,6 +783,39 @@ export default function SlideCanvas({
               onClick={(e) => e.stopPropagation()}
             >
               <DiagramSlideElement el={diagEl} />
+              {isSelected && RESIZE_HANDLES.map((h) => (
+                <div
+                  key={h.id}
+                  className={styles.resizeHandle}
+                  style={{ top: h.top, left: h.left, cursor: h.cursor }}
+                  onMouseDown={(e) => handleResizeMouseDown(e, el.id, el, h.id)}
+                />
+              ))}
+            </div>
+          );
+        }
+
+        if (el.type === 'drawing') {
+          const drawEl = el as DrawingElement;
+          return (
+            <div
+              key={el.id}
+              className={`${styles.slideElement} ${isSelected ? styles.slideElementSelected : ''}`}
+              style={{
+                left: `${el.x}%`,
+                top: `${el.y}%`,
+                width: `${el.w}%`,
+                height: `${el.h}%`,
+                cursor: 'move',
+                overflow: 'hidden',
+                background: 'var(--palette-gray-100)',
+                border: '1px solid var(--palette-sky-91)',
+                borderRadius: 'calc(4px * var(--radius-scale))',
+              }}
+              onMouseDown={(e) => handleMouseDown(e, el.id, el)}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DrawingSlideElement el={drawEl} />
               {isSelected && RESIZE_HANDLES.map((h) => (
                 <div
                   key={h.id}

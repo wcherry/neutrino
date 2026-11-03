@@ -56,7 +56,9 @@ import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-emb
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
 import { InsertImageDialog } from '@/components/InsertImageDialog';
-import { driveImageRef } from '@/lib/driveImages';
+import { driveImageRef, uploadAttachment } from '@/lib/driveImages';
+import { useRichPaste } from '@/hooks/useRichPaste';
+import type { CanvasClip } from '@/lib/canvasClipboard';
 import { InsertDiagramDialog } from './InsertDiagramDialog';
 import { HamburgerMenu } from './MenuBar';
 
@@ -87,7 +89,7 @@ import {
   makeDefaultMaster,
   uid,
 } from './slideEditorConstants';
-import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo } from './slideEditorHelpers';
+import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo, fitOnSlide } from './slideEditorHelpers';
 import { exportAsPptx, exportAsPptxBytes } from './pptxExport';
 import { exportAsPdf } from './pdfExport';
 import FillPicker from './FillPicker';
@@ -1204,11 +1206,12 @@ export function SlideEditor() {
 
   // ── Image operations ──────────────────────────────────────────────────────
 
-  function addImage(src: string, driveFileId?: string) {
+  function addImage(src: string, driveFileId?: string, box?: { x: number; y: number; w: number; h: number }) {
     const el: ImageElement = {
       id: uid(),
       type: 'image',
       x: 10, y: 10, w: 80, h: 70,
+      ...box,
       src,
       driveFileId,
       opacity: 1,
@@ -1224,6 +1227,27 @@ export function SlideEditor() {
   }
 
   // ── Diagram embed operations ──────────────────────────────────────────────
+
+  /**
+   * A pasted Diagrams or Drawing selection as a live element, sized to the copied picture's
+   * shape (element sizes are percentages of a 16:9 slide) and centred.
+   */
+  function addCanvasClip(clip: CanvasClip) {
+    const box = fitOnSlide(clip.width / clip.height);
+    const el: SlideElement = clip.kind === 'diagram'
+      ? { id: uid(), type: 'diagram', ...box, diagramId: clip.fileId, pageIndex: clip.pageIndex, shapeIds: clip.shapeIds }
+      : { id: uid(), type: 'drawing', ...box, drawingId: clip.fileId, title: clip.title, selection: clip.selection };
+    updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+    setSelectedElementId(el.id);
+  }
+
+  /** A pasted picture: stored as an encrypted attachment and placed at its own shape. */
+  async function addPastedPicture(file: File) {
+    const bitmap = await createImageBitmap(file).catch(() => null);
+    const stored = await uploadAttachment(file);
+    addImage(driveImageRef(stored.id), stored.id, bitmap ? fitOnSlide(bitmap.width / bitmap.height) : undefined);
+    bitmap?.close();
+  }
 
   function addDiagram(diagramId: string) {
     const el: DiagramElement = {
@@ -1305,15 +1329,27 @@ export function SlideEditor() {
     }, []),
   });
 
+  const { handlePaste: handleRichPaste, dialog: canvasPasteDialog } = useRichPaste({
+    sheetPaste: handleSheetPaste,
+    onLiveCanvas: (clip) => addCanvasClip(clip),
+    onPicture: (file) => addPastedPicture(file),
+  });
+
   useEffect(() => {
     const listener = (e: ClipboardEvent) => {
-      handleSheetPaste(e).then((consumed) => {
-        if (consumed) e.preventDefault();
-      });
+      // Typing in a field that is not on the slide (speaker notes, the title, a dialog) keeps
+      // the browser's paste: an image or a diagram landing on the slide from there would be a
+      // surprise. A text box on the slide is on the slide, so its paste is routed here.
+      const target = e.target instanceof Element ? e.target : null;
+      const typing = target?.closest('input, textarea, [contenteditable="true"]');
+      if (typing && !typing.closest('[data-slide-canvas]')) return;
+      // Synchronously: a `preventDefault` after an await is too late to stop a text box pasting
+      // the clipboard's text as well.
+      if (handleRichPaste(e)) e.preventDefault();
     };
     document.addEventListener('paste', listener);
     return () => document.removeEventListener('paste', listener);
-  }, [handleSheetPaste]);
+  }, [handleRichPaste]);
 
   function deleteElement(elementId: string) {
     updateCurrentSlide((s) => ({ ...s, elements: s.elements.filter((e) => e.id !== elementId) }));
@@ -2683,6 +2719,8 @@ export function SlideEditor() {
         <div className={styles.statusBarSpacer} />
         <ZoomSlider value={zoom} onChange={setZoom} />
       </div>
+
+      {canvasPasteDialog}
 
       {sheetPasteDialogState && (
         <PasteChoiceDialog

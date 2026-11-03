@@ -145,6 +145,7 @@ export const COMMANDS = [
   { id: 'diagrams.undo', title: 'Undo', app: 'diagrams', defaultKeys: UNDO },
   { id: 'diagrams.redo', title: 'Redo', app: 'diagrams', defaultKeys: REDO },
   { id: 'diagrams.delete', title: 'Delete selection', app: 'diagrams', defaultKeys: DELETE },
+  { id: 'diagrams.copy', title: 'Copy', app: 'diagrams', defaultKeys: ['Mod+C'], palette: false },
   { id: 'diagrams.duplicate', title: 'Duplicate', app: 'diagrams', defaultKeys: ['Mod+D'] },
   { id: 'diagrams.selectAll', title: 'Select all', app: 'diagrams', defaultKeys: ['Mod+A'] },
   { id: 'diagrams.tool.select', title: 'Select tool', app: 'diagrams', defaultKeys: ['V'] },

@@ -36,6 +36,12 @@ export interface PasteDialogState {
  * The handler returns `true` when it consumed the event (caller should call
  * `preventDefault`), `false` when the event should fall through to default
  * paste handling.
+ *
+ * It is **synchronous**, and has to be. It used to be `async`, and both callers
+ * called `preventDefault` in its `.then()` — a microtask after the event had
+ * been dispatched, by which time the browser (a slide's text box) or the
+ * editor's own handler (ProseMirror in Docs) had already pasted the selection's
+ * tab-separated text. The dialog then offered to paste a second copy.
  */
 export function useSheetPasteInterceptor(
   options: UseSheetPasteInterceptorOptions,
@@ -45,7 +51,7 @@ export function useSheetPasteInterceptor(
   const [dialogState, setDialogState] = useState<PasteDialogState | null>(null);
 
   const handlePaste = useCallback(
-    async (e: ClipboardEvent): Promise<boolean> => {
+    (e: ClipboardEvent): boolean => {
       const data = e.clipboardData;
       if (!data) return false;
 

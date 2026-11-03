@@ -1,15 +1,12 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Node, mergeAttributes } from '@tiptap/react';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { ReactNodeViewProps } from '@tiptap/react';
-import { diagramsApi } from '@neutrino/api-diagrams';
-import { storageApi } from '@/lib/api';
-import { decryptFile } from '@neutrino/e2e-crypto';
-import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { useEmbeddedDiagramPage } from '@/components/CanvasEmbeds/useEmbeddedCanvas';
 import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
-import type { DiagramDocument, DiagramPage } from '@/app/(apps)/diagrams/types';
+import { selectionPage } from '@/app/(apps)/diagrams/editor/io/selectionImage';
 import { ColorPicker } from '@neutrino/ui';
 
 // ---------------------------------------------------------------------------
@@ -291,45 +288,18 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
   const bgColor  = rawAttrs.bgColor  ?? '#ffffff';
   const showGrid = rawAttrs.showGrid === 'true';
 
-  const [page, setPage] = useState<DiagramPage | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // `shapeIds` is set when the embed came from a pasted selection: only those shapes are
+  // drawn. Absent — every embed made through Insert diagram — is the whole page.
+  const shapeIdsAttr = rawAttrs.shapeIds;
+  const loaded = useEmbeddedDiagramPage(diagramId, pageIndex);
+  const page = useMemo(
+    () => (loaded.status === 'ready' ? selectionPage(loaded.value, shapeIdsAttr ? shapeIdsAttr.split(',').filter(Boolean) : null) : null),
+    [loaded, shapeIdsAttr],
+  );
+  const error = loaded.status === 'error' ? loaded.message : null;
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showProps, setShowProps] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  // Resolve the DEK so we can decrypt E2EE diagram content, mirroring DiagramEditor.
-  const { dekRef, dekResolved } = useEncryptedDocumentContent({
-    id: diagramId ?? '',
-    filename: 'diagram.json',
-  });
-
-  useEffect(() => {
-    if (!diagramId || !dekResolved) return;
-    let cancelled = false;
-    diagramsApi.getDiagram(diagramId)
-      .then(async (meta) => {
-        if (cancelled) return;
-        if (!meta.contentUrl) return;
-        let raw: string;
-        if (dekRef.current) {
-          const blob = await storageApi.downloadFile(diagramId);
-          const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-          const plainBytes = decryptFile(cipherBytes, dekRef.current);
-          raw = new TextDecoder().decode(plainBytes);
-        } else {
-          const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') ?? '' : '';
-          const res = await fetch(meta.contentUrl, { headers: { Authorization: `Bearer ${token}` } });
-          if (!res.ok || cancelled) return;
-          raw = await res.text();
-        }
-        if (cancelled) return;
-        const doc = JSON.parse(raw) as DiagramDocument;
-        const p = doc.pages[pageIndex] ?? doc.pages[0] ?? null;
-        if (!cancelled) setPage(p);
-      })
-      .catch(() => { if (!cancelled) setError('Could not load diagram'); });
-    return () => { cancelled = true; };
-  }, [diagramId, pageIndex, dekResolved, dekRef]);
 
   // Close context menu on any outside click.
   useEffect(() => {
@@ -458,6 +428,8 @@ export const DiagramEmbedExtension = Node.create({
       height:     { default: '280' },
       bgColor:    { default: '#ffffff' },
       showGrid:   { default: 'false' },
+      /** Comma-separated shape ids, when only part of the page is embedded. */
+      shapeIds:   { default: null },
     };
   },
 

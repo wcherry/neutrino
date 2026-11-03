@@ -126,3 +126,42 @@ test.describe('Sheet embed paste into doc', () => {
     await expect(page.getByTestId('sheet-embed')).toBeVisible({ timeout: 10_000 });
   });
 });
+
+/**
+ * What Sheets' copy really puts on the clipboard — tab-separated text beside the
+ * selection — and a real `ClipboardEvent`, rather than a fake that carries only
+ * the selection. With only the selection there is nothing else to paste, so the
+ * spec above could not see that the doc took the text as well: the interceptor
+ * decided in a promise, `preventDefault` came after ProseMirror had pasted, and
+ * every paste into a doc arrived twice.
+ */
+test('a real sheet copy pastes into a doc once, after the choice', async ({ page, request }) => {
+  await registerAndLogin(request, page);
+  await createDoc(page);
+
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible({ timeout: 10_000 });
+  await editor.click();
+
+  const payload = JSON.stringify({
+    spreadsheetId: 'fake-spreadsheet-id', sheetId: '0',
+    startRow: 0, startCol: 0, endRow: 1, endCol: 1,
+    previewData: [['Q1 Revenue', 'Q2 Revenue'], ['12500', '15800']],
+  });
+  await page.evaluate(({ mime, payloadStr }) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'Q1 Revenue\tQ2 Revenue\n12500\t15800');
+    dt.setData(mime, payloadStr);
+    document.querySelector('.ProseMirror')!.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }),
+    );
+  }, { mime: SHEET_SELECTION_MIME, payloadStr: payload });
+
+  await expect(page.getByTestId('paste-choice-dialog')).toBeVisible({ timeout: 5_000 });
+  await expect(editor).not.toContainText('Q1 Revenue');
+
+  await page.getByTestId('paste-as-table-btn').click();
+  await expect(editor.locator('table')).toBeVisible({ timeout: 5_000 });
+  const text = await editor.innerText();
+  expect(text.split('Q1 Revenue').length - 1, 'the selection appears once').toBe(1);
+});
