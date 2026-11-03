@@ -1,8 +1,8 @@
 # @neutrino/atlas
 
-Atlas Markdown for the web client: the dialect every Neutrino Atlas page is written in
-(`specs/atlas-markdown/SPEC.md`), implemented to agree exactly with AtlasKit, the Swift
-implementation the Mac and iOS apps use.
+Neutrino Atlas for the web client, below the UI: Atlas Markdown, the dialect every page is
+written in (`specs/atlas-markdown/SPEC.md`), and the vault's data and sync. Both are implemented
+to agree exactly with AtlasKit, the Swift package the Mac and iOS apps use.
 
 - `parse(source)` → the tree (SPEC §3–§4), plain objects shaped like the corpus's `ast.json`.
 - `extract(tree)` → what a page contributes to the index (§6).
@@ -13,7 +13,31 @@ implementation the Mac and iOS apps use.
   rewrites (§8.2).
 - `serializeCanonical` → canonical form (§8.3), with §8.3.1's escaping.
 
-## How it agrees with AtlasKit
+Vault data (SPEC-free: this is transport and storage), ported from AtlasKit's `Vault`,
+`VaultSync`, `ThreeWayMerge` and `DriveVaultRemote` so that a vault synced by the web and by the
+Mac behaves the same:
+
+- `Vault` → the local copy: every file's content, its last-synced base, and its sync record,
+  kept as sealed blobs plus a journal (`VaultStorage`).
+- `VaultSync` → two-way sync with Drive that never discards a change: line merges
+  (`threeWayMerge`), conflicted copies, edits winning over deletions elsewhere.
+- `DriveVaultRemote` → the vault as a Drive folder tree, every file end-to-end encrypted with
+  `@neutrino/e2e-crypto` and its keys from the session keyring.
+- `LocalVault` → a vault's copy in this browser: `IndexedDBStorage`, sealed with `DeviceSealer`
+  (AES-GCM under a non-extractable WebCrypto key kept in IndexedDB), and held by one tab at a
+  time through the Web Locks API. No plaintext reaches the disk, and nothing but Drive file and
+  folder names reaches the server.
+
+## How the vault agrees with AtlasKit
+
+`sync/` is a line-for-line port. Its tests are AtlasKit's: the scenarios, and the property that
+random edits, moves, deletions and interrupted syncs on three devices converge without losing
+an edit (`vaultSync.test.ts`; `ATLAS_SYNC_SEEDS` and `ATLAS_SYNC_OPS` lengthen the run).
+`driveVaultRemote.test.ts` runs the remote against an in-memory Drive API with real
+encryption; `scripts/test-against-server.sh` runs `driveIntegration.test.ts` against a real
+server built from this repo.
+
+## How the parser agrees with AtlasKit
 
 It is a port of AtlasCore's parser pipeline: `preprocess.ts` (`SourcePreprocessor`),
 `convert.ts` (`CMarkConverter`), `passes.ts` (`ExtensionPasses`), and the writer and edits.

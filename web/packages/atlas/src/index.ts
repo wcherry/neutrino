@@ -13,3 +13,18 @@ export { isValidTag, matchKey } from './tags';
 export type { TopLevelBlock } from './convert';
 export type { Align, CalloutFold, MarkdownNode, NodeOf, WikiLinkReference } from './tree';
 export { childrenOf, plainText } from './tree';
+export { threeWayMerge } from './sync/merge';
+export { Vault, MemoryStorage, VaultStorageError, syncRecord, type SyncRecord, type VaultStorage } from './sync/vault';
+export {
+  VaultSync,
+  VaultRemoteError,
+  emptySyncReport,
+  isQuiet,
+  type RemoteFile,
+  type SyncReport,
+  type VaultRemote,
+  type VaultRemoteErrorCode,
+} from './sync/vaultSync';
+export { DeviceSealer, IndexedDBStorage, acquireVaultLock, type Sealer } from './storage/indexedDB';
+export { LocalVault, VaultInUseError } from './storage/localVault';
+export { DriveVaultRemote } from './drive/driveVaultRemote';

@@ -507,6 +507,15 @@ importers:
 
   web/packages/atlas:
     dependencies:
+      '@neutrino/api-core':
+        specifier: workspace:*
+        version: link:../api-core
+      '@neutrino/api-drive':
+        specifier: workspace:*
+        version: link:../api-drive
+      '@neutrino/e2e-crypto':
+        specifier: workspace:*
+        version: link:../e2e-crypto
       mdast-util-from-markdown:
         specifier: ^2.0.2
         version: 2.1.0
@@ -553,6 +562,9 @@ importers:
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.43
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
