@@ -1,3 +1,4 @@
+import { storageIndexCache, type IndexCacheStore } from '../indexing/indexCache';
 import { Vault } from '../sync/vault';
 import { DeviceSealer, IndexedDBStorage, acquireVaultLock } from './indexedDB';
 
@@ -39,6 +40,11 @@ export class LocalVault {
       await release();
       throw e;
     }
+  }
+
+  /** The vault's index cache, sealed in its local copy (`VaultWorkspace.open`). */
+  get indexCache(): IndexCacheStore {
+    return storageIndexCache(this.storage);
   }
 
   /** Closes the local copy and lets another tab open it; resolves once it can. */

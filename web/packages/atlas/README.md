@@ -1,11 +1,8 @@
 # @neutrino/atlas
 
 Neutrino Atlas for the web client, below the UI: Atlas Markdown, the dialect every page is
-written in (`specs/atlas-markdown/SPEC.md`), and the vault's data and sync. Both are implemented
-to agree exactly with AtlasKit, the Swift package the Mac and iOS apps use.
-Atlas Markdown for the web client: the dialect every Neutrino Atlas page is written in
-(`specs/atlas-markdown/SPEC.md`), implemented to agree exactly with AtlasKit, the Swift
-implementation the Mac and iOS apps use.
+written in (`specs/atlas-markdown/SPEC.md`); the vault's data and sync; and its index. All three
+are implemented to agree exactly with AtlasKit, the Swift package the Mac and iOS apps use.
 
 - `parse(source)` → the tree (SPEC §3–§4), plain objects shaped like the corpus's `ast.json`.
 - `extract(tree)` → what a page contributes to the index (§6).
@@ -31,6 +28,18 @@ Mac behaves the same:
   time through the Web Locks API. No plaintext reaches the disk, and nothing but Drive file and
   folder names reaches the server.
 
+The index, ported from AtlasKit's `VaultIndex` and `VaultWorkspace`:
+
+- `VaultIndex` → what every page contributes, in memory: backlinks and outgoing links,
+  unresolved targets, tags, headings, unlinked mentions, full-text search with snippets, and the
+  quick switcher's fuzzy match (also `matchingHeadings` and `fuzzyMatching` for other lists).
+- `VaultWorkspace` → an open vault: its files, index and sync together, so the index never falls
+  behind. Writes, page creation, moves that rewrite the links to what moved, deletions, and sync
+  passes; edits made during a pass are held back and written after it, as AtlasKit does.
+- `storageIndexCache` (`LocalVault.indexCache`) → what was extracted from each page, sealed in
+  the vault's copy, so reopening a vault parses only the pages that changed. The Mac rebuilds
+  its index on every open, but parsing in the browser is slower: about 4 s for 1,200 pages.
+
 ## How the vault agrees with AtlasKit
 
 `sync/` is a line-for-line port. Its tests are AtlasKit's: the scenarios, and the property that
@@ -40,8 +49,20 @@ an edit (`vaultSync.test.ts`; `ATLAS_SYNC_SEEDS` and `ATLAS_SYNC_OPS` lengthen t
 encryption; `scripts/test-against-server.sh` runs `driveIntegration.test.ts` against a real
 server built from this repo.
 
+## How the index agrees with AtlasKit
+
+AtlasKit's index is SQLite with FTS5. Here it's maps, answering in SQLite's orders (rows by
+rowid, text by code point, `LIKE` ignoring case for ASCII only), and `indexing/fts.ts` is a port
+of FTS5 itself: the `unicode61 remove_diacritics 2` tokenizer with SQLite's case folding and
+diacritic tables, prefix and phrase matching, `bm25(10.0, 5.0, 1.0)` and `snippet()`. Which
+characters count as letters comes from SQLite's own Unicode tables too
+(`scripts/gen-fts5-token-chars.py` writes them from an SQLite amalgamation); they differ from the
+browser's mostly on emoji. `vaultIndex.test.ts` and `vaultWorkspace.test.ts` are AtlasKit's tests.
+Run against AtlasKit on 1,212 real Markdown files, with several hundred searches, switcher
+queries and mention lookups, before and after 366 random renames, removals and edits, every
+answer was the same, down to the order of results and the text and highlights of each snippet.
+
 ## How the parser agrees with AtlasKit
-## How it agrees with AtlasKit
 
 It is a port of AtlasCore's parser pipeline: `preprocess.ts` (`SourcePreprocessor`),
 `convert.ts` (`CMarkConverter`), `passes.ts` (`ExtensionPasses`), and the writer and edits.
