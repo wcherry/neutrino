@@ -233,9 +233,42 @@ for (const name of manifest.resolve ?? []) {
   }
 }
 
+// §7, "Headings and block ids": the text written after `#`, and the key headings are matched by.
+const headingLinkText = (text) => text.replace(/[\[\]|^]/g, '').split(/\s+/).filter(Boolean).join(' ')
+const headingKey = (text) => headingLinkText(text).normalize('NFC').toLowerCase()
+
+for (const name of manifest.anchors ?? []) {
+  const where = `anchors/${name}.json`
+  const fx = JSON.parse(read('anchors', `${name}.json`))
+  const lines = fx.page.split('\n')
+  for (const c of fx.anchors) {
+    const label = c.blockId != null ? `^${c.blockId}` : JSON.stringify(c.heading)
+    if ((c.heading == null) === (c.blockId == null)) fail(where, `${label}: give a heading or a blockId`)
+    if (c.expect === null) continue
+    if (!lines.includes(c.expect)) { fail(where, `${label}: ${JSON.stringify(c.expect)} is not a line of the page`); continue }
+    if (c.blockId != null) {
+      if (!c.expect.endsWith(` ^${c.blockId}`)) fail(where, `${label}: the line it names doesn't carry the id`)
+      continue
+    }
+    // The heading's plain text, near enough without a parser: container and heading markers off, emphasis markers out.
+    const text = c.expect.replace(/^(>\s?)*/, '').replace(/^#{1,6}\s+/, '').replace(/\*\*|__|\*|`/g, '')
+    if (!/^(>\s?)*#{1,6}\s/.test(c.expect)) fail(where, `${label}: ${JSON.stringify(c.expect)} is not a heading`)
+    else if (headingKey(text) !== headingKey(c.heading)) fail(where, `${label}: its key doesn't match ${JSON.stringify(text)} per §7`)
+    else {
+      const first = lines.find((l) => /^(>\s?)*#{1,6}\s/.test(l) &&
+        headingKey(l.replace(/^(>\s?)*/, '').replace(/^#{1,6}\s+/, '').replace(/\*\*|__|\*|`/g, '')) === headingKey(c.heading))
+      if (first !== c.expect) fail(where, `${label}: the first heading that matches is ${JSON.stringify(first)}, not ${JSON.stringify(c.expect)}`)
+    }
+  }
+  for (const c of fx.headingLinks ?? []) {
+    const got = headingLinkText(c.text)
+    if (got !== c.expect) fail(where, `a link to the heading ${JSON.stringify(c.text)} is written ${JSON.stringify(got)} per §7, fixture says ${JSON.stringify(c.expect)}`)
+  }
+}
+
 if (errors.length) {
   console.error(errors.join('\n'))
   console.error(`\n${errors.length} problem(s) in the Atlas Markdown corpus`)
   process.exit(1)
 }
-console.log(`Atlas Markdown corpus OK: ${manifest.cases.length} cases, ${(manifest.resolve ?? []).length} resolve fixture(s), spec ${manifest.specVersion}`)
+console.log(`Atlas Markdown corpus OK: ${manifest.cases.length} cases, ${(manifest.resolve ?? []).length} resolve fixture(s), ${(manifest.anchors ?? []).length} anchors fixture(s), spec ${manifest.specVersion}`)

@@ -1,7 +1,7 @@
 # Atlas Markdown — Specification v1
 
-**Status:** Draft (`1.0.0-draft.4`)
-**Date:** 2026-10-29
+**Status:** Draft (`1.0.0-draft.5`)
+**Date:** 2026-11-02
 **Roadmap:** [`agent_docs/neutrino-atlas.md`](../../agent_docs/neutrino-atlas.md), constraint 3
 
 Every Neutrino Atlas page is a Markdown file, and three independent editors read and write those
@@ -208,7 +208,7 @@ alias     = *( any char except "[", "]", line ending )
 
 `"!" wikiLink`, with the same grammar, fields and rules as §4.2. `type` is `"embed"`. For an
 image or other attachment, `alias` holds the display hint verbatim (`![[photo.png|300]]` →
-`alias: "300"`). v1 does not interpret it further.
+`alias: "300"`). The tree keeps it as written; §12.1 says how an editor sizes the image by it.
 
 ### 4.4 Tags — `tag`
 
@@ -413,6 +413,27 @@ This lets a writer pick a target that means the same thing everywhere.
 5. **No match** means the link is unresolved. It renders as a "create page" link. Creating a page
    from it uses the target as the title, in the vault's new-page folder (default: root).
 
+**Headings and block ids.** A link with a `heading` or `blockId` (§4.2) resolves to its page
+by the rules above, and then to a place in that page:
+- A `blockId` names the block carrying `^id` (§4.6): the list item that ends with it, or
+  otherwise the block.
+- A `heading` names the **first** heading in document order whose *heading key* equals the
+  link's. Headings anywhere count, including those inside quotes, callouts and list items.
+- The **heading key** of a text: remove every `[`, `]`, `|` and `^`, replace each run of
+  whitespace with one space, trim, then normalise as in rule 1 (NFC, then case folding). A
+  heading's text is its plain text (§6). So `[[Plan#risks open]]` names `## Risks [open]`.
+- An inner `#` is compared as written (`[[Page#C# notes]]` names `## C# notes`); nested-heading
+  paths are reserved (§4.2).
+- A heading or id the page doesn't have leaves the link resolved to the page: an editor opens
+  the page at its top.
+
+**Writing heading links.** An editor writing a link to a heading writes the heading's plain text
+with `[`, `]`, `|` and `^` removed and each run of whitespace as one space, so that the link
+survives its own syntax: `## Risks [open]` is linked as `[[Plan#Risks open]]`. Obsidian writes
+heading links the same way.
+
+The `anchors/` fixtures (§9.1) pin both.
+
 **Writing links.** When an editor inserts a link to a file, it MUST write the first of these
 that resolves to that file:
 1. the bare name;
@@ -586,6 +607,8 @@ specs/atlas-markdown/
       extract.json            expected extract record (§6)
       canonical.md            OPTIONAL — canonical serialization of ast.json when it differs from input.md
     resolve/<name>.json       link-resolution fixtures (§7)
+    anchors/<name>.json       heading and block-id fixtures (§7): one page, the place each
+                              target names, and how heading links are written
   check.mjs                   checks the corpus is internally consistent (no parser involved)
 ```
 
@@ -601,6 +624,10 @@ For every case:
 | **E** (extract) | `extract(parse(input.md))` equals `extract.json`. Arrays are compared in order. |
 
 For every resolve fixture, each case's `expect` (a vault path, or `null`) MUST match.
+
+For every anchors fixture, each `anchors` case names a `heading` or a `blockId` in `page`; its
+`expect` is the whole source line on which the place it names starts, or `null` for none. Each
+`headingLinks` case gives a heading's plain text and the `expect`ed text written after `#`.
 
 An implementation **conforms to v1** when it passes every check on every case in a corpus
 whose `manifest.json` says `"specVersion": "1.x.y"`.
@@ -652,3 +679,53 @@ exist.
 2. **Spaces, not tabs**, for nested lists in canonical form (§10).
 3. **Pandoc's `$` rule** for inline math (§4.8), which avoids false positives on prices.
 4. **Plural-only** frontmatter keys (`tags`, `aliases`).
+
+---
+
+## 12. Rendering
+
+The sections above decide what a page *is*: its tree, what it contributes to the index, where
+its links go and which bytes are written. This one covers how an editor *shows* a few things,
+where the three editors should look alike and where showing them wrongly would leak or break
+something. It changes no tree, extract or resolution, and the corpus does not test it.
+
+### 12.1 Images
+
+- An `embed` of an attachment with an image extension (`png`, `jpg`, `jpeg`, `gif`, `webp`,
+  `heic`, `heif`, `tif`, `tiff`, `bmp`), alone in its paragraph apart from whitespace, SHOULD
+  show as the image. So SHOULD an `image` whose `url`, percent-decoded, resolves (§7) to such an
+  attachment. Anywhere else (inside a sentence, a list item or a table) they show as links.
+- **Width hint.** An embed's `alias` of decimal digits `N`, or `NxM`, sets the image's display
+  width to `N` points (CSS pixels on the web). The height follows the image's proportions, and
+  the image is never wider than the editor. Any other alias doesn't size it.
+- **Web images.** An `image` whose `url` has a URI scheme, or starts with `//`, MUST NOT be
+  fetched, except as §12.2 allows. Fetching it would tell a third party which page is open.
+  It shows as a link.
+- Image bytes come from the vault's own encrypted copy and are decrypted in memory. Showing an
+  image MUST NOT write it to disk in plaintext.
+
+### 12.2 Links to Neutrino files
+
+A **Neutrino app link** is `https://www.getneutrino.app/open/<kind>/<id>` (the host
+`getneutrino.app` too, and the same path on the server the client signs in to), where `kind`
+is `note`, `doc`, `sheet`, `slide`, `diagram`, `drawing` or `file`, and `id` is a Drive file id.
+The web's "Copy link" puts one on the clipboard as `text/plain`, with an HTML `<a>` carrying
+the file's title.
+
+- **Chip.** A `link` whose `url` is a Neutrino app link SHOULD show as a chip: an icon for its
+  `kind` before the link text. Activating it opens the file in its Neutrino app.
+- **Preview.** An `image` whose `url` is a Neutrino app link, alone in its paragraph, SHOULD
+  show the file's picture: its Drive cover thumbnail, or for an image file the image itself,
+  decrypted in memory. It is fetched from the user's own server with their session, which tells
+  no third party anything. A file with neither shows as a chip. It MUST NOT be loaded as an
+  image URL.
+- **Switching.** An editor MAY offer to show a link as a preview and back. That adds or removes
+  the `!`. A preview needs a paragraph of its own, so a link inside a sentence moves to a new
+  paragraph after it.
+- **Writing.** A link an editor inserts to a Drive file is `[Name](<origin>/open/<kind>/<id>)`,
+  with `<origin>` the server the client signs in to. `Name` is the file's name; for `note`,
+  `doc`, `sheet` and `slide` its extension is dropped. Every `\`, `[`, `]`, `*`, `_` and `` ` ``
+  in it is backslash-escaped.
+
+An editor that doesn't implement this section still reads such pages correctly: a chip is a
+link, and a preview is an image it must not fetch (§12.1), so it shows as a link.
