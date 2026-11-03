@@ -21,7 +21,7 @@ linked and kept.
 | Audience | Individual PKM first | Team features (shared vaults, permissions, real-time co-editing) come in Phase 2. |
 | Platform order | **Desktop → iOS → Web → Android** | Desktop is the primary surface and must work offline. Every other client syncs against the same encrypted vault. |
 | Desktop stack | **Native** (SwiftUI on macOS) | Matches `neutrino_drive_mac_desktop`; shares Swift code with iOS. |
-| Editor | **Native editor** on each platform | macOS and iOS share one Swift editor (TextKit 2); web uses Tiptap; Android uses Compose. Three editors must agree on one Markdown dialect (see constraint 3). |
+| Editor | **Native editor** on each platform | macOS and iOS share one Swift editor (TextKit 2); web uses CodeMirror 6; Android uses Compose. Three editors must agree on one Markdown dialect (see constraint 3). |
 | Storage | **Markdown files live on the server** | Every page is an encrypted `.md` file in Drive. Devices keep only an encrypted cache for offline use, with no plaintext folder on disk. Markdown is the canonical format on every platform. |
 | Monetisation | **No paid tier, no feature gating** | Every feature ships to every user; no feature-flag tiering to design. |
 | Shared Swift code | **New `AtlasKit` package** on top of a macOS-enabled `NeutrinoShared` | Editor, parser, index and sync live outside `neutrino_shared_ios`, so editor changes don't rebuild the seven existing iOS apps. Auth, keychain and crypto come from `NeutrinoShared` on both Mac and iOS. Prerequisite done: [neutrino_drive_mac_desktop#35](https://github.com/wcherry/neutrino_drive_mac_desktop/issues/35). |
@@ -72,7 +72,7 @@ These come from the existing platform and the decisions above. They drive the sh
    server would hand it the graph's shape. Atlas therefore **does not use `src/links/` /
    `file_links`**. Links, backlinks and the graph are computed from the Markdown in each
    client's encrypted local index.
-3. **One Markdown dialect, three editors.** Swift (macOS + iOS), Tiptap (web) and Compose
+3. **One Markdown dialect, three editors.** Swift (macOS + iOS), CodeMirror 6 (web) and Compose
    (Android) all read and write the same `.md` files. Define a written **Atlas Markdown spec**
    in Phase 1, covering CommonMark + GFM plus extensions:
    - `[[links]]`, `[[Page|alias]]`, `[[Page#Heading]]`
@@ -258,11 +258,20 @@ phase also delivers the web client (needed for sharing and collaboration) and th
 
 ### Platform and extensibility
 - **Web client** as a new `atlas` route area in the existing `neutrino/web/apps/web`, with a
-  Tiptap editor bound to the Atlas Markdown spec. Its parser, link extraction and query engine
-  go in a new `web/packages/atlas` package, so they can be tested against the conformance
-  corpus without the UI. This reuses the existing shell, auth, Drive client, e2e-crypto and
+  CodeMirror 6 editor over the Atlas Markdown source, as on the Mac. Its parser, link
+  extraction and query engine go in a new `web/packages/atlas` package, so they can be tested
+  against the conformance corpus without the UI. This reuses the existing shell, auth, Drive client, e2e-crypto and
   theming. Atlas `[[links]]` are a different system from Notes' server-side links, so keep the
-  two apart in code.
+  two apart in code. The aim is parity with the Mac app. Vault data lives in an encrypted
+  IndexedDB copy, under a non-extractable per-browser WebCrypto key, and syncs with Drive
+  through a TypeScript port of VaultSync, so the web app works offline. It ships as milestone PRs:
+  1. `@neutrino/atlas`: the parser, extraction, resolution and source-preserving writer, passing
+     the whole corpus.
+  2. Vault data: Drive I/O, the encrypted cache, sync.
+  3. The index: backlinks, tags, search, the quick switcher.
+  4. The `/atlas` app shell: vault picker, sidebar, editor, backlinks, quick open, search.
+  5. Editor commands: slash menu, completion, images, chips.
+  6. Daily notes, templates, import and export, the command palette, logs.
 - **Android client** on `neutrino_shared_android` with a native Compose editor.
 - Themes and CSS snippets (reuse `feature-custom-themes.md` and the custom-fonts work).
 - Customisable hotkeys; multiple panes, tabs and split view; multiple windows (macOS).

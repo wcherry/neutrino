@@ -34,6 +34,7 @@ export default defineConfig({
       '@neutrino/search': path.resolve('./packages/search/src/index.ts'),
       '@neutrino/offline': path.resolve('./packages/offline/src/index.ts'),
       '@neutrino/e2e-crypto': path.resolve('./packages/e2e-crypto/src/index.ts'),
+      '@neutrino/atlas': path.resolve('./packages/atlas/src/index.ts'),
       // libsodium-wrappers@0.7.16's ESM build (dist/modules-esm/libsodium-wrappers.mjs)
       // contains a broken relative import ("./libsodium.mjs") that doesn't exist in the
       // published package (confirmed via `npm pack` — only 5 files ship, no libsodium.mjs).
