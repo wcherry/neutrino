@@ -1,5 +1,6 @@
 use super::dto::{AuthorizeQuery, RevokeRequest, TokenRequest, TokenResponse};
 use super::repository::{NewOauthAuthorizationCode, OauthRepository};
+use crate::auth::email_verification::policy::VerificationMode;
 use crate::auth::repository::{AuthRepository, NewRefreshToken};
 use crate::auth::service::refresh_reuse_grace;
 use crate::auth::tokens::hash_token;
@@ -15,6 +16,8 @@ pub struct OauthService {
     repo: Arc<OauthRepository>,
     auth_repo: Arc<AuthRepository>,
     token_service: Arc<TokenService>,
+    /// Refuse refresh to accounts past their email verification grace period.
+    verification: VerificationMode,
 }
 
 impl OauthService {
@@ -27,7 +30,15 @@ impl OauthService {
             repo,
             auth_repo,
             token_service,
+            verification: VerificationMode::Off,
         }
+    }
+
+    /// Refuse refresh to accounts past their verification grace period, as
+    /// `mode` says — the native apps' counterpart of `AuthService`'s check.
+    pub fn with_email_verification(mut self, mode: VerificationMode) -> Self {
+        self.verification = mode;
+        self
     }
 
     /// Validate the authorization request parameters.
@@ -142,6 +153,7 @@ impl OauthService {
             .auth_repo
             .find_user_by_id(&stored.user_id)?
             .ok_or_else(|| ApiError::unauthorized("User not found"))?;
+        self.verification.check_sign_in(&user, Utc::now().naive_utc())?;
 
         let is_admin = user.role == "admin";
         let access_token =
@@ -184,6 +196,7 @@ impl OauthService {
             .auth_repo
             .find_user_by_id(&stored.user_id)?
             .ok_or_else(|| ApiError::unauthorized("User not found"))?;
+        self.verification.check_sign_in(&user, now)?;
 
         let is_admin = user.role == "admin";
         let access_token =

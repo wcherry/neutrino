@@ -39,6 +39,7 @@ mod branding;
 mod sheets;
 mod slides;
 mod themes;
+mod weekly;
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
@@ -358,21 +359,78 @@ async fn main() -> std::io::Result<()> {
 
     // ── Auth service ─────────────────────────────────────────────────────────
 
+    // Outbox (a file under the database's directory) unless `MAIL_TRANSPORT`,
+    // `RESEND_API_KEY` or `SMTP_HOST` says to send for real; see `shared::mail`.
+    // A transport that is asked for but half-configured stops the server here
+    // rather than dropping every email later.
+    let mailer = {
+        let data_dir = std::path::Path::new(&config.database_url)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .to_path_buf();
+        match shared::mail::Mailer::from_env(&data_dir) {
+            Ok(mailer) => {
+                info!("Mail: {}", mailer.describe());
+                Arc::new(mailer)
+            }
+            Err(e) => {
+                error!("Mail is misconfigured: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+
+    // How strictly addresses are verified: `EMAIL_VERIFICATION`, or by default `enforce` when mail
+    // really goes out and `off` when it only reaches the outbox file.
+    let email_verification_mode = match auth::email_verification::policy::VerificationMode::parse(
+        config.email_verification.as_deref(),
+        mailer.delivers(),
+    ) {
+        Ok(mode) => {
+            info!("Email verification: {}", mode.as_str());
+            mode
+        }
+        Err(e) => {
+            error!("{}", e);
+            std::process::exit(1);
+        }
+    };
+
     use auth::repository::AuthRepository;
     use auth::service::AuthService;
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
+    // Email verification: links mailed to new accounts, and the gate sharing and reset ask.
+    let email_verification_service = Arc::new(
+        auth::email_verification::service::EmailVerificationService::new(
+            Arc::new(auth::email_verification::repository::EmailVerificationRepository::new(
+                pool.clone(),
+            )),
+            auth_repo.clone(),
+            mailer.clone(),
+            config.drive_base_url.clone(),
+            email_verification_mode,
+        ),
+    );
+    let email_verification_state =
+        web::Data::new(auth::email_verification::api::EmailVerificationApiState {
+            verification: email_verification_service.clone(),
+        });
     // The workspace password rules. Shared between the admin routes that write
     // them and the auth service that enforces them, so a policy change takes
     // effect on the next password without a restart.
     let password_policy_repo = Arc::new(
         auth::password_policy::PasswordPolicyRepository::new(pool.clone()),
     );
-    let auth_service = Arc::new(AuthService::new(
-        auth_repo.clone(),
-        token_service.clone(),
-        password_policy_repo.clone(),
-    ));
+    let auth_service = Arc::new(
+        AuthService::new(
+            auth_repo.clone(),
+            token_service.clone(),
+            password_policy_repo.clone(),
+        )
+        .with_email_verification(email_verification_mode),
+    );
     let password_policy_state = web::Data::new(auth::password_policy::api::PasswordPolicyState {
         repo: password_policy_repo,
     });
@@ -396,11 +454,10 @@ async fn main() -> std::io::Result<()> {
     use oauth::service::OauthService;
 
     let oauth_repo = Arc::new(OauthRepository::new(pool.clone()));
-    let oauth_service = Arc::new(OauthService::new(
-        oauth_repo,
-        auth_repo.clone(),
-        token_service.clone(),
-    ));
+    let oauth_service = Arc::new(
+        OauthService::new(oauth_repo, auth_repo.clone(), token_service.clone())
+            .with_email_verification(email_verification_mode),
+    );
     let oauth_state = web::Data::new(oauth::api::OauthApiState {
         oauth_service: oauth_service.clone(),
     });
@@ -618,28 +675,6 @@ async fn main() -> std::io::Result<()> {
         notification_hub.clone(),
     ));
 
-    // Outbox (a file under the database's directory) unless `MAIL_TRANSPORT`,
-    // `RESEND_API_KEY` or `SMTP_HOST` says to send for real; see `shared::mail`.
-    // A transport that is asked for but half-configured stops the server here
-    // rather than dropping every email later.
-    let mailer = {
-        let data_dir = std::path::Path::new(&config.database_url)
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| std::path::Path::new("."))
-            .to_path_buf();
-        match shared::mail::Mailer::from_env(&data_dir) {
-            Ok(mailer) => {
-                info!("Mail: {}", mailer.describe());
-                Arc::new(mailer)
-            }
-            Err(e) => {
-                error!("Mail is misconfigured: {}", e);
-                std::process::exit(1);
-            }
-        }
-    };
-
     let drive_notifications_repo = Arc::new(NotificationsRepository::new(pool.clone()));
     let drive_notification_service = Arc::new(NotificationService::new(
         drive_notifications_repo,
@@ -671,6 +706,7 @@ async fn main() -> std::io::Result<()> {
         notification_service: drive_notification_service.clone(),
         storage_repo: Arc::new(StorageRepository::new(pool.clone())),
         fs_repo: Arc::new(FilesystemRepository::new(pool.clone())),
+        email_verification: email_verification_service.clone(),
     });
 
     let drive_jobs_repo = Arc::new(JobsRepository::new(pool.clone()));
@@ -737,13 +773,16 @@ async fn main() -> std::io::Result<()> {
         mailer.clone(),
         config.drive_base_url.clone(),
     ));
-    let signup_service = Arc::new(auth::signup::SignupService::new(
-        auth_service.clone(),
-        invite_service,
-        welcome_mailer,
-        Arc::new(preferences::repository::PreferencesRepository::new(pool.clone())),
-        config.public_signup_open,
-    ));
+    let signup_service = Arc::new(
+        auth::signup::SignupService::new(
+            auth_service.clone(),
+            invite_service,
+            welcome_mailer,
+            Arc::new(preferences::repository::PreferencesRepository::new(pool.clone())),
+            config.public_signup_open,
+        )
+        .with_email_verification(email_verification_service.clone()),
+    );
     info!(
         "Public sign-up: {}",
         if config.public_signup_open { "open" } else { "closed (invite only)" }
@@ -757,7 +796,8 @@ async fn main() -> std::io::Result<()> {
             auth_service.clone(),
             mailer.clone(),
             config.drive_base_url.clone(),
-        )),
+        )
+        .with_email_verification(email_verification_mode)),
     });
 
     let auth_state = web::Data::new(auth::api::AuthApiState {
@@ -776,17 +816,26 @@ async fn main() -> std::io::Result<()> {
     let drive_sharing_state = web::Data::new(drive::sharing::api::SharingApiState {
         sharing_service: drive_sharing_service,
         token_service: guest_token_service.clone(),
+        email_verification: email_verification_service.clone(),
     });
 
     let drive_access_requests_repo = Arc::new(AccessRequestsRepository::new(pool.clone()));
-    let drive_access_requests_service = Arc::new(AccessRequestsService::new(
-        drive_access_requests_repo,
-        drive_permissions_repo,
-        drive_permissions_service.clone(),
-    ));
+    let drive_access_requests_service = Arc::new(
+        AccessRequestsService::new(
+            drive_access_requests_repo,
+            drive_permissions_repo,
+            drive_permissions_service.clone(),
+        )
+        .with_resource_names(
+            Arc::new(StorageRepository::new(pool.clone())),
+            Arc::new(FilesystemRepository::new(pool.clone())),
+        ),
+    );
     let drive_access_requests_state =
         web::Data::new(drive::access_requests::api::AccessRequestsApiState {
             service: drive_access_requests_service,
+            notifications: Some(drive_notification_service.clone()),
+            email_verification: email_verification_service.clone(),
         });
 
     let drive_notifications_state =
@@ -998,6 +1047,39 @@ async fn main() -> std::io::Result<()> {
                     Ok(Ok(_)) => {}
                     Ok(Err(e)) => error!("Trash purge failed: {:?}", e),
                     Err(e) => error!("Trash purge task failed: {:?}", e),
+                }
+            }
+        });
+    }
+
+    // The weekly email: checked hourly, sent from Monday 09:00 UTC. Hourly rather than a timer for
+    // Monday, so a server that was down then catches up later in the week; each account's week is
+    // claimed before anything is sent, so the checks never send a week twice.
+    let weekly_service = Arc::new(weekly::service::WeeklyEmailService::new(
+        Arc::new(weekly::repository::WeeklyRepository::new(pool.clone())),
+        mailer.clone(),
+        config.drive_base_url.clone(),
+    ));
+    let weekly_state = web::Data::new(weekly::api::WeeklyApiState {
+        service: weekly_service.clone(),
+    });
+    {
+        let weekly_service = weekly_service.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                let service = weekly_service.clone();
+                let now = chrono::Utc::now().naive_utc();
+                match tokio::task::spawn_blocking(move || service.prepare_due(now)).await {
+                    Ok(Ok(emails)) if !emails.is_empty() => {
+                        let total = emails.len();
+                        let sent = weekly_service.send_all(emails).await;
+                        info!("Weekly email: sent {} of {}", sent, total);
+                    }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => error!("Weekly email failed: {:?}", e),
+                    Err(e) => error!("Weekly email task failed: {:?}", e),
                 }
             }
         });
@@ -1283,6 +1365,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(auth::api::AuthApiDoc::openapi());
         doc.merge(auth::invites::api::InvitesApiDoc::openapi());
         doc.merge(auth::password_reset::api::PasswordResetApiDoc::openapi());
+        doc.merge(auth::email_verification::api::EmailVerificationApiDoc::openapi());
+        doc.merge(weekly::api::WeeklyApiDoc::openapi());
         doc.merge(auth::keyvault::api::KeyVaultApiDoc::openapi());
         doc.merge(calendar::calendars::api::CalendarsApiDoc::openapi());
         doc.merge(calendar::events::api::EventsApiDoc::openapi());
@@ -1368,6 +1452,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(auth_state.clone())
             .app_data(invites_state.clone())
             .app_data(password_reset_state.clone())
+            .app_data(email_verification_state.clone())
+            .app_data(weekly_state.clone())
             .app_data(key_vault_state.clone())
             // OAuth
             .app_data(oauth_state.clone())
@@ -1504,7 +1590,9 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                             .configure(drive::fonts::api::configure_admin)
                             // Organisation preference defaults and locks, and the instance brand.
                             .configure(preferences::api::configure_admin)
-                            .configure(branding::api::configure_admin),
+                            .configure(branding::api::configure_admin)
+                            // Product updates for the weekly email.
+                            .configure(weekly::api::configure_admin),
                     )
                     // Internal routes
                     .service(
@@ -1514,6 +1602,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     .configure(shared::file_events::api::configure)
                     // Links
                     .configure(links::api::configure)
+                    // The weekly email's preview
+                    .configure(weekly::api::configure)
                     // AI — the provider-agnostic completion route
                     .configure(shared::ai::api::configure)
                     // Photos

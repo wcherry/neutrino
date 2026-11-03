@@ -43,6 +43,21 @@ export interface PasswordResetCheck {
   requiresTwoFactor: boolean;
 }
 
+/** Where the signed-in account's email address stands. */
+export interface EmailVerificationStatus {
+  email: string;
+  verified: boolean;
+  verifiedAt: string | null;
+  /**
+   * How strictly this server verifies: `off` asks nothing, `soft` only nags,
+   * `enforce` also holds back sharing and password reset and, after a grace
+   * period, sign-in.
+   */
+  mode: 'off' | 'soft' | 'enforce';
+  /** When sign-in will be refused if the address is still unverified. */
+  blockAt: string | null;
+}
+
 export interface ResetPasswordRequest {
   /** The token from the emailed link. */
   token: string;

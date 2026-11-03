@@ -991,6 +991,8 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(get_user_public_keys)
             // Forgot password — /auth/password/forgot, /auth/password/reset*
             .configure(crate::auth::password_reset::api::configure)
+            // Email verification — /auth/email/*
+            .configure(crate::auth::email_verification::api::configure)
             // Wrapped identity-key storage — /auth/keyvault*
             .configure(crate::auth::keyvault::api::configure),
     )

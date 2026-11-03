@@ -9,7 +9,7 @@
 //!    the claim is released, so a typo does not burn the invite.
 //! 4. On success the invite records who signed up, the account is marked as
 //!    owed the welcome wizard (`onboarding.welcome` = `pending`), and the
-//!    welcome email goes out on a spawned task.
+//!    welcome email and the email verification link go out on spawned tasks.
 //!
 //! The wizard mark is written here, on the account-creation paths only
 //! (self-serve, invite, admin-created), and nowhere else: the preference's
@@ -19,6 +19,7 @@
 use std::sync::Arc;
 
 use super::dto::{RegisterRequest, RegisterResponse};
+use super::email_verification::service::EmailVerificationService;
 use super::invites::service::InviteService;
 use super::service::AuthService;
 use super::welcome::WelcomeMailer;
@@ -33,6 +34,8 @@ pub struct SignupService {
     welcome: Arc<WelcomeMailer>,
     preferences: Arc<PreferencesRepository>,
     public_signup_open: bool,
+    /// Mails each new account its verification link. `None` sends none.
+    verification: Option<Arc<EmailVerificationService>>,
 }
 
 impl SignupService {
@@ -49,6 +52,22 @@ impl SignupService {
             welcome,
             preferences,
             public_signup_open,
+            verification: None,
+        }
+    }
+
+    /// Mail every new account a verification link.
+    pub fn with_email_verification(mut self, verification: Arc<EmailVerificationService>) -> Self {
+        self.verification = Some(verification);
+        self
+    }
+
+    /// The emails every new account gets: welcome, and the verification link.
+    fn send_new_account_mail(&self, user: &RegisterResponse) {
+        self.welcome
+            .send_later(user.email.clone(), user.name.clone());
+        if let Some(verification) = &self.verification {
+            verification.start_later(&user.id);
         }
     }
 
@@ -127,17 +146,15 @@ impl SignupService {
             }
         }
         self.mark_welcome_pending(&user.id);
-        self.welcome
-            .send_later(user.email.clone(), user.name.clone());
+        self.send_new_account_mail(&user);
         Ok(user)
     }
 
     /// For admin-created accounts: mark the account for the welcome wizard and send the
-    /// welcome email.
+    /// welcome and verification emails.
     pub fn account_created(&self, user: &RegisterResponse) {
         self.mark_welcome_pending(&user.id);
-        self.welcome
-            .send_later(user.email.clone(), user.name.clone());
+        self.send_new_account_mail(user);
     }
 }
 

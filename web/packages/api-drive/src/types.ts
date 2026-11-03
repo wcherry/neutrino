@@ -374,6 +374,10 @@ export interface AccessRequest {
   status: 'pending' | 'approved' | 'denied';
   createdAt: string;
   updatedAt: string;
+  /** The file or folder's name, on the owner's pending list. */
+  resourceName?: string;
+  /** The file's MIME type, on the owner's pending list. */
+  mimeType?: string;
 }
 
 export interface ListAccessRequestsResponse {

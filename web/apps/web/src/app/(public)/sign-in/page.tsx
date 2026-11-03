@@ -33,10 +33,29 @@ function SignInForm() {
    * user has just typed it, and the change needs it as proof.
    */
   const [expired, setExpired] = useState<{ email: string; password: string } | null>(null);
+  /**
+   * The address of an account refused because its email address is still
+   * unverified after the grace period. Set, the page offers a fresh link.
+   */
+  const [unverified, setUnverified] = useState<string | null>(null);
+  const [linkSent, setLinkSent] = useState(false);
+
+  async function sendVerificationLink() {
+    if (!unverified) return;
+    setError(null);
+    try {
+      await authApi.requestEmailVerification(unverified);
+      setLinkSent(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not send the link');
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setUnverified(null);
+    setLinkSent(false);
     setLoading(true);
 
     const form = e.currentTarget;
@@ -55,6 +74,10 @@ function SignInForm() {
       // having to find an administrator.
       if (err instanceof ApiClientError && err.code === 'PASSWORD_EXPIRED') {
         setExpired({ email, password });
+      } else if (err instanceof ApiClientError && err.code === 'EMAIL_NOT_VERIFIED') {
+        // Like an expiry, the password was right; following a link fixes it.
+        setUnverified(email);
+        setError(err.message);
       } else {
         setError(err instanceof Error ? err.message : 'Sign in failed');
       }
@@ -117,6 +140,16 @@ function SignInForm() {
             />
           </div>
           {error && <p className={styles.error}>{error}</p>}
+          {unverified &&
+            (linkSent ? (
+              <p className={styles.sub} role="status">
+                A new verification link is on its way to {unverified}.
+              </p>
+            ) : (
+              <button type="button" className={styles.linkButtonInline} onClick={sendVerificationLink}>
+                Send a new verification link
+              </button>
+            ))}
           <button type="submit" className={styles.submit} disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>

@@ -1,5 +1,6 @@
 pub mod api;
 pub mod dto;
+pub mod email_verification;
 pub mod invites;
 pub mod keyvault;
 pub mod password_policy;

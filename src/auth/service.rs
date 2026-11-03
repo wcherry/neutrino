@@ -1,3 +1,4 @@
+use super::email_verification::policy::VerificationMode;
 use super::dto::{
     AdminCreateUserRequest, AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse,
     AuthResponse, ChangePasswordRequest, EmailPreferences, LoginResponse, PublicProfileResponse,
@@ -67,6 +68,9 @@ pub struct AuthService {
     /// The workspace password rules, read wherever a password is set and by
     /// sign-in for the maximum-age check.
     password_policy: Arc<PasswordPolicyRepository>,
+    /// Whether an unverified account is refused at sign-in and refresh once
+    /// its grace period is over. `Off` unless [`Self::with_email_verification`].
+    verification: VerificationMode,
 }
 
 impl AuthService {
@@ -79,7 +83,15 @@ impl AuthService {
             repo,
             token_service,
             password_policy,
+            verification: VerificationMode::Off,
         }
+    }
+
+    /// Refuse sign-in and refresh to accounts past their verification grace
+    /// period, as `mode` says.
+    pub fn with_email_verification(mut self, mode: VerificationMode) -> Self {
+        self.verification = mode;
+        self
     }
 
     /// Hash a password with Argon2 after checking it against the policy.
@@ -259,6 +271,8 @@ impl AuthService {
                 "This password has expired. Set a new one to sign in.",
             ));
         }
+        self.verification
+            .check_sign_in(&user, Utc::now().naive_utc())?;
 
         // The run of failures is over, so it stops counting towards a lockout —
         // a typo today and a typo next week are not one attack. Written only
@@ -340,6 +354,7 @@ impl AuthService {
                 "This account has been disabled. Contact an administrator.",
             ));
         }
+        self.verification.check_sign_in(&user, now)?;
 
         let is_admin = user.role == "admin";
         let access_token =

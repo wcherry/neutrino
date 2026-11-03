@@ -41,6 +41,12 @@ pub struct Config {
     /// or only someone holding an invite (`PUBLIC_SIGNUP=closed`). Admin-created
     /// accounts are unaffected.
     pub public_signup_open: bool,
+
+    /// `EMAIL_VERIFICATION` as given (`off`, `soft` or `enforce`), or `None`.
+    /// Resolved in `main` once the mailer is known, since unset means
+    /// `enforce` only when mail really leaves the server; see
+    /// `auth::email_verification::policy::VerificationMode::parse`.
+    pub email_verification: Option<String>,
 }
 
 /// Reads `PUBLIC_SIGNUP`: unset or `open` is true, `closed` is false, anything
@@ -238,6 +244,7 @@ impl Config {
             oauth,
             web_dir,
             public_signup_open,
+            email_verification: env::var("EMAIL_VERIFICATION").ok(),
         })
     }
 }

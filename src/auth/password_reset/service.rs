@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::model::{NewPasswordReset, PasswordResetRecord};
 use super::repository::PasswordResetRepository;
+use crate::auth::email_verification::policy::VerificationMode;
 use crate::auth::repository::{AuthRepository, User};
 use crate::auth::service::AuthService;
 use crate::auth::totp::verify_totp;
@@ -62,6 +63,9 @@ pub struct PasswordResetService {
     auth: Arc<AuthService>,
     mailer: Arc<Mailer>,
     base_url: String,
+    /// Under `Enforce`, an account that has not verified its address is sent
+    /// no reset link.
+    verification: VerificationMode,
 }
 
 impl PasswordResetService {
@@ -78,7 +82,14 @@ impl PasswordResetService {
             auth,
             mailer,
             base_url,
+            verification: VerificationMode::Off,
         }
+    }
+
+    /// Send reset links only to verified addresses when `mode` enforces it.
+    pub fn with_email_verification(mut self, mode: VerificationMode) -> Self {
+        self.verification = mode;
+        self
     }
 
     fn random_token() -> String {
@@ -105,6 +116,12 @@ impl PasswordResetService {
         // A reset must not be a way back into an account an admin has shut.
         if user.disabled_at.is_some() {
             tracing::info!(user_id = %user.id, "password reset asked for a disabled account; not sent");
+            return Ok(None);
+        }
+        // An unproved address may not be the account holder's, so it must not
+        // be able to take the account over.
+        if self.verification.require_verified(&user, "reset your password").is_err() {
+            tracing::info!(user_id = %user.id, "password reset asked for an unverified address; not sent");
             return Ok(None);
         }
 

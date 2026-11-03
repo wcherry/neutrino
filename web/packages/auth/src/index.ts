@@ -39,6 +39,7 @@ export type {
   LoginRequest,
   ChangePasswordRequest,
   PasswordResetCheck,
+  EmailVerificationStatus,
   ResetPasswordRequest,
   AuthTokens,
   RefreshRequest,

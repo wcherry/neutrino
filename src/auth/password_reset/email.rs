@@ -22,7 +22,7 @@ fn greeting(name: &str) -> String {
 
 /// The same card the welcome and invitation emails use: a greeting, a line, an
 /// optional button, then small print.
-fn card(greeting: &str, line: &str, action: Option<(&str, &str)>, small: &[&str]) -> String {
+pub(crate) fn card(greeting: &str, line: &str, action: Option<(&str, &str)>, small: &[&str]) -> String {
     let button = action
         .map(|(label, link)| {
             format!(

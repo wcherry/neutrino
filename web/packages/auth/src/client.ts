@@ -6,6 +6,7 @@ import type {
   LoginRequest,
   ChangePasswordRequest,
   PasswordResetCheck,
+  EmailVerificationStatus,
   ResetPasswordRequest,
   AuthTokens,
   UserProfile,
@@ -87,6 +88,48 @@ export const authApi = {
       '/api/v1/auth/password/reset',
       { method: 'POST', body: JSON.stringify(body) },
       { auth: 'none' },
+    );
+  },
+
+  /**
+   * Follow an emailed verification link. Rejects with `VERIFY_NOT_FOUND`,
+   * `VERIFY_REVOKED`, `VERIFY_USED` or `VERIFY_EXPIRED`.
+   */
+  async verifyEmail(token: string): Promise<{ email: string }> {
+    return request<{ email: string }>(
+      '/api/v1/auth/email/verify',
+      { method: 'POST', body: JSON.stringify({ token }) },
+      { auth: 'none' },
+    );
+  },
+
+  /** Where the signed-in account's address stands, for the banner. */
+  async getEmailVerification(): Promise<EmailVerificationStatus> {
+    return request<EmailVerificationStatus>('/api/v1/auth/email/verification');
+  },
+
+  /**
+   * Mail the signed-in account a new verification link. Rejects with
+   * `TOO_MANY_REQUESTS` after three in an hour.
+   */
+  async resendEmailVerification(): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/email/verification/resend',
+      { method: 'POST' },
+      { responseType: 'none' },
+    );
+  },
+
+  /**
+   * Ask for a verification link for the account at `email`, from the sign-in
+   * page, when the account can no longer sign in to ask. Always succeeds,
+   * account or not.
+   */
+  async requestEmailVerification(email: string): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/email/verification/request',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { auth: 'none', responseType: 'none' },
     );
   },
 

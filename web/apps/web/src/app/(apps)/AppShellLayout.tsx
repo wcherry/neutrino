@@ -55,6 +55,7 @@ import { RequestStorageDialog } from '@/components/RequestStorageDialog';
 import { ImportRunProvider } from '@/components/ImportRun';
 import type { InviteFriendsDialogProps } from '@/components/InviteFriends/InviteFriendsDialog';
 import { useNotifications } from '@/hooks/useNotifications';
+import { EmailVerificationBanner } from '@/components/EmailVerificationBanner';
 import { useDriveLiveUpdates } from '@/hooks/useDriveLiveUpdates';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
@@ -116,6 +117,15 @@ function notificationHref(n: NotificationItem): string | undefined {
   if (n.eventType === 'team_key_approved') return `/open/file/${encodeURIComponent(resourceId)}`;
   if ((n.eventType === 'team_key_requested' || n.eventType === 'team_key_denied') && teamId) {
     return `/teams/space?id=${encodeURIComponent(teamId)}&view=files`;
+  }
+  // Asked of the owner: answered on the requests page. Refused or revoked: nothing to open.
+  if (n.eventType === 'access_requested') return '/drive/requests';
+  if (
+    n.eventType === 'access_request_denied' ||
+    n.eventType === 'file_access_revoked' ||
+    n.eventType === 'folder_access_revoked'
+  ) {
+    return '/drive';
   }
   if (resourceType === 'folder') return `/drive`;
   // Map file mimeType to the right editor
@@ -645,6 +655,8 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         {/* The guided tour on screen, if one is running — over everything but toasts. */}
         {tours.overlay}
         {wizard.open && <WelcomeWizard startStep={wizard.startStep} onClose={closeWizard} />}
+        {/* Until the account follows its verification link; nothing where the server sends none. */}
+        {ready && !auth.user.id.startsWith('guest:') && <EmailVerificationBanner />}
         {/* The storage meter's "Request Additional" (issue #144). Mounted here
             rather than in the sidebar because @neutrino/layout has no API
             dependencies, so the ask belongs to the app. */}

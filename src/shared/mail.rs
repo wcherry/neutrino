@@ -243,6 +243,12 @@ impl Mailer {
     }
 
     /// For the startup log and anything else that wants to say where mail goes.
+    /// Whether mail really leaves the server, as opposed to landing in the
+    /// outbox file where nobody receives it.
+    pub fn delivers(&self) -> bool {
+        !matches!(self, Mailer::Outbox(_))
+    }
+
     pub fn describe(&self) -> &'static str {
         match self {
             Mailer::Outbox(_) => "writing to the outbox file; nothing is sent",

@@ -333,3 +333,20 @@
   margin-top: 0.125em;
   color: var(--color-text-secondary);
 }
+
+/* "Send a new verification link" under a sign-in refused for an unverified address. */
+.linkButtonInline {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.linkButtonInline:hover {
+  text-decoration: underline;
+}
