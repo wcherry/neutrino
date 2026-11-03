@@ -2,6 +2,7 @@ import { MarkdownDocument } from '../document';
 import { decodeIndexCache, encodeIndexCache, type CachedPage, type IndexCacheStore } from '../indexing/indexCache';
 import { VaultIndex } from '../indexing/vaultIndex';
 import { LinkResolver } from '../resolve';
+import { linkingMentions } from '../syntax/mentionLinker';
 import { compare, type Vault } from '../sync/vault';
 import { VaultSync, emptySyncReport, isQuiet, type SyncReport, type VaultRemote } from '../sync/vaultSync';
 
@@ -197,6 +198,25 @@ export class VaultWorkspace {
       this.onChange?.(new Map([[from, to]]));
       return rewritten;
     });
+  }
+
+  /**
+   * "Link it": `source`'s unlinked mentions of `path` become wiki links to it, the words kept
+   * (`linkingMentions`). `name` is the title or alias that appears, the page's title by
+   * default. Returns how many were linked: none when they couldn't be without changing
+   * anything else on the page.
+   */
+  async linkMentions(path: string, source: string, name: string = VaultIndex.title(path)): Promise<number> {
+    const text = await this.text(source);
+    if (text === null) return 0;
+    const resolver = new LinkResolver(this.paths);
+    let target = resolver.linkTarget(path);
+    // The shortest target resolves from the vault's root; make sure it does from `source` too.
+    if (resolver.resolve(target, source) !== path) target = VaultIndex.isPage(path) ? path.slice(0, -3) : path;
+    const linked = linkingMentions(name, target, text);
+    if (!linked) return 0;
+    await this.writeText(linked.text, source);
+    return linked.linked;
   }
 
   /** Deletes a file. Waits for a running pass. */

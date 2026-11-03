@@ -11,7 +11,7 @@
  * Anything that is not one of these apps — Drive's own views, Settings, Teams,
  * Admin — is Drive, which is what the shell around them is.
  */
-export const APP_IDS = ['docs', 'sheets', 'slides', 'notes', 'photos', 'calendar', 'diagrams', 'drawing'] as const;
+export const APP_IDS = ['docs', 'sheets', 'slides', 'notes', 'atlas', 'photos', 'calendar', 'diagrams', 'drawing'] as const;
 
 export type AppId = (typeof APP_IDS)[number] | 'drive';
 

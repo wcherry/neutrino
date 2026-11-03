@@ -16,6 +16,7 @@ import {
   Paintbrush,
   ExternalLink,
   Folder,
+  Waypoints,
 } from 'lucide-react';
 import type { NavItem, NavSection } from '@neutrino/layout';
 import type { AppKey } from '@neutrino/preferences';
@@ -48,6 +49,7 @@ export const APP_ITEMS: (NavItem & { app: AppKey })[] = [
   { id: 'sheets', app: 'sheets', label: 'Sheets', icon: Table2, href: '/sheets', color: 'var(--app-color-sheets)' },
   { id: 'slides', app: 'slides', label: 'Slides', icon: Presentation, href: '/slides', color: 'var(--app-color-slides)' },
   { id: 'notes', app: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes', color: 'var(--app-color-notes)' },
+  { id: 'atlas', app: 'atlas', label: 'Atlas', icon: Waypoints, href: '/atlas', color: 'var(--app-color-atlas)' },
   { id: 'diagrams', app: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams', color: 'var(--app-color-diagrams)' },
   { id: 'drawings', app: 'drawing', label: 'Drawings', icon: Paintbrush, href: '/drawing', color: 'var(--app-color-drawing)' },
   { id: 'photos', app: 'photos', label: 'Photos', icon: Image, href: '/photos', color: 'var(--app-color-photos)' },

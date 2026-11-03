@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  APPS,
   PreferenceStore,
   VaultConflictError,
   BOOT_KEY,
@@ -269,7 +270,7 @@ describe('the organisation and team layers', () => {
     });
     expect(fresh.get('appearance.look')).toBe('classic');
     expect(fresh.isLocked('appearance.look')).toBe(false);
-    expect(fresh.get('apps.enabled')).toHaveLength(8);
+    expect(fresh.get('apps.enabled')).toEqual([...APPS]);
   });
 
   it('forgets the team layer on sign-out but keeps the instance\'s org layer', async () => {

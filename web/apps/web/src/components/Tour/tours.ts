@@ -219,6 +219,47 @@ export const NOTES_TOUR: TourDefinition = {
   ],
 };
 
+/** Atlas's tour, in an open vault: its pages, the editor, backlinks and sync. */
+export const ATLAS_TOUR: TourDefinition = {
+  id: 'atlas',
+  appName: 'Atlas',
+  startsOn: (pathname) => pathname.replace(/\/$/, '') === '/atlas',
+  home: '/atlas',
+  waitFor: 'atlas-editor',
+  steps: [
+    {
+      target: 'atlas-sidebar',
+      title: 'Your vault',
+      body: 'Every page in the vault, in its folders, with your favourites on top. Search finds words in any page; Tags lists every #tag.',
+      placement: 'right',
+    },
+    {
+      target: 'atlas-editor',
+      title: 'Write in Markdown',
+      body: 'Pages are Markdown, styled as you type. Type [[ and a page’s title to link to it; a link to a page that doesn’t exist yet makes it when you follow it.',
+      placement: 'bottom',
+    },
+    {
+      target: 'atlas-backlinks',
+      title: 'Backlinks',
+      body: 'The pages that link here, and the ones that mention this page’s title without a link. Link turns a mention into a link.',
+      placement: 'left',
+    },
+    {
+      target: 'atlas-quick-open',
+      title: 'Jump to any page',
+      body: 'Open (⌘O, or Ctrl+O) finds a page by its title, or makes a new one with the title you type.',
+      placement: 'bottom',
+    },
+    {
+      target: 'atlas-sync',
+      title: 'Synced and encrypted',
+      body: 'Pages are encrypted in this browser and synced with your Drive, where your other devices pick them up. It works offline, and syncs when you’re back.',
+      placement: 'bottom',
+    },
+  ],
+};
+
 /** Photos' tour, on the library, which is where everything it points at is. */
 export const PHOTOS_TOUR: TourDefinition = {
   id: 'photos',
@@ -376,6 +417,7 @@ export const TOURS: readonly TourDefinition[] = [
   SHEETS_TOUR,
   SLIDES_TOUR,
   NOTES_TOUR,
+  ATLAS_TOUR,
   PHOTOS_TOUR,
   CALENDAR_TOUR,
   DIAGRAMS_TOUR,

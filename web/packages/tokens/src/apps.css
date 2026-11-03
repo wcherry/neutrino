@@ -19,6 +19,7 @@
   --app-color-sheets: #13945a;
   --app-color-slides: #d97706;
   --app-color-notes: #b88a00;
+  --app-color-atlas: #4b3cc4;
   --app-color-photos: #d6336c;
   --app-color-calendar: #0e8c8c;
   --app-color-diagrams: #7a4fdb;
@@ -41,6 +42,7 @@
 [data-app="sheets"] { --app-color: var(--app-color-sheets); --app-wash-from: #d8f0e2; }
 [data-app="slides"] { --app-color: var(--app-color-slides); --app-wash-from: #fbead2; }
 [data-app="notes"] { --app-color: var(--app-color-notes); --app-wash-from: #f6edc8; }
+[data-app="atlas"] { --app-color: var(--app-color-atlas); --app-wash-from: #e2defb; }
 [data-app="photos"] { --app-color: var(--app-color-photos); --app-wash-from: #f9dbe6; }
 [data-app="calendar"] { --app-color: var(--app-color-calendar); --app-wash-from: #d3eeee; }
 [data-app="diagrams"] { --app-color: var(--app-color-diagrams); --app-wash-from: #e6defa; }

@@ -27,7 +27,7 @@ describe('the user\'s sidebar (U8)', () => {
   it('hides entries and whole sections, and puts the apps in the user\'s order', () => {
     setHidden('trash', true);
     setHidden('section:tags', true);
-    const shown = ['docs', 'sheets', 'slides', 'notes', 'diagrams', 'drawings', 'photos', 'calendar'];
+    const shown = ['docs', 'sheets', 'slides', 'notes', 'atlas', 'diagrams', 'drawings', 'photos', 'calendar'];
     moveApp(shown, 'calendar', -1);
     moveApp(readLayout().order, 'calendar', -1);
     const sections = applyLayout(getNavSections(false, []), readLayout());

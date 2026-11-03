@@ -22,7 +22,7 @@
  */
 
 export type CommandApp =
-  | 'global' | 'editors' | 'drive' | 'docs' | 'sheets' | 'slides' | 'notes' | 'photos'
+  | 'global' | 'editors' | 'drive' | 'docs' | 'sheets' | 'slides' | 'notes' | 'atlas' | 'photos'
   | 'drawing' | 'diagrams';
 
 export const COMMAND_APPS: { id: CommandApp; label: string }[] = [
@@ -33,6 +33,7 @@ export const COMMAND_APPS: { id: CommandApp; label: string }[] = [
   { id: 'sheets', label: 'Sheets' },
   { id: 'slides', label: 'Slides' },
   { id: 'notes', label: 'Notes' },
+  { id: 'atlas', label: 'Atlas' },
   { id: 'photos', label: 'Photos' },
   { id: 'drawing', label: 'Drawing' },
   { id: 'diagrams', label: 'Diagrams' },
@@ -63,6 +64,7 @@ export const COMMANDS = [
   { id: 'shell.goto.sheets', title: 'Go to Sheets', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.slides', title: 'Go to Slides', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.notes', title: 'Go to Notes', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.atlas', title: 'Go to Atlas', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.diagrams', title: 'Go to Diagrams', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.drawing', title: 'Go to Drawings', app: 'global', defaultKeys: [] },
   { id: 'shell.goto.photos', title: 'Go to Photos', app: 'global', defaultKeys: [] },
@@ -105,6 +107,14 @@ export const COMMANDS = [
   { id: 'notes.save', title: 'Save', app: 'notes', defaultKeys: ['Mod+S'], whileTyping: 'run' },
   { id: 'notes.print', title: 'Print', app: 'notes', defaultKeys: ['Mod+P'], whileTyping: 'run' },
   { id: 'notes.selectAll', title: 'Select all blocks', app: 'notes', defaultKeys: ['Mod+A'], whileTyping: 'run' },
+
+  // ── Atlas ─────────────────────────────────────────────────────────────────
+  { id: 'atlas.quickOpen', title: 'Open or create a page', app: 'atlas', defaultKeys: ['Mod+O'], whileTyping: 'run' },
+  { id: 'atlas.newPage', title: 'New page', app: 'atlas', defaultKeys: ['Mod+Alt+N'], whileTyping: 'run' },
+  { id: 'atlas.search', title: 'Search the vault', app: 'atlas', defaultKeys: ['Mod+Shift+F'], whileTyping: 'run' },
+  { id: 'atlas.sync', title: 'Sync now', app: 'atlas', defaultKeys: ['Mod+S'], whileTyping: 'run' },
+  { id: 'atlas.toggleSource', title: 'Switch between Live Preview and source', app: 'atlas', defaultKeys: ['Mod+E'], whileTyping: 'run' },
+  { id: 'atlas.toggleBacklinks', title: 'Show or hide backlinks', app: 'atlas', defaultKeys: [] },
 
   // ── Photos ────────────────────────────────────────────────────────────────
   { id: 'photos.deleteSelected', title: 'Delete the selected markup', app: 'photos', defaultKeys: DELETE },

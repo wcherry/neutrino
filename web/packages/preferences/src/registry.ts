@@ -16,7 +16,7 @@ export type Sync = 'plain' | 'vault' | 'device';
 export type Scope = 'user' | 'device' | 'org' | 'team';
 
 /** Every app an instance can offer, in sidebar order — the options of `apps.enabled`. */
-export const APPS = ['docs', 'sheets', 'slides', 'notes', 'diagrams', 'drawing', 'photos', 'calendar'] as const;
+export const APPS = ['docs', 'sheets', 'slides', 'notes', 'atlas', 'diagrams', 'drawing', 'photos', 'calendar'] as const;
 export type AppKey = (typeof APPS)[number];
 
 /** Every app with a guided tour, Drive first — the options of `onboarding.toursSeen`. */
