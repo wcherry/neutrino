@@ -44,6 +44,18 @@ describe('the steps to an open vault', () => {
     expect(b.open.size, 'the copy is closed for another tab').toBe(0);
   });
 
+  it('leaves the vault to a newer model when disposed while starting', async () => {
+    const b = browser(new MemoryDrive());
+    b.services.settings.setItem('neutrino.atlas.vault.u1', 'v1');
+    const first = new AtlasModel('u1', b.services);
+    const starting = first.route();
+    await first.dispose();
+    const second = await ready(b.services);
+    await starting;
+    expect(second.phase).toBe('ready');
+    expect(b.opened, 'only the newer model opened the copy').toEqual(['v1']);
+  });
+
   it('says when another tab has the vault open', async () => {
     const b = browser(new MemoryDrive());
     await ready(b.services);

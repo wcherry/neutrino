@@ -80,27 +80,35 @@ export function AtlasApp({ services }: { services?: AtlasServices }) {
 }
 
 function AtlasForUser({ userId, services }: { userId: string; services?: AtlasServices }) {
-  const [model] = useState(() => new AtlasModel(userId, services ?? browserServices()));
-  useAtlasModel(model);
-
+  // The model belongs to the effect that disposes it, so a remount (Strict Mode's, or React's
+  // own) starts a fresh one rather than reusing one already closed.
+  const [model, setModel] = useState<AtlasModel | null>(null);
   useEffect(() => {
-    void model.route();
+    const m = new AtlasModel(userId, services ?? browserServices());
+    setModel(m);
+    void m.route();
     // A key restored or set up through the unlock gate lets the vault open.
     let last = getGateState();
     const off = subscribeToGateState(() => {
       const now = getGateState();
-      if (now === 'clear' && last !== 'clear') void model.route();
+      if (now === 'clear' && last !== 'clear') void m.route();
       last = now;
     });
     // Typing is saved as it happens; this catches the last keystrokes when the tab goes away.
-    const hide = () => void model.flush();
+    const hide = () => void m.flush();
     window.addEventListener('pagehide', hide);
     return () => {
       off();
       window.removeEventListener('pagehide', hide);
-      void model.dispose();
+      void m.dispose();
     };
-  }, [model]);
+  }, [userId, services]);
+  if (!model) return <div className={styles.empty}><Spinner label="Opening Atlas" /></div>;
+  return <AtlasView model={model} />;
+}
+
+function AtlasView({ model }: { model: AtlasModel }) {
+  useAtlasModel(model);
 
   const banner = model.error && (
     <div className={styles.banner}>

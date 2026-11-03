@@ -148,6 +148,9 @@ export function AtlasEditor({ path, text, textVersion, mode, anchor, onChange, o
     if (!v) return;
     if (shown.current.path !== path) {
       v.setState(EditorState.create({ doc: text, extensions: extensions() }));
+      // A page just opened is for typing in, unless a field (its title, a search) has the focus.
+      const active = document.activeElement;
+      if (!active || active === document.body || v.dom.contains(active) || !active.matches('input, textarea, [contenteditable="true"]')) v.focus();
     } else if (shown.current.version !== textVersion && v.state.doc.toString() !== text) {
       // Synced from elsewhere: take the new text, keeping the cursor where it can be.
       const head = Math.min(v.state.selection.main.head, text.length);

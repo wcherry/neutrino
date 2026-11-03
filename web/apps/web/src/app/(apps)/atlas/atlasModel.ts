@@ -157,7 +157,10 @@ export class AtlasModel {
   /** Works out which step the page is at, and moves to it. */
   async route(): Promise<void> {
     if (this.closed) return;
-    if (!(await this.services.canEncrypt(this.userId))) {
+    const canEncrypt = await this.services.canEncrypt(this.userId);
+    // Disposed meanwhile: a newer model owns the page, and the vault's lock.
+    if (this.closed) return;
+    if (!canEncrypt) {
       await this.closeVault();
       this.phase = 'needsKey';
     } else if (this.storedVaultID === null) {

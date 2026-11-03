@@ -392,6 +392,12 @@
   background: transparent;
 }
 
+/* The whole page below the text is the editor's, so a click anywhere there types. CodeMirror
+   places the cursor only for clicks in its content, so that is what's tall. */
+.editor :global(.cm-content) {
+  min-height: 60vh;
+}
+
 .editor :global(.cm-editor.cm-focused) {
   outline: none;
 }
@@ -422,10 +428,12 @@
 .strike { text-decoration: line-through; }
 .highlight { background: color-mix(in srgb, var(--color-warning) 30%, transparent); border-radius: 2px; }
 .mono { font-family: var(--font-mono); font-size: 0.9em; }
-.codeBackground { background: var(--color-bg-subtle); border-radius: 3px; }
+/* A tint of the text colour, so code reads on any theme's ground. */
+.codeBackground { background: color-mix(in srgb, var(--color-text) 10%, transparent); border-radius: 3px; }
 .color-syntax { color: var(--color-text-tertiary, var(--color-text-secondary)); }
 .color-link { color: var(--color-accent-text, var(--color-accent)); cursor: pointer; }
-.color-tag { color: var(--app-color-atlas); }
+/* Atlas's indigo, lifted towards the text colour so it reads on light and dark grounds. */
+.color-tag { color: color-mix(in srgb, var(--app-color-atlas) 60%, var(--color-text)); }
 .color-quote { color: var(--color-text-secondary); }
 .color-secondary { color: var(--color-text-secondary); }
 
