@@ -1,7 +1,7 @@
 /** In-memory stand-ins for Drive, the browser's vault copies and its settings, for `/atlas`'s tests. */
 import { vi } from 'vitest';
 import { MemoryStorage, Vault, VaultInUseError, VaultRemoteError, type RemoteFile, type VaultRemote } from '@neutrino/atlas';
-import type { AtlasServices } from '@/app/(apps)/atlas/atlasModel';
+import type { AtlasServices, DriveItem } from '@/app/(apps)/atlas/atlasModel';
 
 /** Drive, in memory: content versions guard writes, as the server's do. */
 export class MemoryDrive implements VaultRemote {
@@ -48,6 +48,22 @@ export class MemorySettings {
   removeItem(k: string) { this.data.delete(k); }
 }
 
+/** A PNG's first bytes: enough for an image's type to be known from them. */
+export const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * The rest of the user's Drive, outside the vault, by folder id ("u1" is the root): a photo, a
+ * document with a thumbnail, and a folder.
+ */
+export const DRIVE_FILES: Record<string, DriveItem[]> = {
+  u1: [
+    { id: 'v1', name: 'Atlas', isFolder: true, mimeType: null },
+    { id: 'pics', name: 'Pictures', isFolder: true, mimeType: null },
+    { id: 'doc1', name: 'Q4 plan.docx', isFolder: false, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+  ],
+  pics: [{ id: 'img1', name: 'Beach.png', isFolder: false, mimeType: 'image/png' }],
+};
+
 /** One browser: its key, its vault copies (one tab at a time each), its settings. */
 export function browser(drive: MemoryDrive, { hasKey = true } = {}) {
   const copies = new Map<string, MemoryStorage>();
@@ -68,6 +84,9 @@ export function browser(drive: MemoryDrive, { hasKey = true } = {}) {
     createVault: async () => 'v-new',
     settings: new MemorySettings(),
     openURL: vi.fn(),
+    driveFolder: async (id) => DRIVE_FILES[id] ?? [],
+    readDriveImage: async () => new Blob([PNG], { type: 'image/png' }),
+    filePreview: async (id) => (id === 'doc1' ? new Blob([PNG], { type: 'image/png' }) : null),
   };
   return { services, opened, open };
 }

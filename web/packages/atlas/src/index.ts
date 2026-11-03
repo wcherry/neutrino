@@ -44,7 +44,7 @@ export {
   type SwitcherHit,
 } from './indexing/vaultIndex';
 export { storageIndexCache, type IndexCacheStore } from './indexing/indexCache';
-export { VaultWorkspace, FileExistsError } from './workspace/vaultWorkspace';
+export { VaultWorkspace, FileExistsError, FolderIntoItselfError, folderMovedInto, pastedImageName, trimmedFolder } from './workspace/vaultWorkspace';
 export {
   pageSyntax,
   allSpans,
@@ -68,3 +68,43 @@ export {
   type PageNode,
   type TagNode,
 } from './workspace/pagePaths';
+export {
+  applyEdit,
+  newline,
+  indent,
+  outdent,
+  toggleTask,
+  toggleWrap,
+  linkCompletionContext,
+  acceptCompletion,
+  isInCode,
+  isInVerbatimBlock,
+  type TextEdit,
+  type LinkCompletion,
+  type LinkCompletionContext,
+} from './editing/markdownEditing';
+export {
+  builtInSlashCommands,
+  slashContext,
+  matchingSlashCommands,
+  applySlashCommand,
+  insertAction,
+  type SlashAction,
+  type SlashCommand,
+  type SlashContext,
+} from './editing/slashCommands';
+export {
+  blockImage,
+  imageFileExtension,
+  imageMimeType,
+  imageSourceKey,
+  insertBlocks,
+  insertEmbeds,
+  fileLinkAt,
+  setPreview,
+  IMAGE_EXTENSIONS,
+  type BlockImage,
+  type ImageSource,
+} from './editing/images';
+export { pastedLink, pasteLink } from './editing/pastedLinks';
+export { moveLines } from './editing/moveLines';

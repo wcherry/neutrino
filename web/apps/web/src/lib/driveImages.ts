@@ -266,6 +266,14 @@ function resolveDriveImageBlob(fileId: string): Promise<Blob> {
 }
 
 /**
+ * A Drive image's bytes, decrypted in memory when it is E2EE: what Atlas copies into a vault
+ * when an image is picked from Drive, and shows for a link to an image. Cached like the rest.
+ */
+export function readDriveImage(fileId: string): Promise<Blob> {
+  return resolveDriveImageBlob(fileId);
+}
+
+/**
  * A src for displaying the image.
  *
  * An unencrypted file resolves to its download URL and is never pulled into

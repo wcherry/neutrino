@@ -6,6 +6,14 @@ import { linkingMentions } from '../syntax/mentionLinker';
 import { compare, type Vault } from '../sync/vault';
 import { VaultSync, emptySyncReport, isQuiet, type SyncReport, type VaultRemote } from '../sync/vaultSync';
 
+/** A folder can't be moved inside itself. */
+export class FolderIntoItselfError extends Error {
+  constructor(readonly folder: string) {
+    super(`“${folder}” can't go inside itself`);
+    this.name = 'FolderIntoItselfError';
+  }
+}
+
 /** There's already a file where a move would put one. */
 export class FileExistsError extends Error {
   constructor(readonly path: string) {
@@ -219,6 +227,43 @@ export class VaultWorkspace {
     return linked.linked;
   }
 
+  /**
+   * Moves every file in folder `from` (pages and attachments, at any depth) to folder `to`,
+   * rewriting the links to each as a rename does. `to` may be a rename (`Work` → `Archive`) or a
+   * move (`Work` → `Archive/Work`). Nothing moves if any file would land on one that's already
+   * there (`FileExistsError`), or if `to` is inside `from` (`FolderIntoItselfError`). Returns how
+   * many pages had links rewritten.
+   */
+  async moveFolder(from: string, to: string): Promise<number> {
+    const old = trimmedFolder(from);
+    const next = trimmedFolder(to);
+    if (old === '' || old === next) return 0;
+    if ((next + '/').startsWith(old + '/')) throw new FolderIntoItselfError(old);
+    const moves = this.paths.filter((p) => p.startsWith(old + '/')).map((p) => [p, join(next, p.slice(old.length + 1))] as const);
+    const taken = moves.find(([, target]) => this.contains(target));
+    if (taken) throw new FileExistsError(taken[1]);
+    let rewritten = 0;
+    for (const [a, b] of moves) rewritten += await this.move(a, b);
+    return rewritten;
+  }
+
+  /**
+   * Saves `data` as a file named `name` in `folder`, numbered if the name is taken
+   * (`photo 2.png`), and returns its path. Like any write, sync encrypts and uploads it.
+   */
+  async addAttachment(data: Uint8Array, name: string, folder: string): Promise<string> {
+    // Not hidden: a leading `.` would keep it out of an export and an Obsidian vault.
+    const clean = name.replaceAll('/', '-').trim().replace(/^\.+/, '');
+    const dot = clean.lastIndexOf('.');
+    const ext = dot > 0 ? clean.slice(dot + 1) : '';
+    const base = (dot > 0 ? clean.slice(0, dot) : clean) || 'Attachment';
+    const named = (stem: string) => join(trimmedFolder(folder), ext === '' ? stem : `${stem}.${ext}`);
+    let path = named(base);
+    for (let n = 2; this.contains(path); n++) path = named(`${base} ${n}`);
+    await this.write(data, path);
+    return path;
+  }
+
   /** Deletes a file. Waits for a running pass. */
   delete(path: string): Promise<void> {
     return this.exclusively(async () => {
@@ -326,6 +371,24 @@ export class VaultWorkspace {
       this.index.addFile(path);
     }
   }
+}
+
+/** The name for an image pasted without one, as Obsidian names them: `Pasted image 20261102111900.png`. */
+export function pastedImageName(ext: string, date: Date = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`;
+  return `Pasted image ${stamp}.${ext}`;
+}
+
+/** A folder path without slashes or spaces at its ends; "" is the vault's root. */
+export function trimmedFolder(folder: string): string {
+  return folder.replace(/^[/ ]+|[/ ]+$/g, '');
+}
+
+/** Where a folder dropped on `folder` goes: the same name, in that folder. */
+export function folderMovedInto(moving: string, folder: string): string {
+  const name = trimmedFolder(moving).split('/').pop() ?? '';
+  return join(trimmedFolder(folder), name);
 }
 
 function join(folder: string, name: string): string {
