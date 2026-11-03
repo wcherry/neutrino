@@ -5,6 +5,7 @@ import { DeviceSealer, IndexedDBStorage, acquireVaultLock } from '../storage/ind
 import { LocalVault, VaultInUseError } from '../storage/localVault';
 import { Vault } from '../sync/vault';
 import { VaultSync } from '../sync/vaultSync';
+import { VaultWorkspace } from '../workspace/vaultWorkspace';
 import { FakeDrive } from './fakeDrive';
 
 let n = 0;
@@ -171,6 +172,28 @@ describe('LocalVault', () => {
     const release = await acquireVaultLock(user, vaultID);
     expect(release).toBeTypeOf('function');
     await release!();
+  });
+
+  it('keeps the index cache sealed with the vault', async () => {
+    if (!globalThis.navigator?.locks) installLockManager();
+    const { user, vault: vaultID } = ids();
+    const local = await LocalVault.open(user, vaultID);
+    const workspace = await VaultWorkspace.open(local.vault, new FakeDrive(), local.indexCache);
+    await workspace.writeText('# Quarterly secrets\n\n[[Hidden page]] #confidential\n', 'Quarterly secrets.md');
+    await workspace.saveIndexCache();
+    await local.close();
+
+    const raw = await rawValues(IndexedDBStorage.databaseName(user, vaultID));
+    expect(raw.some((r) => r.key === 'index-cache')).toBe(true);
+    for (const { value } of raw) {
+      for (const word of ['Quarterly', 'secrets', 'Hidden', 'confidential']) expect(contains(value as Uint8Array, word)).toBe(false);
+    }
+
+    // Reopened, the index comes from the cache.
+    const again = await LocalVault.open(user, vaultID);
+    const reopened = await VaultWorkspace.open(again.vault, new FakeDrive(), again.indexCache);
+    expect(reopened.index.tags()).toEqual([{ tag: 'confidential', count: 1 }]);
+    await again.close();
   });
 });
 

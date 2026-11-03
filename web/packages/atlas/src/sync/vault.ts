@@ -182,6 +182,15 @@ export class Vault {
     return data === null ? null : new TextDecoder('utf-8', { ignoreBOM: true }).decode(data);
   }
 
+  /**
+   * An opaque tag that changes whenever `path`'s content does, for caches of what was derived
+   * from it; null when there's no such file. Random, so it says nothing about the content.
+   */
+  contentTag(path: string): string | null {
+    const record = this.manifest.records[path];
+    return record && !record.deleted ? (this.manifest.content[path] ?? null) : null;
+  }
+
   /** Every record, by path. Copies: change them through the vault. */
   get records(): SyncRecord[] {
     return Object.values(this.manifest.records)

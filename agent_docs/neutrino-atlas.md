@@ -87,7 +87,8 @@ These come from the existing platform and the decisions above. They drive the sh
    conflicts.
 4. **Search is client-side.** The index (AtlasKit's `VaultIndex`) is a **per-device cache**,
    rebuilt from the pages, which takes about 1.2 s at 5,000 pages, and sealed at rest. It is not
-   synced. The server's one search-snapshot slot per user (`/api/v1/search/index`) already holds
+   synced. The web's parser is slower, so the web app also keeps what it extracted from each
+   page, sealed in the vault's IndexedDB copy, and parses only the pages changed since. The server's one search-snapshot slot per user (`/api/v1/search/index`) already holds
    the web app's search index, and the two would overwrite each other. Revisit if rebuild time
    ever matters, for example with a per-vault snapshot endpoint.
 5. **Live collaboration can't use the Docs collab server as-is.** `src/docs/collab/` keeps a live
