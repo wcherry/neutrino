@@ -223,6 +223,34 @@ impl ConnectionsService {
         }
     }
 
+    // ── Background sync ───────────────────────────────────────────────────────
+
+    /// Pulls every user's connections, as the periodic sweep does. One that fails is logged and
+    /// the rest carry on; nobody is waiting on the answer, so a dead sign-in is only a warning
+    /// until its owner reconnects it. Returns the events synced and the connections that failed.
+    pub async fn sync_all(&self) -> Result<(usize, usize), ApiError> {
+        let mut synced = 0usize;
+        let mut failed = 0usize;
+        for conn in self.repo.find_all()? {
+            let (id, user_id, provider) =
+                (conn.id.clone(), conn.user_id.clone(), conn.provider.clone());
+            match self.sync_connection(conn).await {
+                Ok(n) => synced += n,
+                Err(e) => {
+                    failed += 1;
+                    tracing::warn!(
+                        connection_id = %id,
+                        user_id = %user_id,
+                        "Background {} sync failed: {}",
+                        provider,
+                        e
+                    );
+                }
+            }
+        }
+        Ok((synced, failed))
+    }
+
     // ── Internal sync ─────────────────────────────────────────────────────────
 
     async fn sync_connection(&self, conn: ConnectionRecord) -> Result<usize, ApiError> {
@@ -667,6 +695,27 @@ mod tests {
         assert_eq!(after.len(), 1);
         assert_eq!(after[0].id, id);
         assert_eq!(after[0].color, "#8b5cf6");
+    }
+
+    #[test]
+    fn the_background_sync_sees_every_users_connections() {
+        let (svc, _pool) = service();
+        svc.save(record("u1", "google")).unwrap();
+        svc.save(record("u1", "apple")).unwrap();
+        svc.save(record("u2", "outlook")).unwrap();
+        let mut all: Vec<_> = svc
+            .repo
+            .find_all()
+            .unwrap()
+            .into_iter()
+            .map(|c| (c.user_id, c.provider))
+            .collect();
+        all.sort();
+        assert_eq!(
+            all,
+            [("u1", "apple"), ("u1", "google"), ("u2", "outlook")]
+                .map(|(u, p)| (u.to_string(), p.to_string()))
+        );
     }
 
     fn at(s: &str) -> chrono::NaiveDateTime {

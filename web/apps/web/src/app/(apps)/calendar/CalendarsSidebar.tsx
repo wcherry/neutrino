@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Lock, Plus, Trash2 } from 'lucide-react';
+import { Lock, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { AlertDialog } from '@neutrino/ui';
 import type { CalendarResponse } from '@neutrino/api-calendar';
 import { CALENDAR_COLORS } from './calendars';
@@ -14,6 +14,11 @@ interface CalendarsSidebarProps {
   onRecolor: (id: string, color: string) => void;
   onCreate: (name: string, color: string) => void;
   onDelete: (id: string) => void;
+  /** The calendars that come from a Google, Outlook or Apple account, and so can be refreshed. */
+  refreshable?: ReadonlyMap<string, unknown>;
+  /** The calendar being refreshed now, if one is. */
+  refreshingId?: string | null;
+  onRefresh?: (id: string) => void;
   /** Why the last change to a calendar failed, if it did. */
   error?: string | null;
 }
@@ -21,9 +26,12 @@ interface CalendarsSidebarProps {
 /**
  * The user's calendars: a checkbox in each one's colour shows or hides its events, the swatch
  * beside it changes the colour, and a calendar other than the default can be deleted with its
- * events. Holiday calendars are added and set up in Settings → Calendar.
+ * events. A calendar from a connected account has a button that pulls it from the provider now.
+ * Holiday calendars are added and set up in Settings → Calendar.
  */
-export function CalendarsSidebar({ calendars, onToggle, onRecolor, onCreate, onDelete, error }: CalendarsSidebarProps) {
+export function CalendarsSidebar({
+  calendars, onToggle, onRecolor, onCreate, onDelete, refreshable, refreshingId, onRefresh, error,
+}: CalendarsSidebarProps) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [color, setColor] = useState<string>(CALENDAR_COLORS[1]);
@@ -59,6 +67,17 @@ export function CalendarsSidebar({ calendars, onToggle, onRecolor, onCreate, onD
             />
             <span className={styles.calendarName} title={c.name}>{c.name}</span>
             {c.readOnly && <Lock size={11} className={styles.calendarLock} aria-label="Read-only" />}
+            {onRefresh && refreshable?.has(c.id) && (
+              <button
+                className={`${styles.reminderActionBtn} ${styles.calendarRefresh}`}
+                onClick={() => onRefresh(c.id)}
+                disabled={refreshingId === c.id}
+                title="Refresh from account"
+                aria-label={`Refresh ${c.name}`}
+              >
+                <RefreshCw size={11} className={refreshingId === c.id ? styles.calendarRefreshing : undefined} />
+              </button>
+            )}
             {/* The swatch is the colour input: clicking it opens the browser's colour picker. */}
             <label className={styles.calendarSwatch} style={{ background: c.color }} title="Change colour">
               <input
