@@ -175,7 +175,7 @@ describe('clearAuthAndRedirect', () => {
   // A signed-out visitor reading the marketing pages must not be bounced away
   // from them by a background 401 — that made the landing page unreachable for
   // exactly the people it is written for.
-  it.each(['/', '/self-host', '/self-host/', '/sign-in/', '/register/', '/share'])(
+  it.each(['/', '/self-host', '/self-host/', '/privacy/', '/terms/', '/sign-in/', '/register/', '/share'])(
     'stays put on the public path %s',
     (pathname) => {
       visit(pathname);

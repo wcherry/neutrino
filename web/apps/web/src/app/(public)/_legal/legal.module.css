@@ -1,0 +1,98 @@
+/* The Privacy Policy and Terms of Service: one readable column of text. */
+
+.page {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.bar {
+  border-bottom: 1px solid var(--color-border);
+  padding: var(--space-4) var(--space-6);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-primary);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-lg);
+  text-decoration: none;
+}
+
+.brandMark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--palette-gray-100);
+  font-size: var(--text-sm);
+  font-weight: var(--font-bold);
+}
+
+.main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-10) var(--space-4) var(--space-12);
+}
+
+.title {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  margin: 0 0 var(--space-2);
+}
+
+.effective {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-8);
+}
+
+.body {
+  font-size: var(--text-base);
+  line-height: 1.7;
+}
+
+.body h2 {
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  margin: var(--space-10) 0 var(--space-3);
+}
+
+.body h3 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.body p,
+.body ul {
+  margin: 0 0 var(--space-4);
+}
+
+.body ul {
+  padding-left: var(--space-6);
+}
+
+.body li {
+  margin-bottom: var(--space-2);
+}
+
+.body a,
+.footer a {
+  color: var(--color-accent);
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-6);
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-6) var(--space-4);
+  font-size: var(--text-sm);
+}

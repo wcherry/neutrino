@@ -812,6 +812,8 @@ docker run -d --name neutrino -p 8080:8080 \\
         <div className={styles.footerBottom}>
           <span>© {new Date().getFullYear()} Neutrino. MIT License.</span>
           <div className={styles.footerBottomLinks}>
+            <Link href="/privacy" className={styles.footerBottomLink}>Privacy</Link>
+            <Link href="/terms" className={styles.footerBottomLink}>Terms</Link>
             <a href={GITHUB_URL} className={styles.footerBottomLink} target="_blank" rel="noopener noreferrer">GitHub</a>
           </div>
         </div>

@@ -66,6 +66,10 @@ const PUBLIC_PATHS = [
   '/register/',
   '/self-host',
   '/self-host/',
+  '/privacy',
+  '/privacy/',
+  '/terms',
+  '/terms/',
   '/share',
 ];
 type Tokens = { accessToken: string; refreshToken: string; tokenType: string; expiresIn: number };

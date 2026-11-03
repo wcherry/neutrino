@@ -237,6 +237,10 @@ export default function RegisterPage() {
           </form>
         )}
 
+        <p className={styles.legal}>
+          By creating an account you agree to the <Link href="/terms">Terms of Service</Link> and{' '}
+          <Link href="/privacy">Privacy Policy</Link>.
+        </p>
         <p className={styles.footer}>
           Already have an account?{' '}
           <Link href="/sign-in" className={styles.footerLink}>

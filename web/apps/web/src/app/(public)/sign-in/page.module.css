@@ -205,6 +205,24 @@
   text-decoration: underline;
 }
 
+/* The Terms and Privacy links under the sign-in and register forms. */
+.legal {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.legal a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.legal a:hover {
+  color: var(--color-text-secondary);
+}
+
 .error {
   font-size: var(--text-sm);
   color: var(--color-error);
