@@ -108,3 +108,29 @@ export {
 } from './editing/images';
 export { pastedLink, pasteLink } from './editing/pastedLinks';
 export { moveLines } from './editing/moveLines';
+export { formatDate, parseDate } from './workspace/dates';
+export {
+  renderTemplate,
+  dailyNotePath,
+  dailyNoteDate,
+  openDailyNote,
+  templates,
+  templateText,
+  createPageFromTemplate,
+  BUILT_IN_TEMPLATES,
+  DEFAULT_DAILY_NOTES,
+  type DailyNotes,
+  type Template,
+} from './workspace/templates';
+export {
+  snapshotOf,
+  importFiles,
+  exportFiles,
+  cleanDriveName,
+  notePageName,
+  MAX_IMPORT_SIZE,
+  type FolderSnapshot,
+  type ImportReport,
+  type PickedFile,
+} from './workspace/importExport';
+export { AtlasLog, LogChannel, logLine, type LogEntry, type LogLevel } from './log';

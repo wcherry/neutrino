@@ -11,6 +11,7 @@ import {
   initSodium,
   loadKeyPair,
 } from '@neutrino/e2e-crypto';
+import { AtlasLog } from '../log';
 import { type RemoteFile, type VaultRemote, VaultRemoteError } from '../sync/vaultSync';
 
 interface FolderDTO {
@@ -120,7 +121,7 @@ export class DriveVaultRemote implements VaultRemote {
         if (metadata.chunkSize !== undefined) throw new Error(`chunked content (${String(metadata.chunkSize)})`);
         return { data: decryptFile(ciphertext, dek), version: after.contentVersion };
       } catch (e) {
-        console.error(`[atlas] ${after.name} (${id}): its key opens but its content doesn't decrypt`, e);
+        AtlasLog.drive.error(`${after.name} (${id}): its key opens but its content doesn't decrypt: ${e instanceof Error ? e.message : String(e)}`);
         throw new VaultRemoteError('unreadable', `${after.name} can't be decrypted`);
       }
     }
@@ -193,7 +194,7 @@ export class DriveVaultRemote implements VaultRemote {
     try {
       dek = await openFileKey(this.userId, id, ref);
     } catch (e) {
-      console.error(`[atlas] Key for ${this.names.get(id) ?? id} (${id}) opens with none of the keys held here`, e);
+      AtlasLog.drive.error(`Key for ${this.names.get(id) ?? id} (${id}) opens with none of the keys held here: ${e instanceof Error ? e.message : String(e)}`);
       throw new VaultRemoteError('unreadable', e instanceof Error ? e.message : String(e));
     }
     this.deks.set(id, dek);

@@ -22,6 +22,8 @@ import {
   Star,
   Trash2,
   Waypoints,
+  CalendarDays,
+  ChevronDown as MoreIcon,
 } from 'lucide-react';
 import { getCurrentUserId } from '@neutrino/api-core';
 import { useCommands, useDismiss } from '@neutrino/commands';
@@ -38,11 +40,12 @@ import {
   TextInput,
   useToast,
 } from '@neutrino/ui';
-import { VaultIndex, folderOf, imageFileExtension, pageTree, tagTree, type EditorMode, type Mention, type PageNode, type Snippet, type TagNode } from '@neutrino/atlas';
+import { VaultIndex, folderOf, imageFileExtension, snapshotOf, type FolderSnapshot, pageTree, tagTree, type EditorMode, type Mention, type PageNode, type Snippet, type TagNode } from '@neutrino/atlas';
 import { requestEncryptionGate, subscribeToGateState, getGateState } from '@/components/E2EEUnlockGate';
 import { AtlasModel, browserServices, type AtlasServices } from './atlasModel';
 import { AtlasEditor } from './AtlasEditor';
 import { DrivePicker } from './DrivePicker';
+import { DayDialog, ImportDialog, LogsDialog, SettingsDialog, TemplateDialog } from './AtlasDialogs';
 import styles from './atlas.module.css';
 import menuStyles from '../drive/FileContextMenu.module.css';
 
@@ -113,9 +116,12 @@ function AtlasForUser({ userId, services }: { userId: string; services?: AtlasSe
 function AtlasView({ model }: { model: AtlasModel }) {
   useAtlasModel(model);
 
-  const banner = model.error && (
+  const banner = (model.error || model.notice) && (
     <div className={styles.banner}>
-      <Alert variant="error" message={model.error} onClose={() => model.dismissError()} />
+      {model.error && <Alert variant="error" message={model.error} onClose={() => model.dismissError()} />}
+      {model.notice && !model.error && (
+        <Alert variant="success" message={<span className={styles.notice}>{model.notice}</span>} onClose={() => model.dismissNotice()} />
+      )}
     </div>
   );
 
@@ -221,6 +227,21 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
   const [inserting, setInserting] = useState(false);
   const search = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
+  const [dialog, setDialog] = useState<'settings' | 'logs' | 'template' | 'day' | 'importNotes' | 'export' | null>(null);
+  const [importing, setImporting] = useState<{ snapshot: FolderSnapshot; name: string } | null>(null);
+  const [more, setMore] = useState(false);
+
+  /** A folder picked to import: read here, then the user says where it goes. */
+  const folderPicked = async (files: FileList | null) => {
+    const list = [...(files ?? [])];
+    if (list.length === 0) return;
+    const name = list[0].webkitRelativePath.split('/')[0] || 'Imported';
+    const snapshot = await snapshotOf(
+      list.map((f) => ({ relativePath: f.webkitRelativePath || f.name, size: f.size, bytes: async () => new Uint8Array(await f.arrayBuffer()) })),
+    );
+    setImporting({ snapshot, name });
+  };
 
   /** Images picked from files: copied into the vault's attachments folder, encrypted, and embedded at the cursor. */
   const imagesPicked = async (files: FileList | null) => {
@@ -252,6 +273,16 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
     'atlas.insertImage': () => model.selection !== null && fileInput.current?.click(),
     'atlas.insertDriveImage': () => model.selection !== null && setPicking('images'),
     'atlas.linkFile': () => model.selection !== null && setPicking('links'),
+    'atlas.dailyNote': () => void model.openDailyNote(),
+    'atlas.newFromTemplate': () => setDialog('template'),
+    'atlas.copyLink': () => (model.selection !== null ? copyLink(model.selection) : false),
+    'atlas.toggleFavourite': () => (model.selection !== null ? model.toggleFavourite(model.selection) : false),
+    'atlas.importFolder': () => folderInput.current?.click(),
+    'atlas.importNotes': () => setDialog('importNotes'),
+    'atlas.exportVault': () => setDialog('export'),
+    'atlas.changeVault': () => void model.changeVault(),
+    'atlas.showLogs': () => setDialog('logs'),
+    'atlas.settings': () => setDialog('settings'),
   });
 
   const open = model.selection;
@@ -336,7 +367,40 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
             aria-pressed={backlinks === 'shown'}
             title="Show or hide the pages linking here"
           />
+          <Button variant="ghost" size="sm" icon={<CalendarDays size={16} />} onClick={() => void model.openDailyNote()} title="Open today's note" data-tour="atlas-today">
+            Today
+          </Button>
           <SyncStatus model={model} />
+          <div className={styles.insert}>
+            <Button variant="ghost" size="sm" icon={<MoreIcon size={16} />} iconPosition="right" aria-haspopup="menu" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+              More
+            </Button>
+            {more && (
+              <ContextMenu x={-1} y={-1} anchored alignRight onClose={() => setMore(false)}>
+                <MenuItem icon={<CalendarDays size={14} />} onClick={() => setDialog('day')}>Another day&rsquo;s note…</MenuItem>
+                <MenuItem icon={<SquarePen size={14} />} onClick={() => setDialog('template')}>New page from a template…</MenuItem>
+                <div className={menuStyles.separator} role="separator" />
+                <MenuItem icon={<FolderPlus size={14} />} onClick={() => folderInput.current?.click()}>Import an Obsidian vault…</MenuItem>
+                <MenuItem icon={<FileText size={14} />} onClick={() => setDialog('importNotes')}>Import Neutrino Notes…</MenuItem>
+                <MenuItem icon={<ArrowUpToLine size={14} />} onClick={() => setDialog('export')}>Export the vault as Markdown…</MenuItem>
+                <div className={menuStyles.separator} role="separator" />
+                <MenuItem icon={<Code size={14} />} onClick={() => setDialog('logs')}>Show logs</MenuItem>
+                <MenuItem icon={<Pencil size={14} />} onClick={() => setDialog('settings')}>Settings…</MenuItem>
+              </ContextMenu>
+            )}
+            <input
+              ref={folderInput}
+              type="file"
+              hidden
+              multiple
+              aria-label="Folder to import"
+              {...{ webkitdirectory: '', directory: '' }}
+              onChange={(e) => {
+                void folderPicked(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </div>
           <Button variant="ghost" size="sm" onClick={() => void model.changeVault()} title="Close this vault and choose another">
             Change vault
           </Button>
@@ -360,6 +424,34 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
       </div>
       {quickOpen && <QuickOpen model={model} onClose={() => setQuickOpen(false)} />}
       {picking && <DrivePicker model={model} purpose={picking} onClose={() => setPicking(null)} />}
+      {dialog === 'settings' && <SettingsDialog model={model} onClose={() => setDialog(null)} />}
+      {dialog === 'logs' && <LogsDialog onClose={() => setDialog(null)} />}
+      {dialog === 'template' && <TemplateDialog model={model} onClose={() => setDialog(null)} />}
+      {dialog === 'day' && <DayDialog model={model} onClose={() => setDialog(null)} />}
+      {importing && <ImportDialog model={model} snapshot={importing.snapshot} name={importing.name} onClose={() => setImporting(null)} />}
+      <AlertDialog
+        open={dialog === 'importNotes'}
+        onClose={() => setDialog(null)}
+        title="Import your Neutrino Notes?"
+        description={`Every note in your Drive is copied into the folder “Neutrino Notes” in this vault, keeping its Drive folders, encrypted as ever. Your notes stay where they are, and importing again adds only what's new or changed.`}
+        confirmLabel="Import"
+        onConfirm={() => {
+          setDialog(null);
+          void model.importNotes();
+        }}
+      />
+      <AlertDialog
+        open={dialog === 'export'}
+        onClose={() => setDialog(null)}
+        title="Export the vault as Markdown?"
+        description="The vault is saved as a .zip of plain Markdown and attachments. The export is not encrypted: anyone with the file can read it."
+        variant="warning"
+        confirmLabel="Export"
+        onConfirm={() => {
+          setDialog(null);
+          void model.exportVault();
+        }}
+      />
       {naming?.kind === 'new' && (
         <NameDialog
           title={naming.parent === '' ? 'New folder' : `New folder in “${naming.parent}”`}
@@ -706,7 +798,7 @@ function Highlighted({ snippet }: { snippet: Snippet }) {
  * A menu at a point, or with `anchored` under the element it's in (a toolbar button's wrapper,
  * whose own clicks then toggle it rather than close and reopen it).
  */
-function ContextMenu({ x, y, anchored, onClose, children }: { x: number; y: number; anchored?: boolean; onClose(): void; children: React.ReactNode }) {
+function ContextMenu({ x, y, anchored, alignRight, onClose, children }: { x: number; y: number; anchored?: boolean; alignRight?: boolean; onClose(): void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const down = (e: MouseEvent) => {
@@ -721,7 +813,7 @@ function ContextMenu({ x, y, anchored, onClose, children }: { x: number; y: numb
     <div
       ref={ref}
       className={menuStyles.menu}
-      style={anchored ? { position: 'absolute', left: 0, top: '100%' } : { left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 220) }}
+      style={anchored ? { position: 'absolute', top: '100%', ...(alignRight ? { right: 0 } : { left: 0 }) } : { left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 220) }}
       role="menu"
       onClick={onClose}
     >
@@ -843,7 +935,9 @@ function QuickOpen({ model, onClose }: { model: AtlasModel; onClose(): void }) {
         : model.quickSwitch(query).map((h) => ({ path: h.path, title: h.alias ?? h.title })),
     [model, query],
   );
-  useEffect(() => setChosen(0), [query]);
+  useEffect(() => {
+    setChosen(0);
+  }, [query]);
 
   const submit = () => {
     const pick = hits[chosen];

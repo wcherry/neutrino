@@ -121,6 +121,16 @@ export const COMMANDS = [
   { id: 'atlas.linkFile', title: 'Insert a link to a Neutrino file', app: 'atlas', defaultKeys: ['Mod+Alt+K'], whileTyping: 'run' },
   { id: 'atlas.toggleSource', title: 'Switch between Live Preview and source', app: 'atlas', defaultKeys: [] },
   { id: 'atlas.toggleBacklinks', title: 'Show or hide backlinks', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.dailyNote', title: "Open today's note", app: 'atlas', defaultKeys: ['Mod+Shift+D'], whileTyping: 'run' },
+  { id: 'atlas.newFromTemplate', title: 'New page from a template', app: 'atlas', defaultKeys: ['Mod+Alt+Shift+N'], whileTyping: 'run' },
+  { id: 'atlas.copyLink', title: 'Copy a link to this page', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.toggleFavourite', title: 'Add this page to Favourites, or remove it', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.importFolder', title: 'Import an Obsidian vault or a folder of Markdown', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.importNotes', title: 'Import your Neutrino Notes', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.exportVault', title: 'Export the vault as Markdown', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.changeVault', title: 'Choose another vault', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.showLogs', title: 'Show logs', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.settings', title: 'Atlas settings', app: 'atlas', defaultKeys: [] },
 
   // ── Photos ────────────────────────────────────────────────────────────────
   { id: 'photos.deleteSelected', title: 'Delete the selected markup', app: 'photos', defaultKeys: DELETE },

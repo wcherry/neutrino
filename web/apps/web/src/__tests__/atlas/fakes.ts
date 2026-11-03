@@ -64,6 +64,12 @@ export const DRIVE_FILES: Record<string, DriveItem[]> = {
   pics: [{ id: 'img1', name: 'Beach.png', isFolder: false, mimeType: 'image/png' }],
 };
 
+/** The user's Neutrino Notes, as they'd be read from Drive. */
+export const NOTES = [
+  { path: 'Q4 plan.md', text: '# Q4 plan\n\nShip it.\n' },
+  { path: 'Work/Standup.md', text: 'Talked about the [[Q4 plan]].\n' },
+];
+
 /** One browser: its key, its vault copies (one tab at a time each), its settings. */
 export function browser(drive: MemoryDrive, { hasKey = true } = {}) {
   const copies = new Map<string, MemoryStorage>();
@@ -87,6 +93,13 @@ export function browser(drive: MemoryDrive, { hasKey = true } = {}) {
     driveFolder: async (id) => DRIVE_FILES[id] ?? [],
     readDriveImage: async () => new Blob([PNG], { type: 'image/png' }),
     filePreview: async (id) => (id === 'doc1' ? new Blob([PNG], { type: 'image/png' }) : null),
+    notesSnapshot: async (_user, excluding) => ({
+      files: excluding.has('notes-folder') ? [] : NOTES.map((n) => ({ path: n.path, data: new TextEncoder().encode(n.text) })),
+      tooLarge: [],
+    }),
+    download: vi.fn(),
   };
+  // Today's note on opening is tested on its own; elsewhere a vault opens on its last page.
+  services.settings.setItem('neutrino.atlas.daily.onLaunch.u1', 'false');
   return { services, opened, open };
 }

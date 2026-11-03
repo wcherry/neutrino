@@ -600,3 +600,39 @@
 .pickerList label {
   cursor: pointer;
 }
+
+.notice {
+  white-space: pre-line;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings h3 {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-15, 15px);
+  font-weight: var(--font-semibold);
+}
+
+.logs {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  max-height: 50vh;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-11, 12px);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  border-radius: var(--radius-sm);
+}
+
+.logFilter {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+}

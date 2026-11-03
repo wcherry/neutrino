@@ -61,6 +61,15 @@ For the editor and the app, from AtlasKit's `PageSyntax`, `MarkdownStyler`, `Men
   pastes with its title; lines move with the blocks they belong to.
 - `VaultWorkspace.addAttachment`, `moveFolder` → images saved into the vault, numbered as
   needed, and folders moved or renamed with every link to what's in them rewritten.
+- `openDailyNote`, `dailyNotePath`, `templates`, `createPageFromTemplate`, `renderTemplate`, from
+  `DailyNotes`, `Templates` and `PageTemplate`: a page per day, named in a Unicode date pattern
+  (`formatDate` and `parseDate` write and read them as the Mac's `DateFormatter` does), and pages
+  from the templates folder or built in, with `{{title}}`, `{{date}}`, `{{time}}` and
+  `{{date:FORMAT}}` filled in.
+- `snapshotOf`, `importFiles`, `exportFiles`, from `ImportExport`: an Obsidian vault (or any
+  folder of Markdown) picked in the browser, imported keeping every byte and never overwriting;
+  and the vault as files, for an export.
+- `AtlasLog`: this tab's last 5,000 log entries, in memory only, never with page content.
 
 ## How the vault agrees with AtlasKit
 

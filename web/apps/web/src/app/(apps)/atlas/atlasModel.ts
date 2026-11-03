@@ -8,7 +8,25 @@ import {
   VaultIndex,
   VaultInUseError,
   VaultWorkspace,
+  AtlasLog,
+  BUILT_IN_TEMPLATES,
+  DEFAULT_DAILY_NOTES,
   builtInSlashCommands,
+  createPageFromTemplate,
+  dailyNotePath,
+  exportFiles,
+  importFiles,
+  insertAction,
+  notePageName,
+  cleanDriveName,
+  openDailyNote,
+  renderTemplate,
+  templateText,
+  templates as vaultTemplates,
+  type DailyNotes,
+  type FolderSnapshot,
+  type ImportReport,
+  type Template,
   extract,
   folderMovedInto,
   headingLinkText,
@@ -121,6 +139,13 @@ export interface AtlasServices {
    * image no bigger than 25 MB the image itself. Null for a file with neither: it shows as a chip.
    */
   filePreview(fileID: string): Promise<Blob | null>;
+  /**
+   * Every note in the user's Drive, read and decrypted, at its Drive path (`Folder/Title.md`),
+   * leaving out the folders in `excluding` and everything under them: the vault itself.
+   */
+  notesSnapshot(userId: string, excluding: Set<string>): Promise<FolderSnapshot>;
+  /** Hands the viewer a file to save: an export. */
+  download(name: string, data: Blob): void;
 }
 
 /** The largest image read whole to preview it, when it has no thumbnail. */
@@ -149,6 +174,36 @@ export const browserServices = (): AtlasServices => ({
     ];
   },
   readDriveImage: async (fileID) => (await import('@/lib/driveImages')).readDriveImage(fileID),
+  notesSnapshot: async (userId, excluding) => {
+    const { filesystemApi } = await import('@neutrino/api-drive');
+    const { readDocumentTextForDisplay } = await import('@/lib/documentContent');
+    const files: FolderSnapshot['files'] = [];
+    const queue: { id: string; path: string }[] = [{ id: userId, path: '' }];
+    while (queue.length) {
+      const { id, path } = queue.shift()!;
+      const contents = await filesystemApi.getFolderContents(id, { type: 'note' });
+      for (const folder of contents.folders) {
+        if (!excluding.has(folder.id)) queue.push({ id: folder.id, path: path === '' ? cleanDriveName(folder.name) : `${path}/${cleanDriveName(folder.name)}` });
+      }
+      for (const file of contents.files) {
+        if (file.mimeType && file.mimeType !== 'text/markdown') continue;
+        const text = await readDocumentTextForDisplay(userId, file.id);
+        if (text === null) throw new Error(`${file.name} can't be decrypted here`);
+        const name = notePageName(file.name);
+        files.push({ path: path === '' ? name : `${path}/${name}`, data: new TextEncoder().encode(text) });
+      }
+    }
+    files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return { files, tooLarge: [] };
+  },
+  download: (name, data) => {
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
   filePreview: async (fileID) => {
     const { storageApi } = await import('@neutrino/api-drive');
     const info = await storageApi.getFileInfo(fileID);
@@ -170,8 +225,15 @@ export class AtlasModel {
   static readonly recentLimit = 20;
 
   phase: Phase = 'starting';
-  /** Shown to the user, until dismissed. */
-  error: string | null = null;
+  private shownError: string | null = null;
+  /** Shown to the user, until dismissed, and logged. */
+  get error(): string | null {
+    return this.shownError;
+  }
+  set error(message: string | null) {
+    this.shownError = message;
+    if (message) AtlasLog.app.error(message);
+  }
   /** Something to tell the user that isn't an error. */
   notice: string | null = null;
   busy = false;
@@ -359,8 +421,11 @@ export class AtlasModel {
     this.noteAttachments();
     this.loadPageLists();
     this.phase = 'ready';
+    AtlasLog.app.info(`Opened vault ${vaultID}: ${workspace.pages.length} pages, ${workspace.paths.length - workspace.pages.length} other files`);
+    this.noteTemplates();
     const last = this.services.settings.getItem(this.pageListKey('last'));
-    await this.select(last !== null && workspace.contains(last) ? last : (workspace.pages[0] ?? null));
+    if (this.openTodayOnLaunch) await this.openDailyNote();
+    else await this.select(last !== null && workspace.contains(last) ? last : (workspace.pages[0] ?? null));
     this.startSyncing();
   }
 
@@ -411,6 +476,10 @@ export class AtlasModel {
     try {
       const report = await workspace.sync();
       if (this.workspace !== workspace) return;
+      if (report) {
+        const counts = Object.entries(report).filter(([, v]) => Array.isArray(v) && v.length).map(([k, v]) => `${(v as unknown[]).length} ${k}`);
+        if (counts.length) AtlasLog.sync.info(`Synced: ${counts.join(', ')}`);
+      }
       this.syncState = { kind: 'synced', at: new Date() };
       // Files this browser can't decrypt are left out and tried again each pass; say so once.
       const unreadable = report ? [...report.unreadable].sort().join('\n') : this.reportedUnreadable;
@@ -428,6 +497,7 @@ export class AtlasModel {
           .join(', ')}`;
       }
     } catch (e) {
+      AtlasLog.sync.error(`Sync failed: ${message(e)}`);
       if (this.workspace === workspace) this.syncState = { kind: 'failed', message: message(e) };
     }
     this.changed();
@@ -457,6 +527,7 @@ export class AtlasModel {
     this.recent.update(moved, (p) => workspace.contains(p));
     this.savePageLists();
     this.noteAttachments();
+    this.noteTemplates();
     // Content synced from elsewhere reaches the open page, unless an edit to it is still on its way.
     const path = this.selection;
     if (path !== null && this.unsaved === null && !this.saving) {
@@ -775,9 +846,197 @@ export class AtlasModel {
     });
   }
 
-  /** The editor's `/` menu. Templates join it with the templates milestone. */
+  /**
+   * The editor's `/` menu: the built-in commands, then one per template, which inserts it filled
+   * in for the open page (`{{title}}` is its title).
+   */
   slashCommands(): SlashCommand[] {
-    return builtInSlashCommands();
+    const now = new Date();
+    const title = this.selection ? VaultIndex.title(this.selection) : '';
+    const fromTemplates = this.templates().flatMap((t): SlashCommand[] => {
+      const text = t.text ?? this.templateTexts.get(t.path!);
+      if (text === undefined) return [];
+      return [{ id: `template:${t.name}`, title: `Template: ${t.name}`, keywords: ['template', t.name], action: insertAction(renderTemplate(text, title, now), null, true) }];
+    });
+    return [...builtInSlashCommands(now), ...fromTemplates];
+  }
+
+  // ── Settings ────────────────────────────────────────────────────────────────
+
+  private readSetting<T>(name: string, fallback: T): T {
+    try {
+      const raw = this.services.settings.getItem(`neutrino.atlas.${name}.${this.userId}`);
+      return raw === null ? fallback : (JSON.parse(raw) as T);
+    } catch {
+      return fallback;
+    }
+  }
+
+  private writeSetting(name: string, value: unknown): void {
+    this.services.settings.setItem(`neutrino.atlas.${name}.${this.userId}`, JSON.stringify(value));
+    this.changed();
+  }
+
+  /** Where daily notes go and what they start with. */
+  get dailyNotes(): DailyNotes {
+    return { ...DEFAULT_DAILY_NOTES, ...this.readSetting<Partial<DailyNotes>>('daily', {}) };
+  }
+
+  set dailyNotes(settings: DailyNotes) {
+    this.writeSetting('daily', settings);
+  }
+
+  /** Whether a vault opens on today's note. */
+  get openTodayOnLaunch(): boolean {
+    return this.readSetting('daily.onLaunch', true);
+  }
+
+  set openTodayOnLaunch(on: boolean) {
+    this.writeSetting('daily.onLaunch', on);
+  }
+
+  /** The vault folder whose pages are templates, as in Obsidian. */
+  get templatesFolder(): string {
+    return this.readSetting('templates', 'Templates');
+  }
+
+  set templatesFolder(folder: string) {
+    this.writeSetting('templates', trimmedFolder(folder));
+    this.noteTemplates();
+  }
+
+  // ── Daily notes and templates ───────────────────────────────────────────────
+
+  /** Opens a day's note, creating it from the template the first time. */
+  async openDailyNote(date: Date = new Date()): Promise<void> {
+    const workspace = this.workspace;
+    if (!workspace) return;
+    try {
+      const existed = workspace.contains(dailyNotePath(this.dailyNotes, date));
+      const path = await openDailyNote(workspace, date, this.dailyNotes);
+      await this.select(path);
+      if (!existed) this.syncAfterEdit();
+    } catch (e) {
+      this.error = `Couldn't open the daily note: ${message(e)}`;
+      this.changed();
+    }
+  }
+
+  /** The templates to offer: the templates folder's pages, and the built-ins they don't replace. */
+  templates(): Template[] {
+    return this.workspace ? vaultTemplates(this.workspace, this.templatesFolder) : [...BUILT_IN_TEMPLATES];
+  }
+
+  /** A new page from a template, opened. */
+  async newPageFromTemplate(template: Template, title: string): Promise<void> {
+    const workspace = this.workspace;
+    if (!workspace) return;
+    await this.flush();
+    try {
+      const path = await createPageFromTemplate(workspace, template, title.trim() || 'Untitled');
+      await this.select(path);
+      this.syncAfterEdit();
+    } catch (e) {
+      this.error = `Couldn't create the page: ${message(e)}`;
+      this.changed();
+    }
+  }
+
+  /** The text of each template page, for the `/` menu, which can't wait for it. */
+  private templateTexts = new Map<string, string>();
+
+  private noteTemplates(): void {
+    const workspace = this.workspace;
+    if (!workspace) return;
+    const pages = this.templates().filter((t) => t.path !== undefined);
+    void Promise.all(pages.map(async (t) => [t.path!, await templateText(workspace, t)] as const)).then((texts) => {
+      this.templateTexts = new Map(texts);
+    });
+  }
+
+  // ── Import and export ───────────────────────────────────────────────────────
+
+  /** Imports a picked folder (an Obsidian vault, or any folder of Markdown) into `folder`, or the vault's root. */
+  async importFolder(snapshot: FolderSnapshot, from: string, folder = ''): Promise<void> {
+    const workspace = this.workspace;
+    if (!workspace) return;
+    this.busy = true;
+    this.changed();
+    try {
+      await this.flush();
+      const report = await importFiles(workspace, snapshot, trimmedFolder(folder));
+      AtlasLog.app.info(`Imported ${report.imported.length} file(s) from ${from}; ${report.unchanged.length} unchanged, ${report.renamed.size} renamed`);
+      this.notice = describeImport(report, from);
+      this.syncAfterEdit();
+    } catch (e) {
+      this.error = `Couldn't import ${from}: ${message(e)}`;
+    } finally {
+      this.busy = false;
+      this.changed();
+    }
+  }
+
+  static readonly notesFolder = 'Neutrino Notes';
+
+  /**
+   * Copies the user's Neutrino Notes into the vault's "Neutrino Notes" folder: every Markdown note
+   * in their Drive, outside this vault's own folder, read and decrypted here and imported like an
+   * Obsidian vault. Importing again adds only what's new or changed.
+   */
+  async importNotes(folder: string = AtlasModel.notesFolder): Promise<void> {
+    const vault = this.storedVaultID;
+    if (!this.workspace || vault === null) return;
+    this.busy = true;
+    this.changed();
+    try {
+      const snapshot = await this.services.notesSnapshot(this.userId, new Set([vault]));
+      this.busy = false;
+      if (snapshot.files.length === 0) {
+        this.notice = 'There are no notes in Neutrino Notes to import.';
+        this.changed();
+        return;
+      }
+      await this.importFolder(snapshot, 'Neutrino Notes', folder);
+    } catch (e) {
+      this.error = `Couldn't import from Neutrino Notes: ${message(e)}`;
+    } finally {
+      this.busy = false;
+      this.changed();
+    }
+  }
+
+  /**
+   * Hands the viewer the vault as a `.zip` of plain Markdown and attachments, as the Mac writes
+   * it into a folder. The export is not encrypted: the page says so before it's made.
+   */
+  async exportVault(now: Date = new Date()): Promise<void> {
+    const workspace = this.workspace;
+    if (!workspace) return;
+    this.busy = true;
+    this.changed();
+    try {
+      await this.flush();
+      const snapshot = await exportFiles(workspace);
+      const { default: JSZip } = await import('jszip');
+      const zip = new JSZip();
+      // A copy in this realm's own Uint8Array, which JSZip checks the type of.
+      for (const f of snapshot.files) zip.file(f.path, Uint8Array.from(f.data));
+      const two = (n: number) => String(n).padStart(2, '0');
+      const name = `Atlas export ${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}.${two(now.getMinutes())}.zip`;
+      this.services.download(name, await zip.generateAsync({ type: 'blob' }));
+      AtlasLog.app.info(`Exported ${snapshot.files.length} file(s)`);
+      this.notice = `Exported ${snapshot.files.length} file${snapshot.files.length === 1 ? '' : 's'} as “${name}”.`;
+    } catch (e) {
+      this.error = `Couldn't export: ${message(e)}`;
+    } finally {
+      this.busy = false;
+      this.changed();
+    }
+  }
+
+  dismissNotice(): void {
+    this.notice = null;
+    this.changed();
   }
 
   // ── Images ──────────────────────────────────────────────────────────────────
@@ -933,6 +1192,22 @@ export class AtlasModel {
     this.error = null;
     this.changed();
   }
+}
+
+/** What an import did, to tell the user, as the Mac says it. */
+export function describeImport(report: ImportReport, from: string): string {
+  const lines = [`Imported ${report.imported.length} file${report.imported.length === 1 ? '' : 's'} from ${from}.`];
+  if (report.unchanged.length) lines.push(`${report.unchanged.length} were already here and were left as they were.`);
+  if (report.renamed.size) {
+    const names = [...report.renamed.values()].sort().slice(0, 5).map((p) => VaultIndex.title(p));
+    lines.push(`${report.renamed.size} had the name of a different page here, so they were imported beside it as “(imported)”: ${names.join(', ')}${report.renamed.size > 5 ? ', …' : ''}.`);
+  }
+  if (report.tooLarge.length) lines.push(`Left out, over 100 MB: ${report.tooLarge.slice(0, 5).join(', ')}.`);
+  if (report.unresolvedLinks.length) {
+    const n = report.unresolvedLinks.length;
+    lines.push(`${n} link target${n === 1 ? '' : 's'} match no page yet, such as ${report.unresolvedLinks.slice(0, 3).map((l) => `[[${l.target}]]`).join(', ')}. Clicking one creates the page.`);
+  }
+  return lines.join('\n\n');
 }
 
 function message(e: unknown): string {
