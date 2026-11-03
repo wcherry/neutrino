@@ -7,22 +7,8 @@ import { ApiClientError } from '@neutrino/api-core';
 import { authApi } from '@neutrino/auth';
 import { routeAfterSignIn, SIGN_IN_NEXT_PARAM } from '@/lib/signInRedirect';
 import { readInstanceBrand } from '@/lib/instanceBrand';
+import { BrandRow } from './BrandRow';
 import styles from './page.module.css';
-
-/**
- * The instance's name and logo. The name comes from the brand the server wrote into this page
- * (`lib/instanceBrand.ts`) — this form is never prerendered, so its first paint is already the
- * instance's. An uploaded logo is drawn over `data-brand="logo"` by the server's CSS, which also
- * hides the name beside it (`data-brand="name"`).
- */
-function BrandRow() {
-  return (
-    <div className={styles.logoRow}>
-      <div className={styles.logoMark} data-brand="logo">N</div>
-      <span className={styles.logoText} data-brand="name">{readInstanceBrand().name ?? 'Neutrino'}</span>
-    </div>
-  );
-}
 
 export default function SignInPage() {
   // `useSearchParams` needs a Suspense boundary above it during prerender.
@@ -114,7 +100,12 @@ function SignInForm() {
             />
           </div>
           <div className={styles.field}>
-            <label htmlFor="password" className={styles.label}>Password</label>
+            <div className={styles.labelRow}>
+              <label htmlFor="password" className={styles.label}>Password</label>
+              <Link href="/forgot-password" className={styles.labelLink}>
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               name="password"

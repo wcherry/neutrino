@@ -201,6 +201,25 @@
   cursor: pointer;
 }
 
+/* "Forgot password?" beside the Password label. */
+.labelRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.labelLink {
+  font-size: var(--text-xs);
+  color: var(--color-accent);
+  text-decoration: none;
+  font-weight: var(--font-medium);
+}
+
+.labelLink:hover {
+  text-decoration: underline;
+}
+
 .footerLink:hover {
   text-decoration: underline;
 }
@@ -227,6 +246,14 @@
   font-size: var(--text-sm);
   color: var(--color-error);
   text-align: center;
+}
+
+/* A link that reads as the primary button: "Sign in" and "Send a new link" on the reset page. */
+.linkButton {
+  display: block;
+  box-sizing: border-box;
+  text-align: center;
+  text-decoration: none;
 }
 
 .submit:disabled {

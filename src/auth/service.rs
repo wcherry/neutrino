@@ -761,6 +761,45 @@ impl AuthService {
         self.repo.delete_all_refresh_tokens_for_user(&user.id)
     }
 
+    /// Check a password chosen through a reset link and hash it, writing
+    /// nothing.
+    ///
+    /// Split from [`Self::apply_reset_password`] so the reset link is spent
+    /// only once the password is known to be acceptable: a policy refusal
+    /// leaves the link working for the next try. The same-as-current rule is
+    /// kept for the reason `change_password` gives — re-setting an expired
+    /// password would clear its expiry.
+    pub fn prepare_reset_password(&self, user: &User, new_password: &str) -> Result<String, ApiError> {
+        let is_current = PasswordHash::new(&user.password_hash)
+            .map(|parsed| {
+                Argon2::default()
+                    .verify_password(new_password.as_bytes(), &parsed)
+                    .is_ok()
+            })
+            .unwrap_or(false);
+        if is_current {
+            return Err(ApiError::bad_request(
+                "The new password must be different from the current one",
+            ));
+        }
+        self.check_password_not_reused(&user.id, new_password)?;
+        self.hash_new_password(new_password)
+    }
+
+    /// Store a password set through a reset link, hashed by
+    /// [`Self::prepare_reset_password`].
+    ///
+    /// Clears a lockout, as an admin reset does: the lockout stops someone
+    /// guessing the old password, and the reset was proved by the mailbox, not
+    /// by a guess. Every session is revoked, since a reset is as likely to
+    /// follow a compromise as a lapse of memory.
+    pub fn apply_reset_password(&self, user_id: &str, password_hash: &str) -> Result<(), ApiError> {
+        self.repo.update_user_password(user_id, password_hash)?;
+        self.record_password(user_id, password_hash)?;
+        self.repo.clear_lockout(user_id)?;
+        self.repo.delete_all_refresh_tokens_for_user(user_id)
+    }
+
     /// Undoes a soft delete, whoever performed it.
     ///
     /// Only meaningful inside the grace window: after the worker's purge there

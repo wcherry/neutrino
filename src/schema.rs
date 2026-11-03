@@ -898,6 +898,19 @@ diesel::table! {
     }
 }
 
+// ── Added in migration 151 ────────────────────────────────────────────────────
+diesel::table! {
+    password_resets (id) {
+        id -> Text,
+        user_id -> Text,
+        token_hash -> Text,
+        created_at -> Timestamp,
+        expires_at -> Timestamp,
+        used_at -> Nullable<Timestamp>,
+        revoked_at -> Nullable<Timestamp>,
+    }
+}
+
 // ── Added in migration 146 ────────────────────────────────────────────────────
 diesel::table! {
     team_key_requests (id) {
@@ -1246,6 +1259,7 @@ diesel::joinable!(refresh_tokens -> users (user_id));
 diesel::joinable!(user_key_vaults -> users (user_id));
 diesel::joinable!(user_key_unlocks -> users (user_id));
 diesel::joinable!(invites -> users (inviter_id));
+diesel::joinable!(password_resets -> users (user_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
@@ -1402,4 +1416,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_public_keys,
     // Friend invites
     invites,
+    // Password reset
+    password_resets,
 );

@@ -38,6 +38,8 @@ export type {
   SignupPolicy,
   LoginRequest,
   ChangePasswordRequest,
+  PasswordResetCheck,
+  ResetPasswordRequest,
   AuthTokens,
   RefreshRequest,
   UserProfile,

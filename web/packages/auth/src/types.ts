@@ -35,6 +35,22 @@ export interface ChangePasswordRequest {
   totpCode?: string;
 }
 
+/** A password reset link the reset page is about to use. */
+export interface PasswordResetCheck {
+  /** The account's address, for the password manager. */
+  email: string;
+  /** The account has two-factor on, so the reset needs a code. */
+  requiresTwoFactor: boolean;
+}
+
+export interface ResetPasswordRequest {
+  /** The token from the emailed link. */
+  token: string;
+  newPassword: string;
+  /** Required when the account has two-factor enabled. */
+  totpCode?: string;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;

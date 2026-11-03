@@ -749,6 +749,17 @@ async fn main() -> std::io::Result<()> {
         if config.public_signup_open { "open" } else { "closed (invite only)" }
     );
 
+    // "Forgot password?": single-use reset links mailed to the account's address.
+    let password_reset_state = web::Data::new(auth::password_reset::api::PasswordResetApiState {
+        resets: Arc::new(auth::password_reset::service::PasswordResetService::new(
+            Arc::new(auth::password_reset::repository::PasswordResetRepository::new(pool.clone())),
+            auth_repo.clone(),
+            auth_service.clone(),
+            mailer.clone(),
+            config.drive_base_url.clone(),
+        )),
+    });
+
     let auth_state = web::Data::new(auth::api::AuthApiState {
         auth_service: auth_service.clone(),
         filesystem_service: drive_fs_service,
@@ -1271,6 +1282,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         let mut doc = NeutrinoApiDoc::openapi();
         doc.merge(auth::api::AuthApiDoc::openapi());
         doc.merge(auth::invites::api::InvitesApiDoc::openapi());
+        doc.merge(auth::password_reset::api::PasswordResetApiDoc::openapi());
         doc.merge(auth::keyvault::api::KeyVaultApiDoc::openapi());
         doc.merge(calendar::calendars::api::CalendarsApiDoc::openapi());
         doc.merge(calendar::events::api::EventsApiDoc::openapi());
@@ -1355,6 +1367,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             // Auth
             .app_data(auth_state.clone())
             .app_data(invites_state.clone())
+            .app_data(password_reset_state.clone())
             .app_data(key_vault_state.clone())
             // OAuth
             .app_data(oauth_state.clone())

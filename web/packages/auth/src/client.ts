@@ -5,6 +5,8 @@ import type {
   SignupPolicy,
   LoginRequest,
   ChangePasswordRequest,
+  PasswordResetCheck,
+  ResetPasswordRequest,
   AuthTokens,
   UserProfile,
   UserProfileDetails,
@@ -47,6 +49,45 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  },
+
+  /**
+   * Ask for a password reset link to be emailed to `email`.
+   *
+   * Resolves the same way whether or not the address has an account, so the
+   * caller cannot tell — and must not try to.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/password/forgot',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { auth: 'none', responseType: 'none' },
+    );
+  },
+
+  /**
+   * Check an emailed reset link before asking for a new password. Rejects with
+   * `RESET_NOT_FOUND`, `RESET_REVOKED`, `RESET_USED`, `RESET_EXPIRED` or
+   * `ACCOUNT_DISABLED`.
+   */
+  async checkPasswordReset(token: string): Promise<PasswordResetCheck> {
+    return request<PasswordResetCheck>(
+      '/api/v1/auth/password/reset/check',
+      { method: 'POST', body: JSON.stringify({ token }) },
+      { auth: 'none' },
+    );
+  },
+
+  /**
+   * Set a new password with an emailed reset link. Every device is signed out,
+   * so the caller sends the user to sign in rather than holding a session.
+   */
+  async resetPassword(body: ResetPasswordRequest): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/password/reset',
+      { method: 'POST', body: JSON.stringify(body) },
+      { auth: 'none' },
+    );
   },
 
   async login(body: LoginRequest): Promise<AuthTokens> {
