@@ -1,8 +1,9 @@
 # @neutrino/atlas
 
 Neutrino Atlas for the web client, below the UI: Atlas Markdown, the dialect every page is
-written in (`specs/atlas-markdown/SPEC.md`); the vault's data and sync; and its index. All three
-are implemented to agree exactly with AtlasKit, the Swift package the Mac and iOS apps use.
+written in (`specs/atlas-markdown/SPEC.md`); the vault's data and sync; its index; and what the
+editor needs to style a page. All of it is implemented to agree exactly with AtlasKit, the Swift
+package the Mac and iOS apps use. The app itself, `/atlas`, is in `apps/web/src/app/(apps)/atlas`.
 
 - `parse(source)` → the tree (SPEC §3–§4), plain objects shaped like the corpus's `ast.json`.
 - `extract(tree)` → what a page contributes to the index (§6).
@@ -40,6 +41,19 @@ The index, ported from AtlasKit's `VaultIndex` and `VaultWorkspace`:
   the vault's copy, so reopening a vault parses only the pages that changed. The Mac rebuilds
   its index on every open, but parsing in the browser is slower: about 4 s for 1,200 pages.
 
+For the editor and the app, from AtlasKit's `PageSyntax`, `MarkdownStyler`, `MentionLinker` and
+`PageList`, and the Mac app's `PagePaths`:
+
+- `pageSyntax(source)` → where each construct of a page is in its source, in UTF-16 offsets:
+  every top-level block's tree aligned with its text, so delimiters, markers and escapes are
+  known as syntax. `styleRuns` turns a block into styled runs, with Live Preview's hidden syntax
+  away from the cursor; `linkAt` and `shouldOpenLink` decide what a click follows.
+- `linkingMentions` ("link it", `VaultWorkspace.linkMentions`) → unlinked mentions of a page
+  made wiki links, in plain text only, and only when the result reads back as exactly those new
+  links.
+- `pageTree`, `tagTree`, `PageList`, `renamedPath`, `pageForUnresolvedLink` → the sidebar's
+  trees, favourites and recent pages, and where renames and new pages go.
+
 ## How the vault agrees with AtlasKit
 
 `sync/` is a line-for-line port. Its tests are AtlasKit's: the scenarios, and the property that
@@ -61,6 +75,17 @@ browser's mostly on emoji. `vaultIndex.test.ts` and `vaultWorkspace.test.ts` are
 Run against AtlasKit on 1,212 real Markdown files, with several hundred searches, switcher
 queries and mention lookups, before and after 366 random renames, removals and edits, every
 answer was the same, down to the order of results and the text and highlights of each snippet.
+
+## How the syntax map agrees with AtlasKit
+
+`syntax/pageSyntax.ts` is a port of `PageSyntax.swift`'s aligner, walking code points with `\r\n`
+as one character as Swift does. Its tests are AtlasKit's, the corpus included: every case aligns
+completely, and on random pages complete blocks hold exactly their tree's constructs. Run against
+AtlasKit on the same 1,212 real files and 6,000 random pages, every page whose tree and block
+lines agree with AtlasKit's gets the same spans. Where they don't, the difference is the parser's,
+not the map's: on 174 of the random pages (none of the real ones) the trees differ, mostly with
+a lone `\r`, an out-of-range `&#…;` or footnote definitions inside containers, and those are
+open parser gaps to pin in the corpus.
 
 ## How the parser agrees with AtlasKit
 

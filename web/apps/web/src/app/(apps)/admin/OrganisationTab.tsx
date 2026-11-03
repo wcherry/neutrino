@@ -329,7 +329,7 @@ function DefaultsSection({ layer }: { layer: OrgLayer }) {
 // ── Apps ─────────────────────────────────────────────────────────────────────
 
 const APP_LABELS: Record<AppKey, string> = {
-  docs: 'Docs', sheets: 'Sheets', slides: 'Slides', notes: 'Notes', diagrams: 'Diagrams', drawing: 'Drawings',
+  docs: 'Docs', sheets: 'Sheets', slides: 'Slides', notes: 'Notes', atlas: 'Atlas', diagrams: 'Diagrams', drawing: 'Drawings',
   photos: 'Photos', calendar: 'Calendar',
 };
 

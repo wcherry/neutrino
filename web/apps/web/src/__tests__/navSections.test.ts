@@ -23,6 +23,7 @@ describe('getNavSections', () => {
       ['Sheets', '/sheets'],
       ['Slides', '/slides'],
       ['Notes', '/notes'],
+      ['Atlas', '/atlas'],
       ['Diagrams', '/diagrams'],
       ['Drawings', '/drawing'],
       ['Photos', '/photos'],

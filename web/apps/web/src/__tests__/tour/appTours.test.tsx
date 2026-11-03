@@ -11,6 +11,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { PreferenceStore, TOUR_IDS } from '@neutrino/preferences';
 import { PanelRail, ShareButton, HamburgerMenu, Toolbar } from '@neutrino/ui';
 import {
+  ATLAS_TOUR,
   AUTO_START_KEY,
   CALENDAR_TOUR,
   DIAGRAMS_TOUR,
@@ -90,6 +91,13 @@ const EXPECTED: {
     notOn: ['/notes'],
   },
   {
+    tour: ATLAS_TOUR,
+    targets: ['atlas-sidebar', 'atlas-editor', 'atlas-backlinks', 'atlas-quick-open', 'atlas-sync'],
+    runsOn: '/atlas',
+    notOn: ['/notes', '/atlas/x'],
+    home: '/atlas',
+  },
+  {
     tour: PHOTOS_TOUR,
     targets: ['photos-upload', 'photos-collections', 'photos-keep', 'photos-info', 'photos-photo'],
     runsOn: '/photos',
@@ -151,7 +159,7 @@ describe('the app tours', () => {
   it('are named as the menu and the card name them', () => {
     expect(replayLabel(DRAWING_TOUR)).toBe('Take the Drawings tour');
     expect(tourName(DOCS_TOUR)).toBe('Docs tour');
-    expect(EXPECTED.map((e) => e.tour.appName)).toEqual(['Docs', 'Sheets', 'Slides', 'Notes', 'Photos', 'Calendar', 'Diagrams', 'Drawings']);
+    expect(EXPECTED.map((e) => e.tour.appName)).toEqual(['Docs', 'Sheets', 'Slides', 'Notes', 'Atlas', 'Photos', 'Calendar', 'Diagrams', 'Drawings']);
   });
 
   /**

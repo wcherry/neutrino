@@ -57,11 +57,11 @@ pub struct Spec {
 }
 
 /// Every app an instance can offer, in sidebar order — the options of `apps.enabled`.
-pub const APPS: &[&str] = &["docs", "sheets", "slides", "notes", "diagrams", "drawing", "photos", "calendar"];
+pub const APPS: &[&str] = &["docs", "sheets", "slides", "notes", "atlas", "diagrams", "drawing", "photos", "calendar"];
 
 /// Every app with a guided tour, Drive first — the options of `onboarding.toursSeen`. All of them
 /// from the start, so a client that adds a tour does not need a catalog change to remember it.
-pub const TOURS: &[&str] = &["drive", "docs", "sheets", "slides", "notes", "diagrams", "drawing", "photos", "calendar"];
+pub const TOURS: &[&str] = &["drive", "docs", "sheets", "slides", "notes", "atlas", "diagrams", "drawing", "photos", "calendar"];
 
 /// `onboarding.welcome`: the server writes `pending` when it creates an account (`auth::signup`),
 /// and the welcome wizard writes `done` when it is finished or closed. The client's default is

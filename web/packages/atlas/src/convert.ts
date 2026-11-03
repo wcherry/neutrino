@@ -226,7 +226,10 @@ class Converter {
       const hoisted = this.lazyHtml(item);
       if (hoisted) {
         // cmark ends the list at an unindented HTML line, which micromark reads into the item.
-        const kept = { ...item, children: item.children.slice(0, -1) } as Mdast.ListItem;
+        const children = item.children.slice(0, -1);
+        // The item ends where its last kept child does, not at the HTML.
+        const end = children[children.length - 1]?.position?.end ?? item.position!.start;
+        const kept = { ...item, children, position: { start: item.position!.start, end } } as Mdast.ListItem;
         items.push({ node: this.block(kept)!, mdast: kept });
         flush();
         const html: MarkdownNode = { type: 'html', value: blockValue(hoisted.value) };

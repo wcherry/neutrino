@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parse } from '../parse';
+import { parse, parseLayout } from '../parse';
 import { childrenOf, type MarkdownNode } from '../tree';
 
 /** Ported from AtlasKit's ParserRegressionTests: cases beyond the corpus that both parsers must agree on. */
@@ -58,5 +58,14 @@ describe('parser regressions', () => {
     const table = childrenOf(parse('| a | b |\n| --- | --- |\n| x |  |\n| ^ | y |\n'))[0];
     expect(childrenOf(table).map((r) => childrenOf(r).length)).toEqual([2, 2, 2]);
     expect(childrenOf(childrenOf(table)[2])[0]).toEqual({ type: 'tableCell', children: [t('^')] });
+  });
+
+  it('ends a list where an HTML line lifted out of it starts', () => {
+    // cmark-gfm ends the list at the unindented `</content>`; micromark reads it into the item.
+    // The list's lines stop before it, as AtlasKit's do, so the two blocks don't overlap.
+    expect(parseLayout('- one\n  two\n</content>\n</invoke>\n').map((b) => [b.node.type, b.lines])).toEqual([
+      ['list', [1, 2]],
+      ['html', [3, 4]],
+    ]);
   });
 });

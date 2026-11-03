@@ -45,3 +45,26 @@ export {
 } from './indexing/vaultIndex';
 export { storageIndexCache, type IndexCacheStore } from './indexing/indexCache';
 export { VaultWorkspace, FileExistsError } from './workspace/vaultWorkspace';
+export {
+  pageSyntax,
+  allSpans,
+  type PageSyntax,
+  type SyntaxBlock,
+  type SyntaxKind,
+  type SyntaxRole,
+  type SyntaxSpan,
+} from './syntax/pageSyntax';
+export { styleRuns, isConcealable, linkAt, shouldOpenLink, type EditorMode, type LinkTarget, type StyleRun, type TextStyle } from './syntax/styler';
+export { linkingMentions } from './syntax/mentionLinker';
+export {
+  PageList,
+  pageTree,
+  tagTree,
+  pageForUnresolvedLink,
+  renamedPath,
+  folderOf,
+  movedInto,
+  ATTACHMENT_EXTENSIONS,
+  type PageNode,
+  type TagNode,
+} from './workspace/pagePaths';
