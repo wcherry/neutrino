@@ -222,3 +222,50 @@ describe('the editor', () => {
     await waitFor(() => expect(view.state.doc.toString()).toMatch(/\n\n!\[\[Beach\.png\]\]$/));
   });
 });
+
+describe('daily notes, templates, settings and logs', () => {
+  it("opens today's note, and another day's", async () => {
+    await openVault();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    const today = new Date();
+    const two = (n: number) => String(n).padStart(2, '0');
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue(`${today.getFullYear()}-${two(today.getMonth() + 1)}-${two(today.getDate())}`));
+    expect(within(screen.getByRole('navigation', { name: 'Pages' })).getByText('Daily')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Another day’s note…' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Day'), { target: { value: '2026-10-30' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Open' }));
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue('2026-10-30'));
+  });
+
+  it('makes a page from a template', async () => {
+    await openVault();
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New page from a template…' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Standup' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue('Standup'));
+    expect(editor().state.doc.toString()).toMatch(/^# Standup\n\n.* · Attendees: \n\n## Agenda/);
+  });
+
+  it('keeps settings, and shows the log', async () => {
+    const b = await openVault();
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings…' }));
+    const dialog = await screen.findByRole('dialog');
+    const folders = within(dialog).getAllByLabelText('Folder');
+    fireEvent.change(folders[0], { target: { value: 'Journal' } });
+    fireEvent.change(folders[2], { target: { value: 'Media' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(JSON.parse(b.services.settings.getItem('neutrino.atlas.daily.u1')!)).toMatchObject({ folder: 'Journal' });
+    expect(b.services.settings.getItem('neutrino.atlas.attachments.u1')).toBe('Media');
+
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Show logs' }));
+    const log = await screen.findByLabelText('Log');
+    expect(log.textContent).toMatch(/app: Opened vault v1: 0 pages, 0 other files/);
+  });
+});

@@ -2,7 +2,7 @@
  * `/atlas`'s model, against an in-memory Drive and local vaults: the steps to an open vault,
  * then what the Mac app's AppModel does with one (editing, links, renames, "link it", sync).
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { AtlasModel, type AtlasServices } from '@/app/(apps)/atlas/atlasModel';
 import { DRIVE_FILES, MemoryDrive, PNG, browser } from './fakes';
@@ -240,5 +240,65 @@ describe('the editor milestone', () => {
     await model.newPage('Inner', '2026/Sub');
     await model.moveFolder('2026', '2026/Sub');
     expect(model.error).toMatch(/inside itself/);
+  });
+});
+
+describe('daily notes, templates, import and export', () => {
+  it("opens on today's note when the setting is on, creating it once", async () => {
+    const b = browser(new MemoryDrive());
+    b.services.settings.setItem('neutrino.atlas.daily.onLaunch.u1', 'true');
+    b.services.settings.setItem('neutrino.atlas.daily.u1', JSON.stringify({ folder: 'Journal', format: 'yyyy-MM-dd', template: '# {{date:EEEE}}\n' }));
+    const model = await ready(b.services);
+    const today = new Date();
+    const two = (n: number) => String(n).padStart(2, '0');
+    const path = `Journal/${today.getFullYear()}-${two(today.getMonth() + 1)}-${two(today.getDate())}.md`;
+    expect(model.selection).toBe(path);
+    expect(model.openText).toBe(`# ${today.toLocaleDateString('en-US', { weekday: 'long' })}\n`);
+    model.edit('# Written\n');
+    await model.openDailyNote();
+    expect(model.openText, 'opening it again keeps what was written').toBe('# Written\n');
+  });
+
+  it('makes pages from templates, and offers them in the / menu', async () => {
+    const model = await ready(browser(new MemoryDrive()).services);
+    await model.newPage('Book', 'Templates');
+    model.edit('# {{title}}\n\nStarted {{date}}.\n');
+    await model.flush();
+    expect(model.templates().map((t) => t.name)).toEqual(['Book', 'Meeting']);
+    await model.newPageFromTemplate(model.templates()[0], 'Dune');
+    expect(model.selection).toBe('Dune.md');
+    expect(model.openText).toMatch(/^# Dune\n\nStarted \d{4}-\d\d-\d\d\.\n$/);
+    await waitFor(() => model.slashCommands().some((c) => c.id === 'template:Book'));
+    const book = model.slashCommands().find((c) => c.id === 'template:Book')!;
+    expect(book.action).toMatchObject({ type: 'insert', block: true, text: expect.stringMatching(/^# Dune\n/) });
+    expect(model.slashCommands().map((c) => c.title)).toContain('Template: Meeting');
+  });
+
+  it('imports a folder and Neutrino Notes, and says what it did', async () => {
+    const model = await ready(browser(new MemoryDrive()).services);
+    await model.importFolder({ files: [{ path: 'Home.md', data: new TextEncoder().encode('See [[Missing]]\n') }], tooLarge: ['movie.mov'] }, 'My Vault', 'My Vault');
+    expect(model.pages).toEqual(['My Vault/Home.md']);
+    expect(model.notice).toBe(
+      'Imported 1 file from My Vault.\n\nLeft out, over 100 MB: movie.mov.\n\n1 link target match no page yet, such as [[Missing]]. Clicking one creates the page.',
+    );
+    await model.importNotes();
+    expect(model.pages).toEqual(['My Vault/Home.md', 'Neutrino Notes/Q4 plan.md', 'Neutrino Notes/Work/Standup.md']);
+    expect(model.backlinks('Neutrino Notes/Q4 plan.md')).toEqual(['Neutrino Notes/Work/Standup.md']);
+    await model.importNotes();
+    expect(model.notice, 'importing again adds nothing').toMatch(/^Imported 0 files from Neutrino Notes\.\n\n2 were already here/);
+  });
+
+  it('exports the vault as a zip of its files', async () => {
+    const b = browser(new MemoryDrive());
+    const model = await ready(b.services);
+    await model.newPage('Plan');
+    model.edit('# Plan\n');
+    await model.exportVault(new Date(2026, 10, 3, 14, 5));
+    expect(model.error).toBeNull();
+    const [name, blob] = (b.services.download as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Blob];
+    expect(name).toBe('Atlas export 2026-11-03 14.05.zip');
+    const { default: JSZip } = await import('jszip');
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    expect(await zip.file('Plan.md')!.async('string')).toBe('# Plan\n');
   });
 });
