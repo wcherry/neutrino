@@ -53,6 +53,14 @@ For the editor and the app, from AtlasKit's `PageSyntax`, `MarkdownStyler`, `Men
   links.
 - `pageTree`, `tagTree`, `PageList`, `renamedPath`, `pageForUnresolvedLink` → the sidebar's
   trees, favourites and recent pages, and where renames and new pages go.
+- `editing/`, from `MarkdownEditing`, `SlashCommands`, `Images`, `PastedLinks` and `MoveLines`:
+  the editor's commands, each an edit a person could have typed. Return continues lists, tasks
+  and quotes; Tab and Shift-Tab indent list items; tasks toggle; bold, italic and code wrap;
+  `[[` completes pages and then headings; the `/` menu; images alone in a paragraph show as
+  images, inserted as embeds; links to Neutrino files show as chips or previews; a copied link
+  pastes with its title; lines move with the blocks they belong to.
+- `VaultWorkspace.addAttachment`, `moveFolder` → images saved into the vault, numbered as
+  needed, and folders moved or renamed with every link to what's in them rewritten.
 
 ## How the vault agrees with AtlasKit
 

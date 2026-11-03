@@ -1,13 +1,27 @@
 import {
   DriveVaultRemote,
   FileExistsError,
+  FolderIntoItselfError,
   LinkResolver,
   LocalVault,
   PageList,
   VaultIndex,
   VaultInUseError,
   VaultWorkspace,
+  builtInSlashCommands,
+  extract,
+  folderMovedInto,
+  headingLinkText,
+  imageFileExtension,
+  imageMimeType,
   movedInto,
+  parse,
+  pastedImageName,
+  trimmedFolder,
+  type ImageSource,
+  type LinkCompletion,
+  type LinkCompletionContext,
+  type SlashCommand,
   pageForUnresolvedLink,
   renamedPath,
   type IndexCacheStore,
@@ -19,6 +33,7 @@ import {
   type VaultRemote,
   type WikiLinkReference,
 } from '@neutrino/atlas';
+import { kindForMime, markdownLinkTo, neutrinoDestination, type Destination } from './neutrinoLinks';
 
 /**
  * Neutrino Atlas in the browser: the state of `/atlas`, from this device's key to an open vault.
@@ -56,6 +71,28 @@ export interface EditorAnchor {
   id: number;
 }
 
+/** An image to add to a page, from a paste, a drop or a picker: its bytes, and its name when it had one (a pasted screenshot doesn't). */
+export interface ImageImport {
+  data: Uint8Array;
+  name: string | null;
+}
+
+/** A folder or a file in a Drive folder. Names are file names, which Drive keeps in plaintext. */
+export interface DriveItem {
+  id: string;
+  name: string;
+  isFolder: boolean;
+  mimeType: string | null;
+}
+
+/**
+ * Something for the open page's editor to put at its cursor: images picked from a file or Drive
+ * (it saves them through `importImages`), or text such as links to Neutrino files.
+ */
+export type Insertion =
+  | { id: number; kind: 'images'; images: ImageImport[] }
+  | { id: number; kind: 'text'; text: string; asBlocks: boolean };
+
 /** A vault's local copy, opened for this tab. */
 export interface OpenedVault {
   vault: Vault;
@@ -75,7 +112,20 @@ export interface AtlasServices {
   /** Small per-user settings: which vault, favourites, recent pages. File and folder names only. */
   settings: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
   openURL(url: string): void;
+  /** A folder of the user's Drive, folders first: for picking images and files to link. The root's id is the user's. */
+  driveFolder(folderID: string): Promise<DriveItem[]>;
+  /** A Drive image's bytes, decrypted in memory. */
+  readDriveImage(fileID: string): Promise<Blob>;
+  /**
+   * A picture of a Drive file for a link shown as a preview: its cover thumbnail, else for an
+   * image no bigger than 25 MB the image itself. Null for a file with neither: it shows as a chip.
+   */
+  filePreview(fileID: string): Promise<Blob | null>;
 }
+
+/** The largest image read whole to preview it, when it has no thumbnail. */
+const LARGEST_PREVIEW_READ = 25_000_000;
+const finder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 export const browserServices = (): AtlasServices => ({
   canEncrypt: async (userId) => (await import('@neutrino/api-drive')).canEncryptFor(userId),
@@ -89,6 +139,27 @@ export const browserServices = (): AtlasServices => ({
   createVault: (name) => DriveVaultRemote.createVault(name),
   settings: window.localStorage,
   openURL: (url) => window.open(url, '_blank', 'noopener,noreferrer'),
+  driveFolder: async (folderID) => {
+    const { filesystemApi } = await import('@neutrino/api-drive');
+    const contents = await filesystemApi.getFolderContents(folderID);
+    const byName = (a: { name: string }, b: { name: string }) => finder.compare(a.name, b.name);
+    return [
+      ...contents.folders.map((f) => ({ id: f.id, name: f.name, isFolder: true, mimeType: null })).sort(byName),
+      ...contents.files.map((f) => ({ id: f.id, name: f.name, isFolder: false, mimeType: f.mimeType ?? null })).sort(byName),
+    ];
+  },
+  readDriveImage: async (fileID) => (await import('@/lib/driveImages')).readDriveImage(fileID),
+  filePreview: async (fileID) => {
+    const { storageApi } = await import('@neutrino/api-drive');
+    const info = await storageApi.getFileInfo(fileID);
+    const thumbnail = storageApi.getThumbnailUrl(info.coverThumbnailUrl);
+    if (thumbnail) {
+      const response = await fetch(thumbnail);
+      if (response.ok) return response.blob();
+    }
+    if (!info.mimeType?.toLowerCase().startsWith('image/') || info.sizeBytes > LARGEST_PREVIEW_READ) return null;
+    return (await import('@/lib/driveImages')).readDriveImage(fileID);
+  },
 });
 
 export class AtlasModel {
@@ -120,6 +191,16 @@ export class AtlasModel {
 
   favourites = new PageList();
   recent = new PageList([], AtlasModel.recentLimit);
+
+  /** Changes when an image the editor asked for arrives, or the vault's attachments change, for it to look again. */
+  imagesVersion = 0;
+  /** Images or links picked for the open page, for its editor to put at its cursor. */
+  insertion: Insertion | null = null;
+  private insertionCount = 0;
+  /** Object URLs of images shown, by file path or `url:` file id: memory only. Null marks one that can't be shown. */
+  private images = new Map<string, string | null>();
+  private loadingImages = new Set<string>();
+  private attachments = '';
 
   private resolver = new LinkResolver([]);
   private opened: OpenedVault | null = null;
@@ -275,6 +356,7 @@ export class AtlasModel {
     workspace.onChange = (moved) => this.workspaceChanged(moved);
     this.pages = workspace.pages;
     this.resolver = new LinkResolver(workspace.paths);
+    this.noteAttachments();
     this.loadPageLists();
     this.phase = 'ready';
     const last = this.services.settings.getItem(this.pageListKey('last'));
@@ -297,6 +379,8 @@ export class AtlasModel {
     this.favourites = new PageList();
     this.recent = new PageList([], AtlasModel.recentLimit);
     this.syncState = { kind: 'idle' };
+    this.forgetImages();
+    this.insertion = null;
     if (workspace) {
       workspace.onChange = null;
       await workspace.saveIndexCache().catch(() => {});
@@ -372,6 +456,7 @@ export class AtlasModel {
     this.favourites.update(moved, (p) => workspace.contains(p));
     this.recent.update(moved, (p) => workspace.contains(p));
     this.savePageLists();
+    this.noteAttachments();
     // Content synced from elsewhere reaches the open page, unless an edit to it is still on its way.
     const path = this.selection;
     if (path !== null && this.unsaved === null && !this.saving) {
@@ -630,6 +715,218 @@ export class AtlasModel {
     const hit = this.quickSwitch(trimmed).find((h) => VaultIndex.title(h.path).toLowerCase() === trimmed.toLowerCase());
     if (hit) await this.select(hit.path);
     else await this.newPage(trimmed);
+  }
+
+  // ── Folders ─────────────────────────────────────────────────────────────────
+
+  /** Moves a folder, with everything in it, into `destination` ("" is the vault's root). */
+  moveFolder(folder: string, destination: string): Promise<void> {
+    return this.moveFolderTo(folder, folderMovedInto(folder, destination));
+  }
+
+  /** Renames a folder in place. */
+  renameFolder(folder: string, name: string): Promise<void> {
+    const clean = name.trim();
+    if (clean === '' || clean.includes('/')) return Promise.resolve();
+    const parent = trimmedFolder(folder).split('/').slice(0, -1).join('/');
+    return this.moveFolderTo(folder, parent === '' ? clean : `${parent}/${clean}`);
+  }
+
+  private async moveFolderTo(folder: string, target: string): Promise<void> {
+    if (!this.workspace || trimmedFolder(folder) === trimmedFolder(target)) return;
+    await this.flush();
+    try {
+      await this.workspace.moveFolder(folder, target);
+      this.syncAfterEdit();
+    } catch (e) {
+      this.error = e instanceof FolderIntoItselfError
+        ? "A folder can't go inside itself."
+        : e instanceof FileExistsError
+          ? `Couldn't move “${trimmedFolder(folder)}” to “${target}”: some of its pages would land on pages already there.`
+          : message(e);
+      this.changed();
+    }
+  }
+
+  // ── The editor's suggestions ────────────────────────────────────────────────
+
+  /**
+   * Suggestions while a wiki link is typed: the quick switcher's matches, each with the shortest
+   * link that reaches it, then after `#` the headings of the page it names.
+   */
+  linkCompletions(context: LinkCompletionContext): LinkCompletion[] {
+    const workspace = this.workspace;
+    if (!workspace) return [];
+    if (context.page !== null) {
+      let headings: { depth: number; text: string }[];
+      if (context.page === '') {
+        // This page, as typed so far: the index catches up only after the edit is saved.
+        headings = extract(parse(this.openText)).headings;
+      } else {
+        const path = this.resolver.resolve(context.page, this.selection ?? '');
+        if (path === null || !VaultIndex.isPage(path)) return [];
+        headings = workspace.index.headings(path);
+      }
+      return VaultIndex.matchingHeadings(headings, context.query, 12).map((h) => ({ title: h.text, target: headingLinkText(h.text), detail: `H${h.depth}` }));
+    }
+    return workspace.index.quickSwitch(context.query, 8).map((hit) => {
+      const slash = hit.path.lastIndexOf('/');
+      return { title: hit.alias ?? hit.title, target: this.resolver.linkTarget(hit.path), detail: slash < 0 ? null : hit.path.slice(0, slash) };
+    });
+  }
+
+  /** The editor's `/` menu. Templates join it with the templates milestone. */
+  slashCommands(): SlashCommand[] {
+    return builtInSlashCommands();
+  }
+
+  // ── Images ──────────────────────────────────────────────────────────────────
+
+  /** The vault folder images pasted, dropped or picked are saved in. */
+  get attachmentsFolder(): string {
+    return this.services.settings.getItem(`neutrino.atlas.attachments.${this.userId}`) ?? 'Attachments';
+  }
+
+  set attachmentsFolder(folder: string) {
+    this.services.settings.setItem(`neutrino.atlas.attachments.${this.userId}`, trimmedFolder(folder));
+    this.changed();
+  }
+
+  /**
+   * Something to show for an image the open page has: an object URL of its bytes from the
+   * vault's encrypted copy (decrypted in memory only), or for a link to a Neutrino file its
+   * preview. Null until it's ready (`imagesVersion` changes then), and for an image there's none of.
+   */
+  imageURL(source: ImageSource): string | null {
+    const workspace = this.workspace;
+    if (!workspace) return null;
+    if (source.type === 'url') {
+      const destination = neutrinoDestination(source.url);
+      return destination ? this.image(`url:${destination.fileID}`, () => this.services.filePreview(destination.fileID)) : null;
+    }
+    const written = source.type === 'embed' ? source.ref.target : source.path;
+    const path = this.resolver.resolve(written, this.selection ?? '');
+    if (path === null || VaultIndex.isPage(path)) return null;
+    return this.image(path, async () => {
+      const data = await workspace.content(path);
+      if (!data) return null;
+      const ext = imageFileExtension(data) ?? path.slice(path.lastIndexOf('.') + 1);
+      return new Blob([data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer], { type: imageMimeType(ext) });
+    });
+  }
+
+  private image(key: string, load: () => Promise<Blob | null>): string | null {
+    if (this.images.has(key)) return this.images.get(key)!;
+    if (!this.loadingImages.has(key)) {
+      this.loadingImages.add(key);
+      void load()
+        .catch((e) => {
+          console.info(`[atlas] ${key} can't be shown: ${message(e)}`);
+          return null;
+        })
+        .then((blob) => {
+          this.loadingImages.delete(key);
+          if (this.closed) return;
+          this.images.set(key, blob ? URL.createObjectURL(blob) : null);
+          this.imagesVersion++;
+          this.changed();
+        });
+    }
+    return null;
+  }
+
+  private forgetImages(): void {
+    for (const url of this.images.values()) if (url) URL.revokeObjectURL(url);
+    this.images.clear();
+    this.imagesVersion++;
+  }
+
+  /** The vault's attachments changed: images are read again. */
+  private noteAttachments(): void {
+    const now = (this.workspace?.paths ?? []).filter((p) => !VaultIndex.isPage(p)).join('\n');
+    if (now === this.attachments) return;
+    this.attachments = now;
+    for (const [key, url] of [...this.images]) {
+      if (key.startsWith('url:')) continue;
+      if (url) URL.revokeObjectURL(url);
+      this.images.delete(key);
+    }
+    this.imagesVersion++;
+  }
+
+  /**
+   * Saves images pasted, dropped or picked into the attachments folder, encrypted like every
+   * file in the vault and uploaded by the next sync, and returns the link target for each.
+   */
+  async importImages(images: ImageImport[]): Promise<string[]> {
+    const workspace = this.workspace;
+    if (!workspace) return [];
+    const targets: string[] = [];
+    for (const image of images) {
+      const name = image.name ?? pastedImageName(imageFileExtension(image.data) ?? 'png');
+      try {
+        const path = await workspace.addAttachment(image.data, name, this.attachmentsFolder);
+        this.resolver = new LinkResolver(workspace.paths);
+        targets.push(this.resolver.linkTarget(path));
+      } catch (e) {
+        this.error = `Couldn't add the image ${name}: ${message(e)}`;
+      }
+    }
+    if (targets.length) this.syncAfterEdit();
+    this.changed();
+    return targets;
+  }
+
+  /** Images picked from files, for the open page's editor to add at its cursor. */
+  insertImages(images: ImageImport[]): void {
+    if (images.length === 0) return;
+    this.insertion = { id: ++this.insertionCount, kind: 'images', images };
+    this.changed();
+  }
+
+  /** The images picked in Neutrino Drive, read and decrypted in memory, added to the open page: copied into the vault, so the page keeps them whatever happens to the originals. */
+  async insertFromDrive(items: DriveItem[]): Promise<void> {
+    const images: ImageImport[] = [];
+    this.busy = true;
+    this.changed();
+    for (const item of items) {
+      try {
+        images.push({ data: new Uint8Array(await (await this.services.readDriveImage(item.id)).arrayBuffer()), name: item.name });
+      } catch (e) {
+        this.error = `Couldn't read ${item.name} from Neutrino Drive: ${message(e)}`;
+      }
+    }
+    this.busy = false;
+    this.insertImages(images);
+    this.changed();
+  }
+
+  // ── Links to Neutrino files ─────────────────────────────────────────────────
+
+  /** A folder of the user's Drive, for the pickers; the vault's own folder is left out. */
+  async driveFolder(folderID: string | null, imagesOnly: boolean): Promise<DriveItem[]> {
+    const items = await this.services.driveFolder(folderID ?? this.userId);
+    return items.filter((i) => i.id !== this.storedVaultID && (i.isFolder || !imagesOnly || (i.mimeType ?? '').startsWith('image/')));
+  }
+
+  /** How a link shows in the editor: a Neutrino link as a chip, with the kind of file it opens. */
+  linkChip(url: string): Destination['kind'] | null {
+    return neutrinoDestination(url)?.kind ?? null;
+  }
+
+  /** Puts links to the files picked in Neutrino Drive at the open page's cursor: as chips in the text, or as previews, each on a line of its own. */
+  insertLinks(items: DriveItem[], asPreviews = false): void {
+    const links = items.filter((i) => !i.isFolder).map((i) => markdownLinkTo(i));
+    if (links.length === 0) return;
+    this.insertion = asPreviews
+      ? { id: ++this.insertionCount, kind: 'text', text: links.map((l) => '!' + l).join('\n'), asBlocks: true }
+      : { id: ++this.insertionCount, kind: 'text', text: links.join(', '), asBlocks: false };
+    this.changed();
+  }
+
+  /** Whether a file in Drive is one a link can preview as a picture without reading it: an image. */
+  static isImage(item: DriveItem): boolean {
+    return kindForMime(item.mimeType) === 'file' && (item.mimeType ?? '').startsWith('image/');
   }
 
   dismissError(): void {

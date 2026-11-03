@@ -13,6 +13,8 @@ import {
   Folder,
   FolderPlus,
   Hash,
+  ImagePlus,
+  Pencil,
   Link as LinkIcon,
   RefreshCw,
   Search,
@@ -36,10 +38,11 @@ import {
   TextInput,
   useToast,
 } from '@neutrino/ui';
-import { VaultIndex, folderOf, pageTree, tagTree, type EditorMode, type Mention, type PageNode, type Snippet, type TagNode } from '@neutrino/atlas';
+import { VaultIndex, folderOf, imageFileExtension, pageTree, tagTree, type EditorMode, type Mention, type PageNode, type Snippet, type TagNode } from '@neutrino/atlas';
 import { requestEncryptionGate, subscribeToGateState, getGateState } from '@/components/E2EEUnlockGate';
 import { AtlasModel, browserServices, type AtlasServices } from './atlasModel';
 import { AtlasEditor } from './AtlasEditor';
+import { DrivePicker } from './DrivePicker';
 import styles from './atlas.module.css';
 import menuStyles from '../drive/FileContextMenu.module.css';
 
@@ -212,9 +215,23 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
   const [mode, setMode] = useRemembered<EditorMode>('neutrino.atlas.mode', 'livePreview', MODES);
   const [backlinks, setBacklinks] = useRemembered('neutrino.atlas.backlinks', 'shown', SHOWN);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [naming, setNaming] = useState<{ parent: string } | null>(null);
+  const [naming, setNaming] = useState<{ kind: 'new'; parent: string } | { kind: 'rename'; folder: string } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [picking, setPicking] = useState<'images' | 'links' | null>(null);
+  const [inserting, setInserting] = useState(false);
   const search = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  /** Images picked from files: copied into the vault's attachments folder, encrypted, and embedded at the cursor. */
+  const imagesPicked = async (files: FileList | null) => {
+    const images = [];
+    for (const file of [...(files ?? [])]) {
+      const data = new Uint8Array(await file.arrayBuffer());
+      if (imageFileExtension(data) !== null) images.push({ data, name: file.name });
+    }
+    if (files?.length && images.length === 0) toast.error("Those files aren't images Atlas can show.");
+    model.insertImages(images);
+  };
 
   const copyLink = useCallback((path: string) => {
     const link = model.linkTo(path);
@@ -231,6 +248,10 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
     'atlas.sync': () => void model.syncNow(),
     'atlas.toggleSource': () => setMode(mode === 'livePreview' ? 'source' : 'livePreview'),
     'atlas.toggleBacklinks': () => setBacklinks(backlinks === 'shown' ? 'hidden' : 'shown'),
+    'atlas.newFolder': () => setNaming({ kind: 'new', parent: model.selection ? folderOf(model.selection) : '' }),
+    'atlas.insertImage': () => model.selection !== null && fileInput.current?.click(),
+    'atlas.insertDriveImage': () => model.selection !== null && setPicking('images'),
+    'atlas.linkFile': () => model.selection !== null && setPicking('links'),
   });
 
   const open = model.selection;
@@ -243,7 +264,8 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
         searchRef={search}
         onCopyLink={copyLink}
         onDelete={setDeleting}
-        onNewFolder={(parent) => setNaming({ parent })}
+        onNewFolder={(parent) => setNaming({ kind: 'new', parent })}
+        onRenameFolder={(folder) => setNaming({ kind: 'rename', folder })}
       />
       <div className={styles.main}>
         <div className={styles.toolbar}>
@@ -253,6 +275,40 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
           <Button variant="ghost" size="sm" icon={<Search size={16} />} onClick={() => setQuickOpen(true)} title="Open or create a page" data-tour="atlas-quick-open">
             Open
           </Button>
+          <div className={styles.insert}>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<ImagePlus size={16} />}
+              disabled={open === null}
+              aria-haspopup="menu"
+              aria-expanded={inserting}
+              onClick={() => setInserting((v) => !v)}
+              title="Insert an image, or a link to a Neutrino file, into this page"
+            >
+              Insert
+            </Button>
+            {inserting && (
+              <ContextMenu x={-1} y={-1} anchored onClose={() => setInserting(false)}>
+                <MenuItem icon={<ImagePlus size={14} />} onClick={() => fileInput.current?.click()}>Image from a file…</MenuItem>
+                <MenuItem icon={<ImagePlus size={14} />} onClick={() => setPicking('images')}>Image from Neutrino Drive…</MenuItem>
+                <div className={menuStyles.separator} role="separator" />
+                <MenuItem icon={<LinkIcon size={14} />} onClick={() => setPicking('links')}>Link to a Neutrino file…</MenuItem>
+              </ContextMenu>
+            )}
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              aria-label="Images to insert"
+              onChange={(e) => {
+                void imagesPicked(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </div>
           <div className={styles.toolbarSpacer} />
           <Button
             variant="ghost"
@@ -303,7 +359,8 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
         </div>
       </div>
       {quickOpen && <QuickOpen model={model} onClose={() => setQuickOpen(false)} />}
-      {naming && (
+      {picking && <DrivePicker model={model} purpose={picking} onClose={() => setPicking(null)} />}
+      {naming?.kind === 'new' && (
         <NameDialog
           title={naming.parent === '' ? 'New folder' : `New folder in “${naming.parent}”`}
           action="Create"
@@ -311,6 +368,18 @@ function Workspace({ model, banner }: { model: AtlasModel; banner: React.ReactNo
           onSubmit={(name) => {
             setNaming(null);
             void model.newFolder(name, naming.parent);
+          }}
+        />
+      )}
+      {naming?.kind === 'rename' && (
+        <NameDialog
+          title={`Rename “${naming.folder.split('/').pop()}”`}
+          action="Rename"
+          initial={naming.folder.split('/').pop() ?? ''}
+          onClose={() => setNaming(null)}
+          onSubmit={(name) => {
+            setNaming(null);
+            void model.renameFolder(naming.folder, name);
           }}
         />
       )}
@@ -353,6 +422,8 @@ function SyncStatus({ model }: { model: AtlasModel }) {
 
 /** What a dragged sidebar row carries: its path, and a wiki link for dropping into a page. */
 const DRAG_TYPE = 'application/x-neutrino-atlas-page';
+/** A dragged folder: its path. */
+const FOLDER_DRAG_TYPE = 'application/x-neutrino-atlas-folder';
 
 function Sidebar({
   model,
@@ -360,12 +431,14 @@ function Sidebar({
   onCopyLink,
   onDelete,
   onNewFolder,
+  onRenameFolder,
 }: {
   model: AtlasModel;
   searchRef: React.RefObject<HTMLDivElement>;
   onCopyLink(path: string): void;
   onDelete(path: string): void;
   onNewFolder(parent: string): void;
+  onRenameFolder(folder: string): void;
 }) {
   const [query, setQuery] = useState('');
   const [showing, setShowing] = useState<'pages' | 'tags'>('pages');
@@ -377,17 +450,22 @@ function Sidebar({
 
   const drop = (folder: string) => ({
     onDragOver: (e: React.DragEvent) => {
-      if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+      if (!e.dataTransfer.types.includes(DRAG_TYPE) && !e.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
       e.preventDefault();
       setDropTarget(folder);
     },
     onDragLeave: () => setDropTarget((t) => (t === folder ? null : t)),
     onDrop: (e: React.DragEvent) => {
       const path = e.dataTransfer.getData(DRAG_TYPE);
+      const moving = e.dataTransfer.getData(FOLDER_DRAG_TYPE);
       setDropTarget(null);
-      if (!path) return;
+      if (!path && !moving) return;
       e.preventDefault();
-      void model.move(path, folder);
+      // Let go on its own row, or inside itself: a slip, not a move.
+      if (moving) {
+        if (folder !== moving && !folder.startsWith(moving + '/')) void model.moveFolder(moving, folder);
+      }
+      else void model.move(path, folder);
     },
     'data-drop': dropTarget === folder ? 'true' : undefined,
   });
@@ -404,6 +482,11 @@ function Sidebar({
             className={styles.node}
             style={indent}
             aria-expanded={!closed}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(FOLDER_DRAG_TYPE, folder);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
             onClick={() => setCollapsed((c) => {
               const next = new Set(c);
               if (closed) next.delete(node.id);
@@ -474,7 +557,7 @@ function Sidebar({
                 </ul>
               </>
             )}
-            <div className={styles.sectionLabel} title="Drop a page here to move it to the top of the vault" {...drop('')}>
+            <div className={styles.sectionLabel} title="Drop a page or folder here to move it to the top of the vault" {...drop('')}>
               <span>Pages</span>
               <button type="button" className={styles.link} onClick={() => onNewFolder('')} title="New folder" aria-label="New folder">
                 <FolderPlus size={14} />
@@ -494,6 +577,11 @@ function Sidebar({
             <>
               <MenuItem icon={<SquarePen size={14} />} onClick={() => void model.newPage('Untitled', menu.path)}>New page here</MenuItem>
               <MenuItem icon={<FolderPlus size={14} />} onClick={() => onNewFolder(menu.path)}>New folder here</MenuItem>
+              <div className={menuStyles.separator} role="separator" />
+              <MenuItem icon={<Pencil size={14} />} onClick={() => onRenameFolder(menu.path)}>Rename folder…</MenuItem>
+              {menu.path.includes('/') && (
+                <MenuItem icon={<ArrowUpToLine size={14} />} onClick={() => void model.moveFolder(menu.path, '')}>Move to top level</MenuItem>
+              )}
             </>
           ) : (
             <>
@@ -614,21 +702,26 @@ function Highlighted({ snippet }: { snippet: Snippet }) {
   return <span className={styles.snippet}>{parts}</span>;
 }
 
-function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClose(): void; children: React.ReactNode }) {
+/**
+ * A menu at a point, or with `anchored` under the element it's in (a toolbar button's wrapper,
+ * whose own clicks then toggle it rather than close and reopen it).
+ */
+function ContextMenu({ x, y, anchored, onClose, children }: { x: number; y: number; anchored?: boolean; onClose(): void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const down = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const inside = anchored ? ref.current?.parentElement : ref.current;
+      if (inside && !inside.contains(e.target as Node)) onClose();
     };
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
-  }, [onClose]);
+  }, [onClose, anchored]);
   useDismiss(() => onClose());
   return (
     <div
       ref={ref}
       className={menuStyles.menu}
-      style={{ left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 220) }}
+      style={anchored ? { position: 'absolute', left: 0, top: '100%' } : { left: Math.min(x, window.innerWidth - 220), top: Math.min(y, window.innerHeight - 220) }}
       role="menu"
       onClick={onClose}
     >
@@ -680,6 +773,13 @@ function PageView({ model, path, mode }: { model: AtlasModel; path: string; mode
           anchor={model.anchor}
           onChange={(text) => model.edit(text)}
           onOpenLink={(target) => void model.open(target)}
+          linkCompletions={(context) => model.linkCompletions(context)}
+          slashCommands={() => model.slashCommands()}
+          imageURL={(source) => model.imageURL(source)}
+          imagesVersion={model.imagesVersion}
+          importImages={(images) => model.importImages(images)}
+          linkChip={(url) => model.linkChip(url)}
+          insertion={model.insertion}
         />
       </div>
     </div>
@@ -807,8 +907,8 @@ function QuickOpen({ model, onClose }: { model: AtlasModel; onClose(): void }) {
   );
 }
 
-function NameDialog({ title, action, onClose, onSubmit }: { title: string; action: string; onClose(): void; onSubmit(name: string): void }) {
-  const [name, setName] = useState('');
+function NameDialog({ title, action, initial = '', onClose, onSubmit }: { title: string; action: string; initial?: string; onClose(): void; onSubmit(name: string): void }) {
+  const [name, setName] = useState(initial);
   return (
     <Modal open onClose={onClose} title={title} size="sm">
       <form

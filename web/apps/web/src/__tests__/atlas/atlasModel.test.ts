@@ -3,8 +3,9 @@
  * then what the Mac app's AppModel does with one (editing, links, renames, "link it", sync).
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { waitFor } from '@testing-library/react';
 import { AtlasModel, type AtlasServices } from '@/app/(apps)/atlas/atlasModel';
-import { MemoryDrive, browser } from './fakes';
+import { DRIVE_FILES, MemoryDrive, PNG, browser } from './fakes';
 
 const models: AtlasModel[] = [];
 async function ready(services: AtlasServices, vault = 'v1'): Promise<AtlasModel> {
@@ -163,5 +164,81 @@ describe('an open vault', () => {
     await model.newFolder('Archive');
     await model.move('Ideas.md', 'Archive');
     expect(model.pages).toEqual(['Archive/Ideas.md', 'Archive/Untitled.md', 'Inbox/Ideas.md']);
+  });
+});
+
+describe('the editor milestone', () => {
+  it('suggests pages while a link is typed, then their headings', async () => {
+    const model = await ready(browser(new MemoryDrive()).services);
+    await model.newPage('Goals', 'Projects');
+    model.edit('# Goals\n\n## Q4 plan\n');
+    await model.newPage('Home');
+    model.edit('See [[');
+    await model.flush();
+    expect(model.linkCompletions({ from: 6, to: 6, query: 'goa', page: null })).toEqual([{ title: 'Goals', target: 'Goals', detail: 'Projects' }]);
+    expect(model.linkCompletions({ from: 11, to: 11, query: 'q4', page: 'Goals' })).toEqual([{ title: 'Q4 plan', target: 'Q4 plan', detail: 'H2' }]);
+    model.edit('# Home\n\n## Notes\n\n[[#');
+    expect(model.linkCompletions({ from: 0, to: 0, query: 'no', page: '' }).map((c) => c.title), 'this page, as typed').toEqual(['Notes']);
+    expect(model.slashCommands().map((c) => c.id)).toContain('h1');
+  });
+
+  it('saves images in the attachments folder and shows them from the vault', async () => {
+    const model = await ready(browser(new MemoryDrive()).services);
+    await model.newPage('Trip');
+    expect(await model.importImages([{ data: PNG, name: 'Beach.png' }, { data: PNG, name: null }])).toEqual([
+      'Beach.png',
+      expect.stringMatching(/^Pasted image \d{14}\.png$/),
+    ]);
+    expect(model.workspace!.paths).toContain('Attachments/Beach.png');
+    model.attachmentsFolder = 'Media/';
+    expect(await model.importImages([{ data: PNG, name: 'Beach.png' }]), 'the shortest link that reaches it').toEqual(['Media/Beach.png']);
+
+    const source = { type: 'embed' as const, ref: { target: 'Media/Beach.png', heading: null, blockId: null, alias: null } };
+    const version = model.imagesVersion;
+    expect(model.imageURL(source), 'read in the background').toBeNull();
+    await waitFor(() => model.imagesVersion > version);
+    expect(model.imageURL(source)).toMatch(/^blob:/);
+    expect(model.imageURL({ type: 'embed', ref: { ...source.ref, target: 'Missing.png' } })).toBeNull();
+  });
+
+  it('copies images picked in Drive into the page, and links files as chips or previews', async () => {
+    const model = await ready(browser(new MemoryDrive()).services);
+    await model.newPage('Trip');
+    expect((await model.driveFolder(null, true)).map((i) => i.name), "the vault's own folder is left out; only folders and images").toEqual(['Pictures']);
+    expect((await model.driveFolder(null, false)).map((i) => i.name)).toEqual(['Pictures', 'Q4 plan.docx']);
+
+    await model.insertFromDrive([DRIVE_FILES.pics[0]]);
+    expect(model.insertion).toMatchObject({ kind: 'images', images: [{ name: 'Beach.png' }] });
+
+    const doc = DRIVE_FILES.u1[2];
+    model.insertLinks([doc]);
+    expect(model.insertion).toMatchObject({ kind: 'text', text: `[Q4 plan](${window.location.origin}/open/doc/doc1)`, asBlocks: false });
+    model.insertLinks([doc], true);
+    expect(model.insertion).toMatchObject({ kind: 'text', text: `![Q4 plan](${window.location.origin}/open/doc/doc1)`, asBlocks: true });
+
+    expect(model.linkChip(`${window.location.origin}/open/doc/doc1`)).toBe('doc');
+    expect(model.linkChip('https://www.getneutrino.app/open/sheet/s1')).toBe('sheet');
+    expect(model.linkChip('https://example.com/open/doc/x'), 'another site').toBeNull();
+
+    const preview = { type: 'url' as const, url: `${window.location.origin}/open/doc/doc1` };
+    const version = model.imagesVersion;
+    model.imageURL(preview);
+    await waitFor(() => model.imagesVersion > version);
+    expect(model.imageURL(preview), 'its Drive thumbnail').toMatch(/^blob:/);
+  });
+
+  it('moves and renames folders, with everything in them', async () => {
+    const model = await ready(browser(new MemoryDrive()).services);
+    await model.newPage('Plan', 'Work/2026');
+    await model.newPage('Home');
+    model.edit('[[Work/2026/Plan]]\n');
+    await model.renameFolder('Work', 'Jobs');
+    expect(model.pages).toEqual(['Home.md', 'Jobs/2026/Plan.md']);
+    await model.moveFolder('Jobs/2026', '');
+    expect(model.pages).toEqual(['2026/Plan.md', 'Home.md']);
+    expect(model.backlinks('2026/Plan.md')).toEqual(['Home.md']);
+    await model.newPage('Inner', '2026/Sub');
+    await model.moveFolder('2026', '2026/Sub');
+    expect(model.error).toMatch(/inside itself/);
   });
 });

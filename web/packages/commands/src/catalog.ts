@@ -109,11 +109,17 @@ export const COMMANDS = [
   { id: 'notes.selectAll', title: 'Select all blocks', app: 'notes', defaultKeys: ['Mod+A'], whileTyping: 'run' },
 
   // ── Atlas ─────────────────────────────────────────────────────────────────
+  // As the Mac app has them, but ⌘N and ⌘⇧N, which the browser keeps for new windows.
+  // Bold, italic, code, tasks and moving lines are the editor's own keys (⌘B, ⌘I, ⌘E, ⌘↩, ⌥⌘↑/↓).
   { id: 'atlas.quickOpen', title: 'Open or create a page', app: 'atlas', defaultKeys: ['Mod+O'], whileTyping: 'run' },
   { id: 'atlas.newPage', title: 'New page', app: 'atlas', defaultKeys: ['Mod+Alt+N'], whileTyping: 'run' },
+  { id: 'atlas.newFolder', title: 'New folder', app: 'atlas', defaultKeys: [] },
   { id: 'atlas.search', title: 'Search the vault', app: 'atlas', defaultKeys: ['Mod+Shift+F'], whileTyping: 'run' },
-  { id: 'atlas.sync', title: 'Sync now', app: 'atlas', defaultKeys: ['Mod+S'], whileTyping: 'run' },
-  { id: 'atlas.toggleSource', title: 'Switch between Live Preview and source', app: 'atlas', defaultKeys: ['Mod+E'], whileTyping: 'run' },
+  { id: 'atlas.sync', title: 'Sync now', app: 'atlas', defaultKeys: ['Mod+Shift+S'], whileTyping: 'run' },
+  { id: 'atlas.insertImage', title: 'Insert an image from a file', app: 'atlas', defaultKeys: ['Mod+Alt+I'], whileTyping: 'run' },
+  { id: 'atlas.insertDriveImage', title: 'Insert an image from Neutrino Drive', app: 'atlas', defaultKeys: [] },
+  { id: 'atlas.linkFile', title: 'Insert a link to a Neutrino file', app: 'atlas', defaultKeys: ['Mod+Alt+K'], whileTyping: 'run' },
+  { id: 'atlas.toggleSource', title: 'Switch between Live Preview and source', app: 'atlas', defaultKeys: [] },
   { id: 'atlas.toggleBacklinks', title: 'Show or hide backlinks', app: 'atlas', defaultKeys: [] },
 
   // ── Photos ────────────────────────────────────────────────────────────────
