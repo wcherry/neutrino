@@ -14,6 +14,7 @@ export {
   driveAutosaveEncryptedContent,
   driveCreateEncryptedVersion,
   driveAutosaveEncryptedBytes,
+  driveSetThumbnail,
   driveCreateEncryptedVersionBytes,
   driveWriteEncryptedContent,
   commentsApi,

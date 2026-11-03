@@ -27,6 +27,8 @@ import {
   DEFAULT_VECTOR_STYLE,
 } from './document/factory';
 import { parseDocument, serializeDocument } from './document/serialize';
+import { useDocumentPreview } from '@/hooks/useDocumentPreview';
+import { blobToPreviewJpeg } from '@/lib/documentPreview';
 import { selectionRender, selectionToPng } from './io/selectionImage';
 import { writeCanvasClip, writeClipboardImage } from '@/lib/canvasClipboard';
 import {
@@ -446,6 +448,7 @@ export function DrawingEditor() {
         setCanUndo(false);
         setCanRedo(false);
         setDoc(loaded);
+        previewRef.current.loaded(serializeDocument(loaded), !!drawing.coverThumbnailUrl);
 
         // Where the last session left off: the layer, the tool and what was
         // selected (redesign §5). Each is restored only if it still resolves —
@@ -485,6 +488,19 @@ export function DrawingEditor() {
   // one would re-decode every *other* raster layer in the drawing.
   const bitmapsRef = useRef(bitmaps);
   bitmapsRef.current = bitmaps;
+
+  // Drive's picture of this drawing: the whole canvas flattened, through the
+  // same renderer the .ora export's merged image uses. A drawing is one page,
+  // so its signature is the document — less the workspace, which is folded in
+  // only at save time and is not part of the picture.
+  const preview = useDocumentPreview(drawingId, {
+    render: async () =>
+      blobToPreviewJpeg(
+        await createCanvasRenderer(docRef.current, { bitmaps: bitmapsRef.current }).renderMerged(),
+      ),
+  });
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   useEffect(() => {
     let cancelled = false;
     loadDocumentBitmaps(doc, bitmapsRef.current).then((next) => {
@@ -573,6 +589,7 @@ export function DrawingEditor() {
           saveStateRef.current.set('saved');
           guard.observe(meta.contentVersion);
           serverTitleRef.current = meta.title;
+          previewRef.current.saved(serializeDocument(docRef.current), !!meta.coverThumbnailUrl);
           indexOnSave(userId, {
             id: drawingId,
             type: 'drawing',

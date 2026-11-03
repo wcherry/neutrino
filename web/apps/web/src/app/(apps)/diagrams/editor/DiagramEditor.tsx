@@ -50,6 +50,8 @@ import {
 } from './io/svgFormat';
 import { resolveFillImages } from './utils/fillImages';
 import { pageToPng, selectionPage, selectionSize } from './io/selectionImage';
+import { useDocumentPreview } from '@/hooks/useDocumentPreview';
+import { blobToPreviewJpeg } from '@/lib/documentPreview';
 import { writeCanvasClip } from '@/lib/canvasClipboard';
 import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
 import { MermaidPanel } from './developer/MermaidPanel';
@@ -225,6 +227,14 @@ const DIAGRAM_PANEL_SPEC: RailSpec = {
 };
 const DIAGRAM_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'shapes', right: 'properties' };
 
+/**
+ * Drive's preview shows a diagram's first page, so that page is all its
+ * signature holds: work on page three never redraws it.
+ */
+function firstDiagramPageSignature(doc: DiagramDocument): string {
+  return JSON.stringify(doc.pages[0] ?? null);
+}
+
 export function DiagramEditor() {
   const router = useRouter();
   const exitEditor = useEditorExit('/diagrams');
@@ -294,6 +304,17 @@ export function DiagramEditor() {
   // ── Editor state ───────────────────────────────────────────────────────────
 
   const editor = useDiagramEditor(makeEmptyDocument());
+
+  // Drive's picture of this diagram is its first page, drawn from the model
+  // through the same SVG writer a copy uses — no handles, viewport or cursors.
+  const editorDocRef = useRef(editor.document);
+  editorDocRef.current = editor.document;
+  const preview = useDocumentPreview(diagramId, {
+    render: async () => {
+      const first = editorDocRef.current.pages[0];
+      return first ? blobToPreviewJpeg(await pageToPng(first, 1)) : null;
+    },
+  });
 
   // ── Remote collaboration ───────────────────────────────────────────────────
 
@@ -398,6 +419,7 @@ export function DiagramEditor() {
           setForeignSvg(null);
           const doc = parseDocument(raw!);
           editor.setDocument(doc);
+          preview.loaded(firstDiagramPageSignature(doc), !!diagram.coverThumbnailUrl);
           // An SVG shows one page, and that is the page to reopen on — the
           // file's picture and the editor's canvas then agree.
           if (diagram.format === 'svg') {
@@ -440,13 +462,19 @@ export function DiagramEditor() {
         { title },
         versionGuard.check(),
       );
-      return { content, contentVersion: meta.contentVersion };
+      return {
+        content,
+        contentVersion: meta.contentVersion,
+        coverThumbnailUrl: meta.coverThumbnailUrl,
+        signature: firstDiagramPageSignature(editor.document),
+      };
     },
     onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ['diagrams'] });
       if (!saved) return;
       const { content } = saved;
       versionGuard.observe(saved.contentVersion);
+      preview.saved(saved.signature, !!saved.coverThumbnailUrl);
       indexOnSave(currentUser?.id, {
         id: diagramId,
         type: 'diagram',

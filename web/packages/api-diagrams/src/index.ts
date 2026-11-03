@@ -186,6 +186,8 @@ export interface DiagramMetaResponse {
    * rather than silently overwriting a newer revision.
    */
   contentVersion: number;
+  /** Relative URL of Drive's preview of this file, or null when it has none. */
+  coverThumbnailUrl: string | null;
 }
 
 export interface DiagramResponse extends DiagramMetaResponse {
@@ -265,6 +267,7 @@ interface DriveFileDto {
   createdAt: string;
   updatedAt: string;
   contentVersion: number;
+  coverThumbnailUrl?: string | null;
 }
 
 /**
@@ -289,6 +292,7 @@ function toDiagramMeta(file: DriveFileDto, format?: DiagramFormat): DiagramMetaR
     createdAt: toIsoUtc(file.createdAt),
     updatedAt: toIsoUtc(file.updatedAt),
     contentVersion: file.contentVersion,
+    coverThumbnailUrl: file.coverThumbnailUrl ?? null,
   };
 }
 
