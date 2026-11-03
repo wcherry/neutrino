@@ -655,8 +655,12 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
         {/* The guided tour on screen, if one is running — over everything but toasts. */}
         {tours.overlay}
         {wizard.open && <WelcomeWizard startStep={wizard.startStep} onClose={closeWizard} />}
-        {/* Until the account follows its verification link; nothing where the server sends none. */}
-        {ready && !auth.user.id.startsWith('guest:') && <EmailVerificationBanner />}
+        {/* Until the account follows its verification link; nothing where the server sends none.
+            Not over an editor: its panels and tool strips own the corners of the screen, and a
+            floating card there sits on top of their controls. */}
+        {ready && !auth.user.id.startsWith('guest:') && !pathname?.includes('/editor') && (
+          <EmailVerificationBanner />
+        )}
         {/* The storage meter's "Request Additional" (issue #144). Mounted here
             rather than in the sidebar because @neutrino/layout has no API
             dependencies, so the ask belongs to the app. */}
