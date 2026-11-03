@@ -1,8 +1,9 @@
 //! The email that goes with a notification.
 //!
-//! Only events that ask something of the recipient get one — something was
-//! shared with them, they were mentioned, assigned or replied to. Losing access
-//! is shown in the inbox but not mailed: there is nothing to click through to.
+//! Events that ask something of the recipient or change what they can open get
+//! one: something was shared with them or taken away, someone asked them for
+//! access or answered their request, they were mentioned, assigned or replied
+//! to.
 //!
 //! Composing is pure, so the wording and the links are tested without a mailer
 //! or a database; [`super::service::NotificationService`] fills in [`Context`].
@@ -31,7 +32,10 @@ pub fn actor_id(payload: &serde_json::Value) -> Option<&str> {
     if payload.get("actorName").is_some() {
         return None;
     }
-    payload.get("sharedById").and_then(|v| v.as_str())
+    payload
+        .get("sharedById")
+        .or_else(|| payload.get("revokedById"))
+        .and_then(|v| v.as_str())
 }
 
 /// The id of the file whose name and type the email needs, if the payload does
@@ -62,9 +66,11 @@ pub fn compose(event_type: &str, payload: &serde_json::Value, ctx: &Context) -> 
         href(is_folder, id, mime)
     );
 
+    let kind = if is_folder { "folder" } else { "file" };
+    let drive = format!("{}/drive", ctx.base_url.trim_end_matches('/'));
+    let mut link = link;
     let (subject, line, action) = match event_type {
         "file_shared" | "folder_shared" => {
-            let kind = if is_folder { "folder" } else { "file" };
             let role = match str_of("role") {
                 Some("editor") | Some("owner") => " and can edit it",
                 Some("commenter") => " and can comment on it",
@@ -91,6 +97,48 @@ pub fn compose(event_type: &str, payload: &serde_json::Value, ctx: &Context) -> 
             format!("{actor} assigned you an action item in a comment on “{name}”."),
             "View action item".to_string(),
         ),
+        "access_requested" => {
+            let who = match str_of("requesterEmail") {
+                Some(email) => format!("{actor} ({email})"),
+                None => actor.to_string(),
+            };
+            let role = role_verb(str_of("role"));
+            let message = str_of("message")
+                .map(|m| format!(" Their message: “{m}”"))
+                .unwrap_or_default();
+            link = format!("{}/drive/requests", ctx.base_url.trim_end_matches('/'));
+            (
+                format!("{actor} is asking for access to “{name}”"),
+                format!("{who} asked to {role} the {kind} “{name}”.{message}"),
+                "Review request".to_string(),
+            )
+        }
+        "access_request_approved" => (
+            format!("{actor} gave you access to “{name}”"),
+            format!(
+                "{actor} approved your request: you can now {} the {kind} “{name}”.",
+                role_verb(str_of("role"))
+            ),
+            format!("Open {kind}"),
+        ),
+        "access_request_denied" => {
+            link = drive.clone();
+            (
+                format!("Your request for “{name}” was declined"),
+                format!("{actor} declined your request for access to the {kind} “{name}”."),
+                "Open Drive".to_string(),
+            )
+        }
+        "file_access_revoked" | "folder_access_revoked" => {
+            link = drive.clone();
+            (
+                format!("{actor} removed your access to “{name}”"),
+                format!(
+                    "You can no longer open the {kind} “{name}”. If you still need it, ask its owner to share it again."
+                ),
+                "Open Drive".to_string(),
+            )
+        }
         _ => return None,
     };
 
@@ -124,6 +172,15 @@ pub fn compose(event_type: &str, payload: &serde_json::Value, ctx: &Context) -> 
         text,
         html,
     })
+}
+
+/// What a role lets someone do, to finish "you can now …".
+fn role_verb(role: Option<&str>) -> &'static str {
+    match role {
+        Some("editor") | Some("owner") => "edit",
+        Some("commenter") => "comment on",
+        _ => "view",
+    }
 }
 
 /// Where the web app opens the resource. Mirrors `notificationHref` in
@@ -230,10 +287,59 @@ mod tests {
     }
 
     #[test]
-    fn losing_access_is_not_mailed() {
-        let payload = json!({ "resourceType": "file", "resourceId": "f1", "resourceName": "x" });
-        assert!(compose("file_access_revoked", &payload, &ctx(None, None)).is_none());
-        assert!(compose("folder_access_revoked", &payload, &ctx(None, None)).is_none());
+    fn losing_access_is_mailed_and_points_at_drive() {
+        let payload = json!({
+            "resourceType": "file",
+            "resourceId": "f1",
+            "resourceName": "Plan",
+            "revokedById": "u2",
+        });
+        assert_eq!(actor_id(&payload), Some("u2"));
+        let c = compose("file_access_revoked", &payload, &ctx(Some("Grace"), None)).unwrap();
+        assert_eq!(c.subject, "Grace removed your access to “Plan”");
+        assert!(c.text.contains("https://neutrino.test/drive\n"), "{}", c.text);
+        let folder = json!({ "resourceType": "folder", "resourceId": "d1", "resourceName": "Photos" });
+        let c = compose("folder_access_revoked", &folder, &ctx(None, None)).unwrap();
+        assert!(c.text.contains("the folder “Photos”"));
+    }
+
+    #[test]
+    fn an_access_request_asks_the_owner_to_review_it() {
+        let payload = json!({
+            "resourceType": "file",
+            "resourceId": "f1",
+            "fileId": "f1",
+            "resourceName": "Budget",
+            "role": "editor",
+            "actorName": "Bob",
+            "requesterEmail": "bob@example.com",
+            "message": "For the Q4 review",
+        });
+        let c = compose("access_requested", &payload, &ctx(None, None)).unwrap();
+        assert_eq!(c.subject, "Bob is asking for access to “Budget”");
+        assert!(c.text.contains("Bob (bob@example.com) asked to edit the file “Budget”."));
+        assert!(c.text.contains("“For the Q4 review”"));
+        assert!(c.text.contains("Review request: https://neutrino.test/drive/requests\n"), "{}", c.text);
+    }
+
+    #[test]
+    fn an_answered_request_tells_the_requester() {
+        let payload = json!({
+            "resourceType": "file",
+            "resourceId": "f1",
+            "resourceName": "Budget",
+            "mimeType": "application/vnd.neutrino.sheet",
+            "role": "commenter",
+            "sharedById": "u1",
+        });
+        let c = compose("access_request_approved", &payload, &ctx(Some("Ada"), None)).unwrap();
+        assert_eq!(c.subject, "Ada gave you access to “Budget”");
+        assert!(c.text.contains("you can now comment on the file “Budget”"));
+        assert!(c.text.contains("/sheets/editor?id=f1"));
+
+        let c = compose("access_request_denied", &payload, &ctx(Some("Ada"), None)).unwrap();
+        assert_eq!(c.subject, "Your request for “Budget” was declined");
+        assert!(c.text.contains("https://neutrino.test/drive\n"));
     }
 
     #[test]

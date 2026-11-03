@@ -8,6 +8,7 @@ use crate::drive::permissions::{
     service::PermissionsService,
 };
 use crate::drive::storage::repository::StorageRepository;
+use crate::auth::email_verification::service::EmailVerificationService;
 use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use serde::Deserialize;
@@ -19,6 +20,8 @@ pub struct PermissionsApiState {
     pub notification_service: Arc<NotificationService>,
     pub storage_repo: Arc<StorageRepository>,
     pub fs_repo: Arc<FilesystemRepository>,
+    /// Sharing waits for a verified address where that is enforced.
+    pub email_verification: Arc<EmailVerificationService>,
 }
 
 // ── Path extractors ───────────────────────────────────────────────────────────
@@ -91,6 +94,9 @@ pub async fn grant_file_permission(
     body: web::Json<GrantPermissionRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
+    state
+        .email_verification
+        .require_verified(&user.user_id, "share files")?;
     let perm = state.permissions_service.grant_permission(
         &user.user_id,
         "file",
@@ -308,6 +314,9 @@ pub async fn grant_folder_permission(
     body: web::Json<GrantPermissionRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let folder_id = path.into_inner();
+    state
+        .email_verification
+        .require_verified(&user.user_id, "share files")?;
     let perm = state.permissions_service.grant_permission(
         &user.user_id,
         "folder",

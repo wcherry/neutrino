@@ -27,6 +27,7 @@ import { PasswordPolicySection } from './PasswordPolicySection';
 import { WorkQueueTab } from './WorkQueueTab';
 import { OrganisationTab } from './OrganisationTab';
 import { FontsTab } from './FontsTab';
+import { ProductUpdatesTab } from './ProductUpdatesTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
 import { TeamsTab } from './TeamsTab';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
@@ -1139,6 +1140,7 @@ type Tab =
   | 'flags'
   | 'versions'
   | 'fonts'
+  | 'updates'
   | 'jobs';
 
 /**
@@ -1169,6 +1171,8 @@ const TABS: { id: Tab; label: string; flag?: 'teamSpaces' }[] = [
   { id: 'flags', label: 'Feature Flags' },
   { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
+  // What administrators announce in the weekly email.
+  { id: 'updates', label: 'Product Updates' },
   { id: 'jobs', label: 'Jobs' },
 ];
 
@@ -1241,6 +1245,7 @@ export default function AdminPage() {
           {activeTab === 'flags' && <FeatureFlagsTab />}
           {activeTab === 'versions' && <VersionsTab />}
           {activeTab === 'fonts' && <FontsTab />}
+          {activeTab === 'updates' && <ProductUpdatesTab />}
           {activeTab === 'jobs' && <JobsTab />}
         </div>
       </div>

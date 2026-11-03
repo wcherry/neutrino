@@ -20,6 +20,19 @@ export function notificationLabel(n: TopbarNotification): string {
     return `Your request for the key to ${file}${team} was denied${reason}`;
   }
 
+  // Access requests: asked of an owner, then answered to the requester.
+  const thing = name ? `the ${type} "${name}"` : `a ${type}`;
+  if (n.eventType === 'access_requested') {
+    const who = payload.requesterName || 'Someone';
+    return `${who} asked for ${payload.role ?? 'viewer'} access to ${thing}`;
+  }
+  if (n.eventType === 'access_request_approved') {
+    return `Your request for ${thing} was approved`;
+  }
+  if (n.eventType === 'access_request_denied') {
+    return `Your request for ${thing} was declined`;
+  }
+
   if (n.eventType === 'file_access_revoked' || n.eventType === 'folder_access_revoked') {
     if (name) {
       return `Your access to the ${type} "${name}" has been revoked`;

@@ -7,22 +7,8 @@ import { ApiClientError } from '@neutrino/api-core';
 import { authApi } from '@neutrino/auth';
 import { routeAfterSignIn, SIGN_IN_NEXT_PARAM } from '@/lib/signInRedirect';
 import { readInstanceBrand } from '@/lib/instanceBrand';
+import { BrandRow } from './BrandRow';
 import styles from './page.module.css';
-
-/**
- * The instance's name and logo. The name comes from the brand the server wrote into this page
- * (`lib/instanceBrand.ts`) — this form is never prerendered, so its first paint is already the
- * instance's. An uploaded logo is drawn over `data-brand="logo"` by the server's CSS, which also
- * hides the name beside it (`data-brand="name"`).
- */
-function BrandRow() {
-  return (
-    <div className={styles.logoRow}>
-      <div className={styles.logoMark} data-brand="logo">N</div>
-      <span className={styles.logoText} data-brand="name">{readInstanceBrand().name ?? 'Neutrino'}</span>
-    </div>
-  );
-}
 
 export default function SignInPage() {
   // `useSearchParams` needs a Suspense boundary above it during prerender.
@@ -47,10 +33,29 @@ function SignInForm() {
    * user has just typed it, and the change needs it as proof.
    */
   const [expired, setExpired] = useState<{ email: string; password: string } | null>(null);
+  /**
+   * The address of an account refused because its email address is still
+   * unverified after the grace period. Set, the page offers a fresh link.
+   */
+  const [unverified, setUnverified] = useState<string | null>(null);
+  const [linkSent, setLinkSent] = useState(false);
+
+  async function sendVerificationLink() {
+    if (!unverified) return;
+    setError(null);
+    try {
+      await authApi.requestEmailVerification(unverified);
+      setLinkSent(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not send the link');
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setUnverified(null);
+    setLinkSent(false);
     setLoading(true);
 
     const form = e.currentTarget;
@@ -69,6 +74,10 @@ function SignInForm() {
       // having to find an administrator.
       if (err instanceof ApiClientError && err.code === 'PASSWORD_EXPIRED') {
         setExpired({ email, password });
+      } else if (err instanceof ApiClientError && err.code === 'EMAIL_NOT_VERIFIED') {
+        // Like an expiry, the password was right; following a link fixes it.
+        setUnverified(email);
+        setError(err.message);
       } else {
         setError(err instanceof Error ? err.message : 'Sign in failed');
       }
@@ -114,7 +123,12 @@ function SignInForm() {
             />
           </div>
           <div className={styles.field}>
-            <label htmlFor="password" className={styles.label}>Password</label>
+            <div className={styles.labelRow}>
+              <label htmlFor="password" className={styles.label}>Password</label>
+              <Link href="/forgot-password" className={styles.labelLink}>
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               name="password"
@@ -126,6 +140,16 @@ function SignInForm() {
             />
           </div>
           {error && <p className={styles.error}>{error}</p>}
+          {unverified &&
+            (linkSent ? (
+              <p className={styles.sub} role="status">
+                A new verification link is on its way to {unverified}.
+              </p>
+            ) : (
+              <button type="button" className={styles.linkButtonInline} onClick={sendVerificationLink}>
+                Send a new verification link
+              </button>
+            ))}
           <button type="submit" className={styles.submit} disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>

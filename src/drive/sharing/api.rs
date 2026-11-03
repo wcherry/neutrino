@@ -8,6 +8,7 @@ use crate::drive::sharing::{
     service::SharingService,
 };
 use crate::drive::storage::api::StorageApiState;
+use crate::auth::email_verification::service::EmailVerificationService;
 use crate::shared::{ApiError, AuthenticatedUser, TokenService};
 use actix_files::NamedFile;
 use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
@@ -17,6 +18,16 @@ use utoipa::OpenApi;
 pub struct SharingApiState {
     pub sharing_service: Arc<SharingService>,
     pub token_service: Arc<TokenService>,
+    /// Creating or widening a share link waits for a verified address where
+    /// that is enforced. Switching a link off never does.
+    pub email_verification: Arc<EmailVerificationService>,
+}
+
+impl SharingApiState {
+    fn require_verified(&self, user: &AuthenticatedUser) -> Result<(), ApiError> {
+        self.email_verification
+            .require_verified(&user.user_id, "share files")
+    }
 }
 
 // ── File share link endpoints ─────────────────────────────────────────────────
@@ -53,7 +64,9 @@ pub async fn get_file_share_link(
             // None => Ok(HttpResponse::NotFound().json(serde_json::json!({
             //     "error": { "code": "NOT_FOUND", "message": "No share link exists for this file" }
             // }))),
-            None => state.sharing_service.upsert_share_link(
+            None => {
+                state.require_verified(&user)?;
+                state.sharing_service.upsert_share_link(
                 &user.user_id,
                 "file",
                 &file_id,
@@ -62,7 +75,8 @@ pub async fn get_file_share_link(
                     role: LinkRole::Viewer,
                     expires_at: None,
                 },
-            )?,
+            )?
+            }
         },
     ))
 }
@@ -91,6 +105,7 @@ pub async fn upsert_file_share_link(
     body: web::Json<UpsertShareLinkRequest>,
 ) -> Result<web::Json<ShareLinkResponse>, ApiError> {
     let file_id = path.into_inner();
+    state.require_verified(&user)?;
     let link = state.sharing_service.upsert_share_link(
         &user.user_id,
         "file",
@@ -126,6 +141,9 @@ pub async fn update_file_share_link(
     body: web::Json<UpdateShareLinkRequest>,
 ) -> Result<web::Json<ShareLinkResponse>, ApiError> {
     let file_id = path.into_inner();
+    if body.is_active != Some(false) {
+        state.require_verified(&user)?;
+    }
     let link = state.sharing_service.update_share_link(
         &user.user_id,
         "file",
@@ -223,6 +241,7 @@ pub async fn upsert_folder_share_link(
     body: web::Json<UpsertShareLinkRequest>,
 ) -> Result<web::Json<ShareLinkResponse>, ApiError> {
     let folder_id = path.into_inner();
+    state.require_verified(&user)?;
     let link = state.sharing_service.upsert_share_link(
         &user.user_id,
         "folder",
@@ -257,6 +276,9 @@ pub async fn update_folder_share_link(
     body: web::Json<UpdateShareLinkRequest>,
 ) -> Result<web::Json<ShareLinkResponse>, ApiError> {
     let folder_id = path.into_inner();
+    if body.is_active != Some(false) {
+        state.require_verified(&user)?;
+    }
     let link = state.sharing_service.update_share_link(
         &user.user_id,
         "folder",

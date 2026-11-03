@@ -37,6 +37,10 @@ pub struct User {
     /// normally. Distinct from `disabled_at`: this was applied by a counter and
     /// is cleared by Unlock, whereas a disabled account was a decision.
     pub locked_out_at: Option<NaiveDateTime>,
+    /// When the account proved it owns its address (migration 152). `None`
+    /// until it follows a verification link; accounts older than the column
+    /// count as verified when they were created.
+    pub email_verified_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Insertable)]

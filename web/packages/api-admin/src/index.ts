@@ -32,4 +32,6 @@ export type {
 } from './types';
 
 export { organisationApi } from './organisation';
+export { productUpdatesApi } from './productUpdates';
+export type { ProductUpdate, WeeklyEmailPreview } from './productUpdates';
 export type { OrgLayer, OrgPreferenceChange, Branding, BrandingAsset, BrandingInput } from './organisation';

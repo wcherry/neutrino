@@ -27,6 +27,10 @@ services:
       STORAGE_PATH: /usr/local/data/storage
       LOG_PATH: /usr/local/logs/
       PORT: 8080
+      # Links are sent and followed (tests read them from the outbox), but nothing is held back
+      # for an unverified address: every spec registers a fresh account and shares straight away.
+      # `enforce` is covered by the Rust tests in `src/auth/email_verification/tests.rs`.
+      EMAIL_VERIFICATION: soft
     ports:
       - "9880:8080"
     volumes:

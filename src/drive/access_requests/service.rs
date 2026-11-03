@@ -3,7 +3,7 @@ use crate::drive::access_requests::{
         AccessRequestResponse, ApproveAccessRequestRequest, CreateAccessRequestRequest,
         ListAccessRequestsResponse,
     },
-    model::NewAccessRequestRecord,
+    model::{AccessRequestRecord, NewAccessRequestRecord},
     repository::AccessRequestsRepository,
 };
 use crate::drive::permissions::{
@@ -11,6 +11,9 @@ use crate::drive::permissions::{
     repository::PermissionsRepository,
     service::PermissionsService,
 };
+use crate::drive::filesystem::repository::FilesystemRepository;
+use crate::drive::storage::repository::StorageRepository;
+use crate::drive::teams::key_requests::Notice;
 use crate::shared::ApiError;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -19,6 +22,51 @@ pub struct AccessRequestsService {
     repo: Arc<AccessRequestsRepository>,
     permissions_repo: Arc<PermissionsRepository>,
     permissions_service: Arc<PermissionsService>,
+    /// Where notices find the file or folder's name. `None` leaves it out,
+    /// and the email looks a file's name up by id instead.
+    names: Option<(Arc<StorageRepository>, Arc<FilesystemRepository>)>,
+}
+
+/// Who an access request notice goes to and what it carries.
+fn notice(
+    recipients: Vec<String>,
+    event_type: &'static str,
+    req: &AccessRequestRecord,
+    role: &str,
+    (name, mime): (Option<String>, Option<String>),
+    actor_id: Option<&str>,
+) -> Notice {
+    let mut payload = serde_json::json!({
+        "requestId": req.id,
+        "resourceType": req.resource_type,
+        "resourceId": req.resource_id,
+        "role": role,
+        "requesterName": req.requester_name,
+        "requesterEmail": req.requester_email,
+    });
+    if req.resource_type == "file" {
+        payload["fileId"] = req.resource_id.clone().into();
+    }
+    if let Some(name) = name {
+        payload["resourceName"] = name.into();
+    }
+    if let Some(mime) = mime {
+        payload["mimeType"] = mime.into();
+    }
+    if let Some(message) = req.message.as_deref().filter(|m| !m.trim().is_empty()) {
+        payload["message"] = message.into();
+    }
+    match actor_id {
+        // The owner who decided; the email looks their name up.
+        Some(id) => payload["sharedById"] = id.into(),
+        // The requester asked; they are the actor.
+        None => payload["actorName"] = req.requester_name.clone().into(),
+    }
+    Notice {
+        recipients,
+        event_type,
+        payload,
+    }
 }
 
 impl AccessRequestsService {
@@ -31,7 +79,45 @@ impl AccessRequestsService {
             repo,
             permissions_repo,
             permissions_service,
+            names: None,
         }
+    }
+
+    /// Name the file or folder in the notices this service returns.
+    pub fn with_resource_names(
+        mut self,
+        storage: Arc<StorageRepository>,
+        folders: Arc<FilesystemRepository>,
+    ) -> Self {
+        self.names = Some((storage, folders));
+        self
+    }
+
+    /// The resource's name and, for a file, its MIME type. Best effort: a
+    /// notice without a name still goes out.
+    fn describe(&self, resource_type: &str, resource_id: &str) -> (Option<String>, Option<String>) {
+        let Some((storage, folders)) = &self.names else {
+            return (None, None);
+        };
+        if resource_type == "folder" {
+            let name = folders.find_folder_by_id(resource_id).ok().flatten().map(|f| f.name);
+            return (name, None);
+        }
+        match storage.find_file_by_id(resource_id).ok().flatten() {
+            Some(f) => (Some(f.name), Some(f.mime_type)),
+            None => (None, None),
+        }
+    }
+
+    /// Everyone who can approve a request on the resource.
+    fn owner_ids(&self, resource_type: &str, resource_id: &str) -> Result<Vec<String>, ApiError> {
+        Ok(self
+            .permissions_repo
+            .list_permissions(resource_type, resource_id)?
+            .into_iter()
+            .filter(|p| p.role == "owner")
+            .map(|p| p.user_id)
+            .collect())
     }
 
     /// Submit an access request for a resource. The requester must not already have access.
@@ -42,7 +128,7 @@ impl AccessRequestsService {
         resource_type: &str,
         resource_id: &str,
         req: CreateAccessRequestRequest,
-    ) -> Result<AccessRequestResponse, ApiError> {
+    ) -> Result<(AccessRequestResponse, Notice), ApiError> {
         // Check if user already has access
         let existing_role = self.permissions_service.get_effective_role(
             requester_id,
@@ -79,15 +165,16 @@ impl AccessRequestsService {
             status: "pending",
         };
         let result = self.repo.create(&record)?;
-        tracing::info!(
-            "Access request notification: {} ({}) requested {} access to {} {}",
-            req.requester_name,
-            requester_email,
-            req.requested_role,
-            resource_type,
-            resource_id
+        let owners = self.owner_ids(resource_type, resource_id)?;
+        let notice = notice(
+            owners,
+            "access_requested",
+            &result,
+            &result.requested_role,
+            self.describe(resource_type, resource_id),
+            None,
         );
-        Ok(AccessRequestResponse::from(result))
+        Ok((AccessRequestResponse::from(result), notice))
     }
 
     /// List pending access requests for resources that the caller owns.
@@ -116,6 +203,12 @@ impl AccessRequestsService {
                 .list_pending_for_user_resources(&folder_ids, "folder")?;
             requests.extend(folder_reqs.into_iter().map(AccessRequestResponse::from));
         }
+        // Named, so the owner can tell what is being asked for without opening it.
+        for r in &mut requests {
+            let (name, mime) = self.describe(&r.resource_type, &r.resource_id);
+            r.resource_name = name;
+            r.mime_type = mime;
+        }
 
         Ok(ListAccessRequestsResponse { requests })
     }
@@ -126,7 +219,7 @@ impl AccessRequestsService {
         caller_id: &str,
         request_id: &str,
         req: ApproveAccessRequestRequest,
-    ) -> Result<AccessRequestResponse, ApiError> {
+    ) -> Result<(AccessRequestResponse, Notice), ApiError> {
         let access_req = self
             .repo
             .find_by_id(request_id)?
@@ -185,7 +278,15 @@ impl AccessRequestsService {
             .repo
             .find_by_id(request_id)?
             .ok_or_else(|| ApiError::internal("Request not found after update"))?;
-        Ok(AccessRequestResponse::from(updated))
+        let notice = notice(
+            vec![updated.requester_id.clone()],
+            "access_request_approved",
+            &updated,
+            role_str,
+            self.describe(&updated.resource_type, &updated.resource_id),
+            Some(caller_id),
+        );
+        Ok((AccessRequestResponse::from(updated), notice))
     }
 
     /// Deny a pending access request.
@@ -193,7 +294,7 @@ impl AccessRequestsService {
         &self,
         caller_id: &str,
         request_id: &str,
-    ) -> Result<AccessRequestResponse, ApiError> {
+    ) -> Result<(AccessRequestResponse, Notice), ApiError> {
         let access_req = self
             .repo
             .find_by_id(request_id)?
@@ -230,6 +331,14 @@ impl AccessRequestsService {
             .repo
             .find_by_id(request_id)?
             .ok_or_else(|| ApiError::internal("Request not found after update"))?;
-        Ok(AccessRequestResponse::from(updated))
+        let notice = notice(
+            vec![updated.requester_id.clone()],
+            "access_request_denied",
+            &updated,
+            &updated.requested_role,
+            self.describe(&updated.resource_type, &updated.resource_id),
+            Some(caller_id),
+        );
+        Ok((AccessRequestResponse::from(updated), notice))
     }
 }

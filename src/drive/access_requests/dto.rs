@@ -17,6 +17,13 @@ pub struct AccessRequestResponse {
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
+    /// The file or folder's name, where the listing looked it up. Additive:
+    /// absent from responses that did not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_name: Option<String>,
+    /// The file's MIME type, alongside `resource_name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
 }
 
 impl From<AccessRequestRecord> for AccessRequestResponse {
@@ -33,6 +40,8 @@ impl From<AccessRequestRecord> for AccessRequestResponse {
             status: r.status,
             created_at: r.created_at.to_string(),
             updated_at: r.updated_at.to_string(),
+            resource_name: None,
+            mime_type: None,
         }
     }
 }

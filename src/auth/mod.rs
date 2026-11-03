@@ -1,8 +1,10 @@
 pub mod api;
 pub mod dto;
+pub mod email_verification;
 pub mod invites;
 pub mod keyvault;
 pub mod password_policy;
+pub mod password_reset;
 pub mod repository;
 pub mod service;
 pub mod signup;

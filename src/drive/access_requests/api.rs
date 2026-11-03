@@ -5,6 +5,9 @@ use crate::drive::access_requests::{
     },
     service::AccessRequestsService,
 };
+use crate::auth::email_verification::service::EmailVerificationService;
+use crate::drive::notifications::service::NotificationService;
+use crate::drive::teams::key_requests::Notice;
 use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{get, post, web, HttpResponse};
 use std::sync::Arc;
@@ -12,6 +15,28 @@ use utoipa::OpenApi;
 
 pub struct AccessRequestsApiState {
     pub service: Arc<AccessRequestsService>,
+    /// Where request, approval and denial notices go. `None` sends none.
+    pub notifications: Option<Arc<NotificationService>>,
+    /// Approving shares the resource, so it waits for a verified address
+    /// where that is enforced.
+    pub email_verification: Arc<EmailVerificationService>,
+}
+
+impl AccessRequestsApiState {
+    /// Send a notice after the response is decided, so a slow notification never holds it up.
+    fn send(&self, notice: Notice) {
+        let Some(ns) = self.notifications.clone() else {
+            return;
+        };
+        if notice.recipients.is_empty() {
+            return;
+        }
+        tokio::spawn(async move {
+            let _ = ns
+                .notify(notice.recipients, notice.event_type, notice.payload)
+                .await;
+        });
+    }
 }
 
 /// Ask the owner of a file for access to it.
@@ -38,13 +63,14 @@ pub async fn request_file_access(
     body: web::Json<CreateAccessRequestRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
-    let result = state.service.create_request(
+    let (result, notice) = state.service.create_request(
         &user.user_id,
         &user.email,
         "file",
         &file_id,
         body.into_inner(),
     )?;
+    state.send(notice);
     Ok(HttpResponse::Created().json(result))
 }
 
@@ -72,13 +98,14 @@ pub async fn request_folder_access(
     body: web::Json<CreateAccessRequestRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let folder_id = path.into_inner();
-    let result = state.service.create_request(
+    let (result, notice) = state.service.create_request(
         &user.user_id,
         &user.email,
         "folder",
         &folder_id,
         body.into_inner(),
     )?;
+    state.send(notice);
     Ok(HttpResponse::Created().json(result))
 }
 
@@ -129,9 +156,13 @@ pub async fn approve_access_request(
     body: web::Json<ApproveAccessRequestRequest>,
 ) -> Result<web::Json<AccessRequestResponse>, ApiError> {
     let request_id = path.into_inner();
-    let result = state
+    state
+        .email_verification
+        .require_verified(&user.user_id, "share files")?;
+    let (result, notice) = state
         .service
         .approve_request(&user.user_id, &request_id, body.into_inner())?;
+    state.send(notice);
     Ok(web::Json(result))
 }
 
@@ -158,7 +189,8 @@ pub async fn deny_access_request(
     path: web::Path<String>,
 ) -> Result<web::Json<AccessRequestResponse>, ApiError> {
     let request_id = path.into_inner();
-    let result = state.service.deny_request(&user.user_id, &request_id)?;
+    let (result, notice) = state.service.deny_request(&user.user_id, &request_id)?;
+    state.send(notice);
     Ok(web::Json(result))
 }
 

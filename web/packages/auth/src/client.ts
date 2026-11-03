@@ -5,6 +5,9 @@ import type {
   SignupPolicy,
   LoginRequest,
   ChangePasswordRequest,
+  PasswordResetCheck,
+  EmailVerificationStatus,
+  ResetPasswordRequest,
   AuthTokens,
   UserProfile,
   UserProfileDetails,
@@ -47,6 +50,87 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  },
+
+  /**
+   * Ask for a password reset link to be emailed to `email`.
+   *
+   * Resolves the same way whether or not the address has an account, so the
+   * caller cannot tell — and must not try to.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/password/forgot',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { auth: 'none', responseType: 'none' },
+    );
+  },
+
+  /**
+   * Check an emailed reset link before asking for a new password. Rejects with
+   * `RESET_NOT_FOUND`, `RESET_REVOKED`, `RESET_USED`, `RESET_EXPIRED` or
+   * `ACCOUNT_DISABLED`.
+   */
+  async checkPasswordReset(token: string): Promise<PasswordResetCheck> {
+    return request<PasswordResetCheck>(
+      '/api/v1/auth/password/reset/check',
+      { method: 'POST', body: JSON.stringify({ token }) },
+      { auth: 'none' },
+    );
+  },
+
+  /**
+   * Set a new password with an emailed reset link. Every device is signed out,
+   * so the caller sends the user to sign in rather than holding a session.
+   */
+  async resetPassword(body: ResetPasswordRequest): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/password/reset',
+      { method: 'POST', body: JSON.stringify(body) },
+      { auth: 'none' },
+    );
+  },
+
+  /**
+   * Follow an emailed verification link. Rejects with `VERIFY_NOT_FOUND`,
+   * `VERIFY_REVOKED`, `VERIFY_USED` or `VERIFY_EXPIRED`.
+   */
+  async verifyEmail(token: string): Promise<{ email: string }> {
+    return request<{ email: string }>(
+      '/api/v1/auth/email/verify',
+      { method: 'POST', body: JSON.stringify({ token }) },
+      { auth: 'none' },
+    );
+  },
+
+  /** Where the signed-in account's address stands, for the banner. */
+  async getEmailVerification(): Promise<EmailVerificationStatus> {
+    return request<EmailVerificationStatus>('/api/v1/auth/email/verification');
+  },
+
+  /**
+   * Mail the signed-in account a new verification link. Rejects with
+   * `TOO_MANY_REQUESTS` after three in an hour.
+   */
+  async resendEmailVerification(): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/email/verification/resend',
+      { method: 'POST' },
+      { responseType: 'none' },
+    );
+  },
+
+  /**
+   * Ask for a verification link for the account at `email`, from the sign-in
+   * page, when the account can no longer sign in to ask. Always succeeds,
+   * account or not.
+   */
+  async requestEmailVerification(email: string): Promise<void> {
+    return request<void>(
+      '/api/v1/auth/email/verification/request',
+      { method: 'POST', body: JSON.stringify({ email }) },
+      { auth: 'none', responseType: 'none' },
+    );
   },
 
   async login(body: LoginRequest): Promise<AuthTokens> {

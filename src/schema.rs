@@ -22,6 +22,8 @@ diesel::table! {
         // Added in migration 123
         failed_login_attempts -> Integer,
         locked_out_at -> Nullable<Timestamp>,
+        // Added in migration 152
+        email_verified_at -> Nullable<Timestamp>,
     }
 }
 
@@ -898,6 +900,54 @@ diesel::table! {
     }
 }
 
+// ── Added in migration 151 ────────────────────────────────────────────────────
+diesel::table! {
+    password_resets (id) {
+        id -> Text,
+        user_id -> Text,
+        token_hash -> Text,
+        created_at -> Timestamp,
+        expires_at -> Timestamp,
+        used_at -> Nullable<Timestamp>,
+        revoked_at -> Nullable<Timestamp>,
+    }
+}
+
+// ── Added in migration 152 ────────────────────────────────────────────────────
+diesel::table! {
+    email_verifications (id) {
+        id -> Text,
+        user_id -> Text,
+        email -> Text,
+        token_hash -> Text,
+        created_at -> Timestamp,
+        expires_at -> Timestamp,
+        used_at -> Nullable<Timestamp>,
+        revoked_at -> Nullable<Timestamp>,
+    }
+}
+
+// ── Added in migration 153 ────────────────────────────────────────────────────
+diesel::table! {
+    product_updates (id) {
+        id -> Text,
+        title -> Text,
+        body -> Text,
+        created_by -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        published_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    weekly_emails (user_id, week) {
+        user_id -> Text,
+        week -> Text,
+        sent_at -> Timestamp,
+    }
+}
+
 // ── Added in migration 146 ────────────────────────────────────────────────────
 diesel::table! {
     team_key_requests (id) {
@@ -1246,6 +1296,9 @@ diesel::joinable!(refresh_tokens -> users (user_id));
 diesel::joinable!(user_key_vaults -> users (user_id));
 diesel::joinable!(user_key_unlocks -> users (user_id));
 diesel::joinable!(invites -> users (inviter_id));
+diesel::joinable!(password_resets -> users (user_id));
+diesel::joinable!(email_verifications -> users (user_id));
+diesel::joinable!(weekly_emails -> users (user_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
@@ -1402,4 +1455,11 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_public_keys,
     // Friend invites
     invites,
+    // Password reset
+    password_resets,
+    // Email verification
+    email_verifications,
+    // Weekly email
+    product_updates,
+    weekly_emails,
 );
