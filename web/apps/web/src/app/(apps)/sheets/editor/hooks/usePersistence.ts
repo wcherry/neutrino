@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
+import type { CellProps, SheetData, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
     driveReadBytes, driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes,
@@ -18,6 +18,8 @@ import type { SheetRef } from '../formula';
 import { buildRawSheetMap, evaluateSheetMap } from './sheetFileUtils';
 import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension } from '@/lib/officeFormats';
 import { readNeutrinoModel } from '@/lib/ooxmlContainer';
+import { useDocumentPreview } from '@/hooks/useDocumentPreview';
+import { renderSheetFirstPage, sheetFirstPageSignature } from '../sheetPreview';
 import { writeXlsx } from '@/lib/ooxml/xlsx/write';
 import { readXlsx } from '@/lib/ooxml/xlsx/read';
 import { yieldToMain } from '@/lib/yieldToMain';
@@ -166,6 +168,13 @@ export function usePersistence({
     // this spreadsheet was loaded. See `useContentVersionGuard`.
     const versionGuard = useContentVersionGuard();
     const currentUser = useUser();
+    // Drive's picture of this spreadsheet: the first sheet's top-left corner,
+    // drawn from the copy of it the signature was taken from — so the picture
+    // is always of the page the signature describes.
+    const previewSheetRef = useRef<SheetData | undefined>(undefined);
+    const preview = useDocumentPreview(sheetId, {
+        render: () => renderSheetFirstPage(previewSheetRef.current),
+    });
     const [title, setTitle] = useState('Untitled');
     const [yourRole, setYourRole] = useState<string>('owner');
     /**
@@ -323,6 +332,8 @@ export function usePersistence({
                 );
             }
             versionGuard.observe(saved?.contentVersion);
+            previewSheetRef.current = model.sheets[0];
+            preview.saved(sheetFirstPageSignature(model.sheets[0]), !!saved?.coverThumbnailUrl);
             // Search runs against a client-side index, so a spreadsheet the
             // editor never announces is one the user cannot find.
             indexOnSave(currentUser?.id, {
@@ -584,8 +595,11 @@ export function usePersistence({
                 const legacy = await readNeutrinoModel(plain, 'sheets');
                 // Parsed straight into the model: this used to serialise the workbook to JSON only to
                 // parse it back, a whole extra pass over every cell.
-                await applySheetFile(legacy ? (JSON.parse(legacy) as SheetFile) : await readXlsx(plain));
+                const file = legacy ? (JSON.parse(legacy) as SheetFile) : await readXlsx(plain);
+                await applySheetFile(file);
                 setLoadCount(c => c + 1);
+                previewSheetRef.current = file.sheets[0];
+                preview.loaded(sheetFirstPageSignature(file.sheets[0]), !!meta.coverThumbnailUrl);
             } catch {
                 toast.error('Failed to open this file for editing');
             }

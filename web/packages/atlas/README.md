@@ -3,6 +3,9 @@
 Neutrino Atlas for the web client, below the UI: Atlas Markdown, the dialect every page is
 written in (`specs/atlas-markdown/SPEC.md`), and the vault's data and sync. Both are implemented
 to agree exactly with AtlasKit, the Swift package the Mac and iOS apps use.
+Atlas Markdown for the web client: the dialect every Neutrino Atlas page is written in
+(`specs/atlas-markdown/SPEC.md`), implemented to agree exactly with AtlasKit, the Swift
+implementation the Mac and iOS apps use.
 
 - `parse(source)` → the tree (SPEC §3–§4), plain objects shaped like the corpus's `ast.json`.
 - `extract(tree)` → what a page contributes to the index (§6).
@@ -38,6 +41,7 @@ encryption; `scripts/test-against-server.sh` runs `driveIntegration.test.ts` aga
 server built from this repo.
 
 ## How the parser agrees with AtlasKit
+## How it agrees with AtlasKit
 
 It is a port of AtlasCore's parser pipeline: `preprocess.ts` (`SourcePreprocessor`),
 `convert.ts` (`CMarkConverter`), `passes.ts` (`ExtensionPasses`), and the writer and edits.
