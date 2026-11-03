@@ -13,6 +13,9 @@ import { EditorShellActions } from '@/components/editorChrome/EditorShellActions
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
+import { DrawingEmbedExtension } from '@/lib/extensions/DrawingEmbedExtension';
+import { useRichPaste } from '@/hooks/useRichPaste';
+import { embedSize, type CanvasClip } from '@/lib/canvasClipboard';
 import { InsertDiagramDialog as InsertDiagramDocDialog } from './InsertDiagramDialog';
 import { InsertImageDialog, type ImageSource } from '@/components/InsertImageDialog';
 import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
@@ -43,7 +46,7 @@ import {
   serializeContent,
   type LayoutMeta,
 } from '@/lib/docBody';
-import { driveImageRef, inlineDriveImagesInHtml } from '@/lib/driveImages';
+import { driveImageRef, inlineDriveImagesInHtml, uploadAttachment } from '@/lib/driveImages';
 import { normalizeImagesForPdf } from '@/lib/pdfImages';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -1005,6 +1008,26 @@ export function DocEditor() {
     ),
   });
 
+  // Sheet selections, Diagrams/Drawing selections and lone pictures — decided synchronously in
+  // the editor's own `handlePaste` below, which runs before ProseMirror inserts anything.
+  const { handlePaste: handleRichPaste, dialog: canvasPasteDialog } = useRichPaste({
+    sheetPaste: handleSheetPaste,
+    onLiveCanvas: useCallback((clip: CanvasClip) => {
+      const size = embedSize(clip, 640);
+      const attrs = clip.kind === 'diagram'
+        ? { type: 'diagramEmbed', attrs: { diagramId: clip.fileId, pageIndex: String(clip.pageIndex), title: clip.title, shapeIds: clip.shapeIds.join(','), width: String(size.width), height: String(size.height) } }
+        : { type: 'drawingEmbed', attrs: { drawingId: clip.fileId, title: clip.title, selection: JSON.stringify(clip.selection), width: String(size.width), height: String(size.height) } };
+      editorRef.current?.chain().focus().insertContent(attrs).run();
+    }, []),
+    // Stored as an encrypted attachment and inserted by reference, like an image from Insert image.
+    onPicture: useCallback(async (file: File) => {
+      const stored = await uploadAttachment(file);
+      editorRef.current?.chain().focus().setImage({ src: driveImageRef(stored.id) }).run();
+    }, []),
+  });
+  const richPasteRef = useRef(handleRichPaste);
+  richPasteRef.current = handleRichPaste;
+
   const editor = useEditor({
     immediatelyRender: false,
     shouldRerenderOnTransaction: false,
@@ -1045,6 +1068,7 @@ export function DocEditor() {
       CharacterCount,
       SheetEmbedExtension,
       DiagramEmbedExtension,
+      DrawingEmbedExtension,
       // Layout & structure extensions
       FootnoteExtension,
       CrossRefExtension,
@@ -1068,6 +1092,11 @@ export function DocEditor() {
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
+      handlePaste: (_view, event) => {
+        if (!richPasteRef.current(event)) return false;
+        event.preventDefault();
+        return true;
+      },
       handleDOMEvents: {
         // On a Mac, Ctrl-click is a right-click, but it arrives as a left-button mousedown, which
         // ProseMirror takes as a click that places the cursor and the browser as the start of a
@@ -1161,18 +1190,6 @@ export function DocEditor() {
     editor.on('transaction', update);
     return () => { editor.off('transaction', update); };
   }, [editor]);
-
-  useEffect(() => {
-    if (!editor) return;
-    const dom = editor.view.dom;
-    const listener = (e: Event) => {
-      handleSheetPaste(e as ClipboardEvent).then((consumed) => {
-        if (consumed) e.preventDefault();
-      });
-    };
-    dom.addEventListener('paste', listener);
-    return () => dom.removeEventListener('paste', listener);
-  }, [editor, handleSheetPaste]);
 
   // Sync spell-check state into the SpellCheckExtension plugin. This runs
   // whenever the user preference or the nspell handle changes (nspell loads lazily).
@@ -2898,6 +2915,8 @@ export function DocEditor() {
           }}
         />
       )}
+
+      {canvasPasteDialog}
 
       {sheetPasteDialogState && (
         <PasteChoiceDialog

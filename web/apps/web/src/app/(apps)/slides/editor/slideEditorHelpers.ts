@@ -117,3 +117,21 @@ export function dbThemeToTheme(t: SlideTheme): Theme {
     defaultTransition: t.defaultTransition as Theme['defaultTransition'],
   };
 }
+
+/** A slide's width over its height; element sizes are percentages of each. */
+const SLIDE_ASPECT = 16 / 9;
+
+/**
+ * A box for something of shape `aspect` (width ÷ height): as large as fits in
+ * 60% of the slide's width and 70% of its height, keeping its shape, centred.
+ */
+export function fitOnSlide(aspect: number): { x: number; y: number; w: number; h: number } {
+  const safe = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  let w = 60;
+  let h = (w * SLIDE_ASPECT) / safe;
+  if (h > 70) {
+    h = 70;
+    w = (h * safe) / SLIDE_ASPECT;
+  }
+  return { x: (100 - w) / 2, y: (100 - h) / 2, w, h };
+}

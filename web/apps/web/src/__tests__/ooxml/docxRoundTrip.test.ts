@@ -295,6 +295,21 @@ describe('nodes with no OOXML equivalent', () => {
     expect(out[0]).toEqual({ type: 'diagramEmbed', attrs });
   });
 
+  // A drawing embed is a block node like the other two: lose it from
+  // BLOCK_PLACEHOLDER_KINDS and it comes back as a paragraph of italic text.
+  it('a drawing embed keeps its attributes, the copied selection included', async () => {
+    const attrs = {
+      drawingId: 'dr1',
+      title: 'Logo',
+      selection: JSON.stringify({ kind: 'objects', layerId: 'l1', ids: ['o1', 'o2'] }),
+      width: '320',
+      height: '200',
+    };
+    const out = await bodyRoundTrip([{ type: 'drawingEmbed', attrs }, para(text('after'))]);
+    expect(out[0]).toEqual({ type: 'drawingEmbed', attrs });
+    expect(out[1]).toEqual(para(text('after')));
+  });
+
   /**
    * A placeholder is written as italic text, and so is the italic text a user
    * typed next to it — which makes them one run in the package, `[Fig 1]about`

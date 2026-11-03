@@ -1,0 +1,66 @@
+.wrapper {
+  margin: 8px 0;
+}
+
+.box {
+  position: relative;
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: calc(6px * var(--radius-scale));
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.selected {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.remove {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: calc(4px * var(--radius-scale));
+  background: var(--color-surface);
+  font-size: var(--font-size-11);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+/* Bottom-right corner; scales the box and keeps its shape. */
+.resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-top-left-radius: calc(4px * var(--radius-scale));
+  background: var(--color-primary);
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.box:hover .remove,
+.box:hover .resize,
+.selected .remove,
+.selected .resize {
+  opacity: 1;
+}

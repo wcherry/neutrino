@@ -7,9 +7,7 @@
  * written twice and drifting apart.
  */
 
-import { diagramsApi } from '@neutrino/api-diagrams';
 import type {
-  DiagramDocument,
   DiagramPage,
   DiagramShape,
   DiagramConnector,
@@ -257,24 +255,4 @@ export function diagramPageToSvg(page: DiagramPage, opts: DiagramSvgOptions): st
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"` +
     ` viewBox="${xml(viewBox)}" preserveAspectRatio="xMidYMid meet">${parts.join('')}</svg>`
   );
-}
-
-/**
- * Loads one page of a stored diagram.
- *
- * The metadata and the content are two round trips — `getDiagram` returns a
- * `contentUrl` the document itself has to be fetched from — so every caller
- * that wants to draw a diagram it does not own goes through here.
- */
-export async function fetchDiagramPage(
-  diagramId: string,
-  pageIndex: number,
-): Promise<DiagramPage | null> {
-  const meta = await diagramsApi.getDiagram(diagramId);
-  if (!meta.contentUrl) return null;
-  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') ?? '' : '';
-  const res = await fetch(meta.contentUrl, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) return null;
-  const doc = await res.json() as DiagramDocument;
-  return doc.pages[pageIndex] ?? doc.pages[0] ?? null;
 }

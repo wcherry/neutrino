@@ -34,7 +34,9 @@ import type {
 } from './slideEditorTypes';
 import { parseDriveImageRef, resolveDriveImageDataUrl } from '@/lib/driveImages';
 import { hasTransparency, loadImage } from '@/lib/pdfImages';
-import { diagramPageToSvg, fetchDiagramPage } from '@/app/(apps)/diagrams/editor/diagramSvg';
+import { diagramPageToSvg } from '@/app/(apps)/diagrams/editor/diagramSvg';
+import { selectionPage } from '@/app/(apps)/diagrams/editor/io/selectionImage';
+import { loadDiagramPage, loadDrawing } from '@/components/CanvasEmbeds/useEmbeddedCanvas';
 import { resolveFillImages } from '@/app/(apps)/diagrams/editor/utils/fillImages';
 
 // ── Page geometry ─────────────────────────────────────────────────────────────
@@ -382,7 +384,8 @@ function lineNode(el: LineElement): PdfNode {
   };
 }
 
-function imageNode(el: ImageElement, assets: SlidesPdfAssets): PdfNode | null {
+/** A picture placed at the element's box — an image, or a drawing rendered to one. */
+function imageNode(el: Pick<ImageElement, 'id' | 'x' | 'y' | 'w' | 'h'>, assets: SlidesPdfAssets): PdfNode | null {
   const data = assets.images.get(el.id);
   if (!data) return null;
   return {
@@ -522,6 +525,7 @@ function elementNodes(el: SlideElement, assets: SlidesPdfAssets): PdfNode[] {
     case 'line': return [lineNode(el)];
     case 'image': { const n = imageNode(el, assets); return n ? [n] : []; }
     case 'diagram': { const n = diagramNode(el, assets); return n ? [n] : []; }
+    case 'drawing': { const n = imageNode(el, assets); return n ? [n] : []; }
     case 'video': return videoNodes(el);
     case 'sheetEmbed': return sheetEmbedNodes(el);
     default: return [];
@@ -705,8 +709,11 @@ export async function prepareSlidesPdfAssets(presentation: SlidePresentation): P
       } else if (el.type === 'diagram') {
         jobs.push((async () => {
           try {
-            const page = await fetchDiagramPage(el.diagramId, el.pageIndex);
-            if (!page) return;
+            // Decrypted, and filtered to the shapes a pasted selection named, exactly as the
+            // slide shows it.
+            const loaded = await loadDiagramPage(el.diagramId, el.pageIndex);
+            if (!loaded) return;
+            const page = selectionPage(loaded, el.shapeIds);
             assets.diagrams.set(el.id, diagramPageToSvg(page, {
               width: px(el.w),
               height: py(el.h),
@@ -716,6 +723,33 @@ export async function prepareSlidesPdfAssets(presentation: SlidePresentation): P
             }));
           } catch (err) {
             console.warn('[slides:pdf] diagram skipped', el.id, err);
+          }
+        })());
+      } else if (el.type === 'drawing') {
+        jobs.push((async () => {
+          try {
+            const drawing = await loadDrawing(el.drawingId);
+            if (!drawing) return;
+            // Loaded here rather than at the top: a deck with no drawing in it should not carry
+            // the drawing compositor in the editor's first load.
+            const [{ renderSelection, selectionRender }, { documentContentBounds }] = await Promise.all([
+              import('@/app/(apps)/drawing/editor/io/selectionImage'),
+              import('@/app/(apps)/drawing/editor/document/tree'),
+            ]);
+            const bounds = el.selection ? null : documentContentBounds(drawing.doc);
+            const plan = el.selection
+              ? selectionRender(drawing.doc, el.selection)
+              : bounds && { doc: drawing.doc, skipNodeIds: new Set<string>(), bounds };
+            if (!plan) return;
+            // Twice the box's size, so the picture is not soft when the PDF is zoomed — capped at
+            // the raster limit the images above use, or a large drawing allocates nothing.
+            const fit = 2 * Math.max(px(el.w) / plan.bounds.width, py(el.h) / plan.bounds.height) || 1;
+            const scale = Math.min(fit, MAX_RASTER_EDGE / Math.max(plan.bounds.width, plan.bounds.height));
+            const surface = renderSelection(plan, drawing.bitmaps, scale) as HTMLCanvasElement | null;
+            if (!surface) return;
+            assets.images.set(el.id, await rasterize(surface.toDataURL('image/png'), px(el.w), py(el.h), { objectFit: 'contain' }));
+          } catch (err) {
+            console.warn('[slides:pdf] drawing skipped', el.id, err);
           }
         })());
       }

@@ -58,7 +58,7 @@ export function parseDriveImageRef(src: string | null | undefined): string | nul
  * called from render paths and plain functions where a React hook isn't
  * available, so it comes from the token rather than from `useUser`.
  */
-function currentUserId(): string | null {
+export function currentUserId(): string | null {
   if (typeof window === 'undefined') return null;
   const token = localStorage.getItem('access_token');
   if (!token || token === 'undefined' || token === 'null') return null;

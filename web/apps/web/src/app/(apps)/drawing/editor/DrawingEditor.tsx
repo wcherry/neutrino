@@ -27,6 +27,8 @@ import {
   DEFAULT_VECTOR_STYLE,
 } from './document/factory';
 import { parseDocument, serializeDocument } from './document/serialize';
+import { selectionRender, selectionToPng } from './io/selectionImage';
+import { writeCanvasClip, writeClipboardImage } from '@/lib/canvasClipboard';
 import {
   findNode,
   flattenTree,
@@ -804,7 +806,28 @@ export function DrawingEditor() {
     if (ids.length) setSelection({ kind: 'nodes', ids });
   }, [applyDocument]);
 
-  const handleCopy = useCallback(() => {
+  /**
+   * The selection on the system clipboard as well as the editor's own: a PNG any app can paste,
+   * and — for a copy — a clip Docs and Slides can paste as a live embed. A cut writes the picture
+   * alone, since what it names is about to be deleted and a live embed of it would show nothing.
+   * Called straight from the gesture, so the clipboard is claimed before the PNG is rendered.
+   */
+  const copyToSystemClipboard = useCallback((live: boolean) => {
+    const current = selectionRef.current;
+    if (!current || !drawingId) return;
+    const plan = selectionRender(docRef.current, current);
+    if (!plan) return;
+    const png = selectionToPng(plan, bitmapsRef.current);
+    const write = live
+      ? writeCanvasClip({
+          v: 1, kind: 'drawing', fileId: drawingId, title, selection: current,
+          width: plan.bounds.width, height: plan.bounds.height,
+        }, png)
+      : writeClipboardImage(png);
+    write.catch(() => toast.error('Could not copy the selection to the clipboard'));
+  }, [drawingId, title, toast]);
+
+  const copySelection = useCallback(() => {
     const current = selectionRef.current;
     const document_ = docRef.current;
     if (!current) return;
@@ -820,10 +843,16 @@ export function DrawingEditor() {
     });
   }, []);
 
+  const handleCopy = useCallback(() => {
+    copySelection();
+    copyToSystemClipboard(true);
+  }, [copySelection, copyToSystemClipboard]);
+
   const handleCut = useCallback(() => {
-    handleCopy();
+    copySelection();
+    copyToSystemClipboard(false);
     handleDelete();
-  }, [handleCopy, handleDelete]);
+  }, [copySelection, copyToSystemClipboard, handleDelete]);
 
   const handlePaste = useCallback(() => {
     const board = clipboardRef.current;
