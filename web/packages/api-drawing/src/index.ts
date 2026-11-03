@@ -79,6 +79,8 @@ export interface DrawingResponse {
    * another device since it was opened is caught immediately.
    */
   contentVersion: number;
+  /** Relative URL of Drive's preview of this file, or null when it has none. */
+  coverThumbnailUrl: string | null;
 }
 
 export interface DrawingMetaResponse {
@@ -93,6 +95,8 @@ export interface DrawingMetaResponse {
    * rather than silently overwriting a newer revision.
    */
   contentVersion: number;
+  /** Relative URL of Drive's preview of this file, or null when it has none. */
+  coverThumbnailUrl: string | null;
 }
 
 export interface CreateDrawingRequest {
@@ -127,6 +131,7 @@ interface DriveFileDto {
   createdAt: string;
   updatedAt: string;
   contentVersion: number;
+  coverThumbnailUrl?: string | null;
 }
 
 /**
@@ -147,6 +152,7 @@ function toDrawingMeta(file: DriveFileDto): DrawingMetaResponse {
     createdAt: toIsoUtc(file.createdAt),
     updatedAt: toIsoUtc(file.updatedAt),
     contentVersion: file.contentVersion,
+    coverThumbnailUrl: file.coverThumbnailUrl ?? null,
   };
 }
 

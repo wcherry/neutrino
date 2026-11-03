@@ -30,6 +30,14 @@ pub enum ZipEntryOrderField {
     IsDir,
 }
 
+/// What `PUT /files/{id}/thumbnail` answers: where the new picture is served.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverThumbnailResponse {
+    /// Carries a fresh `v`, so a client can swap it straight into a tile.
+    pub cover_thumbnail_url: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileMetadataResponse {

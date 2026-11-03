@@ -927,6 +927,25 @@ export async function driveCreateEncryptedVersionBytes(
 }
 
 /**
+ * Replace a file's cover thumbnail with `image` (JPEG, PNG or WebP).
+ *
+ * The preview an editor draws of its document's first page. Unlike the content
+ * it is not encrypted — the server stores and serves it as-is, exactly like the
+ * thumbnail an upload carries — so it is the one picture of a document the
+ * server can read. Answers the new `coverThumbnailUrl`.
+ */
+export async function driveSetThumbnail(
+  fileId: string,
+  image: Blob,
+): Promise<{ coverThumbnailUrl: string }> {
+  return request<{ coverThumbnailUrl: string }>(`/api/v1/drive/files/${fileId}/thumbnail`, {
+    method: 'PUT',
+    headers: { 'Content-Type': image.type || 'image/jpeg' },
+    body: image,
+  });
+}
+
+/**
  * Encrypt `content` with `dek` and write it via the versions endpoint.
  * Alias for driveCreateEncryptedVersion used by slide editor's contentWriteUrl pattern.
  */

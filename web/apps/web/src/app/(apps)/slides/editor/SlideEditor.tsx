@@ -95,6 +95,8 @@ import { exportAsPdf } from './pdfExport';
 import FillPicker from './FillPicker';
 import SlideCanvas from './SlideCanvas';
 import SlideThumbnail from './SlideThumbnail';
+import { useDocumentPreview } from '@/hooks/useDocumentPreview';
+import { renderElementPreview } from '@/lib/documentPreview';
 import PresenterView from './PresenterView';
 import { LayoutPreview, ThemePreview } from './slideEditorPreviews';
 import { useCommand, useKeyHandler } from '@neutrino/commands';
@@ -309,6 +311,15 @@ const SLIDE_PANEL_SPEC: RailSpec = {
 };
 const SLIDE_PANELS_OPEN: Partial<Record<RailSide, string>> = { right: 'layout' };
 
+/**
+ * What slide one looks like, as far as Drive's preview is concerned: the slide
+ * itself, plus the theme and master it inherits its look from. Equal whenever
+ * the first slide would draw the same, so editing slide nine redraws nothing.
+ */
+function firstSlideSignature(presentation: SlidePresentation): string {
+  return JSON.stringify([presentation.slides[0] ?? null, presentation.theme, presentation.master ?? null]);
+}
+
 export function SlideEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -467,6 +478,18 @@ export function SlideEditor() {
   const presentationRef = useRef<SlidePresentation>(presentation);
   presentationRef.current = presentation;
 
+  // Drive's picture of this deck is its first slide, drawn from the slide
+  // rail's own thumbnail — the one place slide one is always on screen.
+  const slideRailRef = useRef<HTMLDivElement | null>(null);
+  const preview = useDocumentPreview(slideId, {
+    render: async () => {
+      const thumb = slideRailRef.current?.querySelector<HTMLElement>(
+        `[data-slide-index="0"] .${styles.thumbnailPreview}`,
+      );
+      return thumb ? renderElementPreview(thumb) : null;
+    },
+  });
+
   const { data: dbThemesData } = useQuery({
     queryKey: ['slide-themes'],
     queryFn: () => slidesApi.listThemes(),
@@ -586,9 +609,11 @@ export function SlideEditor() {
         const model = await readNeutrinoModel(plain, 'slides');
         if (cancelled) return;
         if (model) {
-          setPresentation(JSON.parse(model) as SlidePresentation);
+          const parsed = JSON.parse(model) as SlidePresentation;
+          setPresentation(parsed);
           lastSavedRef.current = model;
           contentAppliedRef.current = true;
+          preview.loaded(firstSlideSignature(parsed), !!officeFileMeta.coverThumbnailUrl);
           return;
         }
 
@@ -606,6 +631,7 @@ export function SlideEditor() {
         setPresentation(imported);
         lastSavedRef.current = JSON.stringify(imported);
         contentAppliedRef.current = true;
+        preview.loaded(firstSlideSignature(imported), !!officeFileMeta.coverThumbnailUrl);
       } catch {
         if (!cancelled) toast.error('Failed to open this file for editing');
       }
@@ -681,6 +707,7 @@ export function SlideEditor() {
       setSaveStatus('saved');
       versionGuard.observe(saved?.contentVersion);
       lastSavedRef.current = content;
+      preview.saved(firstSlideSignature(presentationRef.current), !!saved?.coverThumbnailUrl);
       queryClient.invalidateQueries({ queryKey: ['slides'] });
       indexOnSave(currentUser?.id, {
         id: slideId,
@@ -2615,10 +2642,11 @@ export function SlideEditor() {
             <span>Slides ({presentation.slides.length})</span>
             <button className={styles.slidePanelBtn} onClick={addSlide} title="Add slide"><Plus size={14} /></button>
           </div>
-          <div className={styles.slidePanelList}>
+          <div className={styles.slidePanelList} ref={slideRailRef}>
             {presentation.slides.map((slide, idx) => (
               <div
                 key={slide.id}
+                data-slide-index={idx}
                 draggable
                 className={[
                   styles.slideThumbnail,

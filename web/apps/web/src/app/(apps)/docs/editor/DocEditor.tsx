@@ -145,6 +145,8 @@ import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 // Headers & footers — per-page bands with first-page / odd / even variants.
 import { HeaderFooterLayer, type HeaderFooterFocus, type HeaderFooterLayerHandle } from './HeaderFooterLayer';
 import { HeaderFooterToolbar } from './HeaderFooterToolbar';
+import { docFirstPageSignature, renderDocFirstPage } from './docPreview';
+import { useDocumentPreview } from '@/hooks/useDocumentPreview';
 import {
   FIELDS,
   clearBand,
@@ -739,6 +741,17 @@ export function DocEditor() {
   const pendingContent = useRef<string | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
   const pageResizeObsRef = useRef<ResizeObserver | null>(null);
+  // Drive's picture of this document: page one, redrawn when page one changes.
+  // The page size and the signature are filled in once the layout is known.
+  const pageSizeRef = useRef({ widthPx: 0, heightPx: 0 });
+  const pageSignatureRef = useRef<() => string | null>(() => null);
+  const preview = useDocumentPreview(docId, {
+    render: async () => {
+      const page = pageRef.current;
+      const { widthPx, heightPx } = pageSizeRef.current;
+      return page && widthPx ? renderDocFirstPage(page, widthPx, heightPx) : null;
+    },
+  });
   const initialSaveDoneRef = useRef(false);
   // True once the content query has read a body the server holds in the clear —
   // the default content `POST /api/v1/drive/files` seeds at creation, which the
@@ -912,6 +925,8 @@ export function DocEditor() {
       // Chain the guard: the next save asserts the revision this one produced.
       versionGuard.observe(saved?.contentVersion);
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
+      const signature = pageSignatureRef.current();
+      if (signature !== null) preview.saved(signature, !!saved?.coverThumbnailUrl);
     },
     onError: (err) => {
       setSaveStatus('unsaved');
@@ -2247,6 +2262,27 @@ export function DocEditor() {
 
   const { widthPx, heightPx } = useMemo(() => pageDimensions(pageSetup), [pageSetup]);
   const contentHeightPx = heightPx - pageSetup.marginTop - pageSetup.marginBottom;
+  pageSizeRef.current = { widthPx, heightPx };
+  pageSignatureRef.current = () => {
+    const page = pageRef.current;
+    if (!editor || !page) return null;
+    return docFirstPageSignature(editor, page, heightPx, zoomLevel / 100, [
+      pageSetup, headerFooter, watermarkText, docTheme,
+    ]);
+  };
+
+  // Record what page one looks like as opened, once the stored body is in and
+  // pagination has had a moment to lay it out — or draw it, for a document
+  // that has never had a preview.
+  const hasStoredPreview = !!officeFileMeta?.coverThumbnailUrl;
+  useEffect(() => {
+    if (!officeMode || !editor || officeContent === null || !syncReady) return;
+    const timer = setTimeout(() => {
+      const signature = pageSignatureRef.current();
+      if (signature !== null) preview.loaded(signature, hasStoredPreview);
+    }, 1_500);
+    return () => clearTimeout(timer);
+  }, [officeMode, editor, officeContent, syncReady, hasStoredPreview, preview]);
 
   const pageStyle: React.CSSProperties = {
     width: widthPx,

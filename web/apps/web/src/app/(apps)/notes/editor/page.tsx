@@ -33,6 +33,8 @@ import { HamburgerMenu } from './MenuBar';
 import { copyNoteLink } from '../copyNoteLink';
 import { useCommands } from '@neutrino/commands';
 import styles from './page.module.css';
+import { useDocumentPreview } from '@/hooks/useDocumentPreview';
+import { renderElementPreview } from '@/lib/documentPreview';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -99,10 +101,31 @@ export default function NoteEditorPage() {
   return <NoteEditor key={id} noteId={id} />;
 }
 
+/** How much of a note Drive's preview shows: a portrait card the editor's width. */
+const PREVIEW_ASPECT = 1.3;
+/** About as many lines of Markdown as that card holds; edits below them redraw nothing. */
+const PREVIEW_LINES = 40;
+
+function notePreviewSignature(markdown: string): string {
+  return markdown.split('\n', PREVIEW_LINES).join('\n');
+}
+
 function NoteEditor({ noteId }: { noteId: string }) {
   const router = useRouter();
   const exitEditor = useEditorExit();
   const queryClient = useQueryClient();
+  // Drive's picture of this note: the top of the editor, as it is drawn here.
+  const editorAreaRef = useRef<HTMLDivElement | null>(null);
+  const preview = useDocumentPreview(noteId, {
+    render: async () => {
+      const area = editorAreaRef.current;
+      if (!area?.clientWidth) return null;
+      return renderElementPreview(area, {
+        width: area.clientWidth,
+        height: Math.round(area.clientWidth * PREVIEW_ASPECT),
+      });
+    },
+  });
   const currentUser = useUser();
   const toast = useToast();
   // Rejects a save that would overwrite a revision written elsewhere since this
@@ -367,6 +390,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
       lastSavedRef.current = { content: noteContent, title: note.name };
       appliedUpdatedAtRef.current = note.updatedAt;
       seededRef.current = true;
+      preview.loaded(notePreviewSignature(noteContent), !!note.coverThumbnailUrl);
     };
 
     // Initial load seeds the editor, around anything the user has got to first.
@@ -395,7 +419,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
     }
 
     apply();
-  }, [note, noteContent]);
+  }, [note, noteContent, preview]);
 
   // Seal a note the server is holding in the clear. The read above is what
   // establishes that — plaintext bytes with a key in hand — and this writes
@@ -461,6 +485,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
         appliedUpdatedAtRef.current = meta.updatedAt;
         clearDirtyIfSettled();
         setSaveStatus('saved');
+        preview.saved(notePreviewSignature(serialized), !!meta.coverThumbnailUrl);
 
         // Title and the link graph are metadata, saved best-effort alongside
         // the (version-guarded) content write above — a failure here doesn't
@@ -511,7 +536,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
         savingRef.current = false;
       }
     },
-    [noteId, queryClient, awaitDek, broadcastFileUpdate, currentUser?.id, versionGuard, toast]
+    [noteId, queryClient, awaitDek, broadcastFileUpdate, currentUser?.id, versionGuard, toast, preview]
   );
 
   /**
@@ -677,7 +702,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
 
       {/* ── Main area ── */}
       <div className={styles.body}>
-        <div className={styles.editorArea} data-tour="notes-editor">
+        <div className={styles.editorArea} data-tour="notes-editor" ref={editorAreaRef}>
           <BlockEditor
             ref={blockEditorRef}
             blocks={blocks}

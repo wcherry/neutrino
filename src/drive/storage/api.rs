@@ -3,7 +3,7 @@ use crate::drive::filesystem::repository::FilesystemRepository;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
-        parse_import_timestamp, AutosaveMetadata, CreateFileRequest, DocFileMetadataResponse,
+        parse_import_timestamp, AutosaveMetadata, CoverThumbnailResponse, CreateFileRequest, DocFileMetadataResponse,
         FileMetadataResponse, FileOrderField, FileVersionResponse, ImportMetadataRequest,
         ListFilesResponse, ListVersionsResponse, QuotaResponse, SaveVersionRequest,
         UpdateVersionLabelRequest, VersionOrderField, ZipContentsResponse, ZipEntry,
@@ -779,6 +779,86 @@ pub async fn get_file_thumbnail(
     Ok(response)
 }
 
+/// The largest preview a client may store. A 512px JPEG of a document page is
+/// tens of kilobytes; this leaves room for a busy PNG and refuses anything that
+/// is plainly not a thumbnail.
+pub const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
+
+/// The image types a stored thumbnail may be, told from its first bytes rather
+/// than from a header the client could get wrong.
+fn sniff_thumbnail(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+/// Replace a file's cover thumbnail.
+///
+/// The editors' half of the preview: a document's content is end-to-end encrypted, so the server
+/// cannot draw one, and the client that holds the plaintext renders the first page and sends it
+/// here — only when that page has changed, not on every autosave. The body is the image itself
+/// (JPEG, PNG or WebP, told from its bytes). Like the upload's `thumbnail_b64`, it is stored in the
+/// clear.
+#[utoipa::path(
+    put,
+    path = "/api/v1/drive/files/{id}/thumbnail",
+    params(("id" = String, Path, description = "File ID")),
+    request_body(content = Vec<u8>, content_type = "image/jpeg", description = "The thumbnail image"),
+    responses(
+        (status = 200, description = "Thumbnail stored", body = CoverThumbnailResponse),
+        (status = 400, description = "Empty, larger than 512 KB, or not a JPEG, PNG or WebP image"),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "storage"
+)]
+#[put("/files/{id}/thumbnail")]
+pub async fn set_file_thumbnail(
+    state: web::Data<StorageApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Bytes,
+) -> Result<web::Json<CoverThumbnailResponse>, ApiError> {
+    let file_id = path.into_inner();
+
+    let role = state
+        .permissions_service
+        .get_effective_role(&user.user_id, "file", &file_id)?
+        .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
+    if role != "owner" && role != "editor" {
+        return Err(ApiError::new(403, "FORBIDDEN", "Edit access required"));
+    }
+
+    let existing = state
+        .storage_service
+        .find_file_any_user(&file_id)?
+        .ok_or_else(|| ApiError::not_found("File not found"))?;
+    if existing.deleted_at.is_some() {
+        return Err(ApiError::not_found("File is in trash"));
+    }
+
+    if body.is_empty() {
+        return Err(ApiError::bad_request("No thumbnail provided"));
+    }
+    if body.len() > MAX_THUMBNAIL_BYTES {
+        return Err(ApiError::bad_request("Thumbnail is larger than 512 KB"));
+    }
+    let mime_type = sniff_thumbnail(&body)
+        .ok_or_else(|| ApiError::bad_request("Thumbnail must be a JPEG, PNG or WebP image"))?;
+
+    let cover_thumbnail_url = state
+        .storage_service
+        .set_cover_thumbnail(&file_id, &body, mime_type)?;
+    Ok(web::Json(CoverThumbnailResponse { cover_thumbnail_url }))
+}
+
 /// List the entries inside a stored ZIP archive.
 ///
 /// Reads the archive's central directory without extracting it, so a client can show what is
@@ -1347,6 +1427,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         .service(get_file_metadata)
         .service(preview_file)
         .service(get_file_thumbnail)
+        .service(set_file_thumbnail)
         .service(zip_contents)
         .service(download_file)
         .service(get_quota)
@@ -1364,10 +1445,11 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(
         upload_file, create_file_record, set_import_metadata, get_file_info, list_files, get_file_metadata,
-        preview_file, get_file_thumbnail, zip_contents, download_file, get_quota, autosave_file, save_version,
+        preview_file, get_file_thumbnail, set_file_thumbnail, zip_contents, download_file, get_quota, autosave_file, save_version,
         list_versions, get_version, update_version_label, restore_version, download_version, delete_version,
     ),
     components(schemas(
+        CoverThumbnailResponse,
         FileMetadataResponse,
         FileOrderField,
         ListFilesResponse,
@@ -1412,5 +1494,24 @@ impl utoipa::Modify for SecurityAddon {
                 ),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sniff_thumbnail;
+
+    #[test]
+    fn sniffs_the_image_types_a_thumbnail_may_be() {
+        assert_eq!(sniff_thumbnail(&[0xFF, 0xD8, 0xFF, 0xE0, 0]), Some("image/jpeg"));
+        assert_eq!(sniff_thumbnail(b"\x89PNG\r\n\x1a\n\0\0"), Some("image/png"));
+        assert_eq!(sniff_thumbnail(b"RIFF\0\0\0\0WEBPVP8 "), Some("image/webp"));
+    }
+
+    #[test]
+    fn refuses_anything_else() {
+        assert_eq!(sniff_thumbnail(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>"), None);
+        assert_eq!(sniff_thumbnail(b"GIF89a"), None);
+        assert_eq!(sniff_thumbnail(b""), None);
     }
 }
