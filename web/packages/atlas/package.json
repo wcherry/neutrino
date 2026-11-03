@@ -12,10 +12,14 @@
   "devDependencies": {
     "@types/mdast": "^4.0.4",
     "@types/node": "^20.14.0",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5.4.0",
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "@neutrino/api-core": "workspace:*",
+    "@neutrino/api-drive": "workspace:*",
+    "@neutrino/e2e-crypto": "workspace:*",
     "mdast-util-from-markdown": "^2.0.2",
     "mdast-util-gfm-footnote": "^2.1.0",
     "mdast-util-gfm-strikethrough": "^2.0.0",
