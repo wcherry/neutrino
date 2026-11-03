@@ -240,6 +240,13 @@ POST /connections/apple
 
 POST /sync/trigger
 
+Connections are pulled when a user asks — the refresh button on a connected calendar in the
+calendar sidebar, Sync now in Settings, pull-to-refresh on iOS and Android — and by a sweep the
+server runs every 15 minutes over every user's connections (`ConnectionsService::sync_all`,
+spawned in `main.rs`). The first sweep waits a full period after start. A refresh token the
+provider no longer honours (`invalid_grant`) answers `502 RECONNECT_REQUIRED`; the sweep logs it
+as a warning and only reconnecting the account in Settings clears it.
+
 
 ⸻
 

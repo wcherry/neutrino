@@ -119,6 +119,30 @@ describe('CalendarsSidebar', () => {
     expect(props.onCreate).toHaveBeenCalledWith('Family', '#e11d48');
   });
 
+  it('refreshes only a calendar that comes from a connected account', () => {
+    const google = calendar({ id: 'g', name: 'Google Calendar', kind: 'connection', source: 'google' });
+    const props = renderSidebar({
+      calendars: [...calendars, google],
+      refreshable: new Map([['g', 'conn-1']]),
+      onRefresh: vi.fn(),
+    });
+    expect(screen.queryByLabelText('Refresh Work')).toBeNull();
+    expect(screen.queryByLabelText('Refresh United States')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Refresh Google Calendar'));
+    expect(props.onRefresh).toHaveBeenCalledWith('g');
+  });
+
+  it('holds the refresh button while that calendar is refreshing', () => {
+    const google = calendar({ id: 'g', name: 'Google Calendar', kind: 'connection', source: 'google' });
+    renderSidebar({
+      calendars: [google],
+      refreshable: new Map([['g', 'conn-1']]),
+      refreshingId: 'g',
+      onRefresh: vi.fn(),
+    });
+    expect(screen.getByLabelText('Refresh Google Calendar')).toBeDisabled();
+  });
+
   it('shows why a change failed', () => {
     renderSidebar({ error: 'This calendar is read-only' });
     expect(screen.getByRole('alert')).toHaveTextContent('This calendar is read-only');

@@ -458,7 +458,29 @@ async fn main() -> std::io::Result<()> {
         config.oauth.clone(),
     ));
     let cal_connections_state = web::Data::new(calendar::connections::api::ConnectionsApiState {
-        connections_service: cal_connections_service,
+        connections_service: cal_connections_service.clone(),
+    });
+
+    // Google, Outlook and Apple calendars are pulled every 15 minutes, as well as when a user
+    // asks. The first sweep waits a full period, so a restart doesn't hit every provider at once,
+    // and a slow sweep delays the next rather than letting missed ones fire back to back.
+    let sync_connections_service = cal_connections_service;
+    tokio::spawn(async move {
+        let period = std::time::Duration::from_secs(15 * 60);
+        let mut tick = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            match sync_connections_service.sync_all().await {
+                Ok((0, 0)) => {}
+                Ok((synced, failed)) => tracing::info!(
+                    "Calendar sync sweep: {} event(s) synced, {} connection(s) failed",
+                    synced,
+                    failed
+                ),
+                Err(e) => tracing::error!("Calendar sync sweep failed: {:?}", e),
+            }
+        }
     });
 
     let cal_tasks_repo = Arc::new(TasksRepository::new(pool.clone()));

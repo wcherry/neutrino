@@ -69,6 +69,19 @@ impl ConnectionsRepository {
             })
     }
 
+    /// Every user's connections, for the background sync.
+    pub fn find_all(&self) -> Result<Vec<ConnectionRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        calendar_connections::table
+            .order(calendar_connections::created_at.asc())
+            .select(ConnectionRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list all connections error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     pub fn find_by_id(&self, id: &str, user_id: &str) -> Result<ConnectionRecord, ApiError> {
         let mut conn = self.get_conn()?;
         calendar_connections::table

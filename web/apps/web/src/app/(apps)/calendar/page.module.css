@@ -979,10 +979,36 @@
   transition: opacity 0.15s;
 }
 
+.calendarRefresh {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+/* Stays visible while it spins, so the refresh shows without hovering. */
+.calendarRefresh:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.calendarRefreshing {
+  animation: calendarSpin 0.9s linear infinite;
+}
+
+@keyframes calendarSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calendarRefreshing { animation: none; }
+}
+
 .calendarRow:hover .calendarSwatch,
 .calendarRow:hover .calendarDelete,
+.calendarRow:hover .calendarRefresh,
 .calendarRow:focus-within .calendarSwatch,
-.calendarRow:focus-within .calendarDelete {
+.calendarRow:focus-within .calendarDelete,
+.calendarRow:focus-within .calendarRefresh {
   opacity: 1;
 }
 

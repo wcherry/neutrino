@@ -130,10 +130,7 @@ pub async fn refresh_token(
         ApiError::internal("Failed to refresh Outlook token")
     })?;
 
-    resp.json::<TokenResponse>().await.map_err(|e| {
-        tracing::error!("Outlook token refresh parse error: {:?}", e);
-        ApiError::internal("Failed to parse Outlook token response")
-    })
+    super::oauth::read_refresh("Outlook", resp).await
 }
 
 /// Returns (access_token, new_expiry, new_refresh_token).

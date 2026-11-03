@@ -175,6 +175,33 @@ export default function CalendarPage() {
     },
   });
 
+  // A Google, Outlook or Apple calendar is refreshed through its account's connection; the
+  // server also pulls every connection on its own every 15 minutes.
+  const { data: connectionsData } = useQuery({
+    queryKey: ['calendar-connections'],
+    queryFn: () => calendarApi.listConnections(),
+  });
+  const connectionIdByCalendar = React.useMemo(() => {
+    const byProvider = new Map((connectionsData?.connections ?? []).map((c) => [c.provider as string, c.id]));
+    const ids = new Map<string, string>();
+    for (const c of calendars) {
+      const id = c.source ? byProvider.get(c.source) : undefined;
+      if (id) ids.set(c.id, id);
+    }
+    return ids;
+  }, [connectionsData, calendars]);
+
+  const refreshCalendar = useMutation({
+    mutationFn: (calendarId: string) => {
+      const connectionId = connectionIdByCalendar.get(calendarId);
+      if (!connectionId) throw new Error('This calendar is not connected to an account');
+      return calendarApi.triggerSync(connectionId);
+    },
+    onMutate: () => setCalendarError(null),
+    onError: (err) => setCalendarError(errorMessage(err, 'Could not refresh the calendar')),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['events'] }),
+  });
+
   const { data: remindersData } = useQuery({
     queryKey: ['reminders'],
     queryFn: () => calendarApi.listReminders(),
@@ -554,6 +581,9 @@ export default function CalendarPage() {
       onRecolor={(id, color) => updateCalendar.mutate({ id, req: { color } })}
       onCreate={(name, color) => createCalendar.mutate({ name, color })}
       onDelete={(id) => deleteCalendar.mutate(id)}
+      refreshable={connectionIdByCalendar}
+      refreshingId={refreshCalendar.isPending ? refreshCalendar.variables : null}
+      onRefresh={(id) => refreshCalendar.mutate(id)}
       error={calendarError}
     />
   );

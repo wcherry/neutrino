@@ -134,10 +134,7 @@ pub async fn refresh_token(
         ApiError::internal("Failed to refresh Google token")
     })?;
 
-    resp.json::<TokenResponse>().await.map_err(|e| {
-        tracing::error!("Google token refresh parse error: {:?}", e);
-        ApiError::internal("Failed to parse Google token response")
-    })
+    super::oauth::read_refresh("Google", resp).await
 }
 
 /// Returns (access_token, new_expiry) – refreshes if expired.
