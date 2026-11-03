@@ -1,16 +1,19 @@
 # Keeps the Atlas Markdown conformance corpus consistent with its spec (specs/atlas-markdown/SPEC.md):
-# node shapes, canonical bytes, extraction and link resolution. No dependencies to install.
+# node shapes, canonical bytes, extraction and link resolution. The web implementation,
+# web/packages/atlas, runs against the same corpus, so a spec change it doesn't follow fails here.
 name: Atlas Markdown spec
 
 on:
   pull_request:
     paths:
       - 'specs/atlas-markdown/**'
+      - 'web/packages/atlas/**'
       - '.github/workflows/atlas-markdown-spec.yml'
   push:
     branches: [main]
     paths:
       - 'specs/atlas-markdown/**'
+      - 'web/packages/atlas/**'
 
 jobs:
   corpus:
@@ -23,3 +26,22 @@ jobs:
           node-version: 23
       - name: Corpus matches the spec
         run: node specs/atlas-markdown/check.mjs
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm --dir web/packages/atlas exec tsc --noEmit
+      - name: Corpus, edits, fuzz and regression tests
+        working-directory: web
+        run: pnpm exec vitest run packages/atlas

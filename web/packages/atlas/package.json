@@ -1,0 +1,33 @@
+{
+  "name": "@neutrino/atlas",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "cd ../.. && vitest run packages/atlas"
+  },
+  "devDependencies": {
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "mdast-util-from-markdown": "^2.0.2",
+    "mdast-util-gfm-footnote": "^2.1.0",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "mdast-util-gfm-task-list-item": "^2.0.0",
+    "micromark-core-commonmark": "^2.0.0",
+    "micromark-extension-gfm-footnote": "^2.1.0",
+    "micromark-extension-gfm-strikethrough": "^2.1.0",
+    "micromark-extension-gfm-table": "^2.1.0",
+    "micromark-extension-gfm-task-list-item": "^2.1.0",
+    "micromark-util-character": "^2.1.0",
+    "micromark-util-types": "^2.0.0",
+    "yaml": "^2.6.0"
+  }
+}
