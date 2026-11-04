@@ -132,7 +132,7 @@ export class BlockWriter {
 
   // MARK: Blocks
 
-  block(node: MarkdownNode, previous: MarkdownNode | null, ctx: { atFileStart?: boolean; afterParagraphLine?: boolean; inDashItem?: boolean } = {}): string[] {
+  block(node: MarkdownNode, previous: MarkdownNode | null, ctx: { atFileStart?: boolean; afterParagraphLine?: boolean; inDashItem?: boolean; afterBox?: boolean } = {}): string[] {
     let lines: string[];
     switch (node.type) {
       case 'paragraph': {
@@ -143,8 +143,9 @@ export class BlockWriter {
       case 'heading': {
         const text = this.inline(node.children);
         const hashes = '#'.repeat(node.depth);
-        // A heading whose text spans lines can only be written setext.
-        if (text.includes('\n') && node.depth <= 2) return [...text.split('\n'), node.depth === 1 ? '===' : '---'];
+        // A heading whose text spans lines can only be written setext, and so can one right after
+        // a task's box, where `#` would be text.
+        if ((text.includes('\n') || ctx.afterBox) && node.depth <= 2) return [...text.split('\n'), node.depth === 1 ? '===' : '---'];
         return [text === '' ? hashes : hashes + ' ' + text];
       }
       case 'thematicBreak':
@@ -203,12 +204,12 @@ export class BlockWriter {
   }
 
   /** Sibling blocks: a blank line between them, none in a tight list item. */
-  blocks(kids: MarkdownNode[], tight: boolean, inDashItem = false): string[] {
+  blocks(kids: MarkdownNode[], tight: boolean, inDashItem = false, afterBox = false): string[] {
     const out: string[] = [];
     kids.forEach((kid, i) => {
       if (i > 0 && !tight) out.push('');
       const afterParagraphLine = tight && i > 0 && kids[i - 1].type === 'paragraph';
-      out.push(...this.block(kid, i > 0 ? kids[i - 1] : null, { afterParagraphLine, inDashItem: inDashItem && i === 0 }));
+      out.push(...this.block(kid, i > 0 ? kids[i - 1] : null, { afterParagraphLine, inDashItem: inDashItem && i === 0, afterBox: afterBox && i === 0 }));
     });
     return out;
   }
@@ -222,7 +223,7 @@ export class BlockWriter {
       if (i > 0 && spread) out.push('');
       const marker = ordered ? `${start + i}${alternate ? ')' : '.'}` : alternate ? '*' : '-';
       const indent = ' '.repeat(marker.length + 1);
-      let inner = this.blocks(item.children, !item.spread, marker === '-' && item.checked === null);
+      let inner = this.blocks(item.children, !item.spread, marker === '-' && item.checked === null, item.checked !== null);
       if (item.checked !== null) {
         // An empty task keeps the space after its box: without it, it isn't a task.
         const box = item.checked ? '[x]' : '[ ]';
@@ -291,9 +292,9 @@ export class BlockWriter {
           if ('mailto:' + t === url && isAutolinkable(t)) return '<' + t + '>';
           if ('http://' + t === url && t.startsWith('www.')) { this.afterBareLink = true; return t; }
         }
-        return '[' + this.inline(kids, inTable) + '](' + destination(node.url) + titlePart(node.title) + ')';
+        return '[' + this.inline(kids, inTable) + '](' + destination(node.url, inTable) + titlePart(node.title, inTable) + ')';
       }
-      case 'image': return '![' + this.text(node.alt) + '](' + destination(node.url) + titlePart(node.title) + ')';
+      case 'image': return '![' + this.text(node.alt) + '](' + destination(node.url, inTable) + titlePart(node.title, inTable) + ')';
       case 'footnoteReference': return '[^' + (node.label ?? '') + ']';
       case 'wikiLink': return wiki(node, inTable);
       case 'embed': return '!' + wiki(node, inTable);
@@ -352,15 +353,22 @@ function wiki(r: WikiLinkReference, inTable: boolean): string {
 
 const isAutolinkable = (s: string) => s !== '' && !/[\s<>&\\]/u.test(s);
 
-/** A link destination: `\` and entity-starting `&` escaped; `<…>` for spaces, parentheses and angle brackets. */
-function destination(url: string): string {
-  const escaped = escapeEntitiesAndBackslashes(url);
+/**
+ * A link destination: `\` and entity-starting `&` escaped; `<…>` for spaces, parentheses and
+ * angle brackets. In a table cell `|` is `\|`, as everywhere in a cell: GFM unescapes a cell's
+ * pipes before it reads the cell's inlines.
+ */
+function destination(url: string, inTable = false): string {
+  let escaped = escapeEntitiesAndBackslashes(url);
+  if (inTable) escaped = escaped.replaceAll('|', '\\|');
   if (url === '' || /[ ()<>]/.test(url)) return '<' + escaped.replaceAll('<', '\\<').replaceAll('>', '\\>') + '>';
   return escaped;
 }
 
-function titlePart(title: string | null): string {
-  return title === null ? '' : ' "' + escapeEntitiesAndBackslashes(title).replaceAll('"', '\\"') + '"';
+function titlePart(title: string | null, inTable = false): string {
+  if (title === null) return '';
+  const escaped = escapeEntitiesAndBackslashes(title).replaceAll('"', '\\"');
+  return ' "' + (inTable ? escaped.replaceAll('|', '\\|') : escaped) + '"';
 }
 
 /** For strings CommonMark processes for entities and escapes: `\` doubled, entity `&` escaped, line endings as references. */

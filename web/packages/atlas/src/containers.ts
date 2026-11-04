@@ -28,6 +28,16 @@ function interruptsParagraph(self: TokenizeContext): boolean {
     const flow = token._tokenizer;
     const name = flow.currentConstruct?.name;
     if (name === 'content') return true;
+    // Between lines no construct is current: a paragraph is open when its content is entered and
+    // not yet exited (a line of `|`, or an indented line continuing it, leaves it that way).
+    if (name === undefined) {
+      for (let k = flow.events.length - 1; k >= 0; k--) {
+        const [kind, t] = flow.events[k];
+        if (t.type === 'content') return kind === 'enter';
+        if (t.type !== 'lineEnding' && t.type !== 'chunkContent' && t.type !== 'linePrefix') return false;
+      }
+      return false;
+    }
     if (name !== 'table') return false;
     for (let k = flow.events.length - 1; k >= 0; k--) {
       const type = flow.events[k][1].type;

@@ -101,13 +101,21 @@ type Context = TokenizeContext & { _labelStarts?: { _balanced?: boolean }[] };
 /** cmark doesn't autolink inside an open `[` or `![`: one no `]` has closed yet. */
 const inBracket = (self: Context) => (self._labelStarts ?? []).some((s) => !s._balanced);
 
-/** Reads ahead (without consuming) to the next space, `<` or the end of the text, into `into`. */
+/**
+ * Reads ahead (without consuming) to the next space, `<` or the end of the text, into `into`,
+ * with the space or `<` too: cmark's `check_domain` reads the rest of the text, and never looks
+ * at its last character, so `www.` before a space is a domain but at the end it isn't.
+ */
 function scanner(into: number[]): Construct {
   return {
     partial: true,
     tokenize(effects: Effects, ok: State): State {
       const step: State = (code: Code) => {
-        if (code === null || code < 0 || isCmarkSpace(code) || code === 60) { effects.exit('atlasScan'); return ok(code); }
+        if (code === null || code < 0 || isCmarkSpace(code) || code === 60) {
+          if (code !== null) into.push(code < 0 ? 32 : code);
+          effects.exit('atlasScan');
+          return ok(code);
+        }
         into.push(code);
         effects.consume(code);
         return step;
@@ -158,16 +166,20 @@ export function atlasAutolinks(): Extension {
   return { text: { 119: www, 104: url, 72: url, 102: url, 70: url } };
 }
 
-/** Turns the tokens into links: the text is the source as written, and so is the url (`http://` + it for `www.`). */
+/**
+ * Turns the tokens into links: the text is the source as written, and so is the url (`http://` +
+ * it for `www.`). In a table cell, `\|` is `|`: cmark-gfm unescapes a cell's pipes before it
+ * parses the cell's inlines.
+ */
 export function atlasAutolinksFromMarkdown(): FromMarkdownExtension {
   return {
     enter: {
       atlasAutolinkWww(token) {
-        const raw = this.sliceSerialize(token);
+        const raw = cellText(this.stack, this.sliceSerialize(token));
         this.enter({ type: 'link', url: 'http://' + raw, title: null, children: [{ type: 'text', value: raw }] }, token);
       },
       atlasAutolinkUrl(token) {
-        const raw = this.sliceSerialize(token);
+        const raw = cellText(this.stack, this.sliceSerialize(token));
         this.enter({ type: 'link', url: raw, title: null, children: [{ type: 'text', value: raw }] }, token);
       },
     },
@@ -177,6 +189,8 @@ export function atlasAutolinksFromMarkdown(): FromMarkdownExtension {
     },
   };
 }
+
+const cellText = (stack: { type: string }[], raw: string) => (stack.some((n) => n.type === 'tableCell') ? raw.replaceAll('\\|', '|') : raw);
 
 // MARK: Email (cmark-gfm's `postprocess_text`)
 
@@ -255,5 +269,6 @@ declare module 'micromark-util-types' {
     atlasScan: 'atlasScan';
     atlasAutolinkWww: 'atlasAutolinkWww';
     atlasAutolinkUrl: 'atlasAutolinkUrl';
+    atlasCodeHold: 'atlasCodeHold';
   }
 }

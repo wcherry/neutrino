@@ -1,7 +1,7 @@
 # Atlas Markdown — Specification v1
 
-**Status:** Draft (`1.0.0-draft.5`)
-**Date:** 2026-11-02
+**Status:** Draft (`1.0.0-draft.6`)
+**Date:** 2026-11-03
 **Roadmap:** [`agent_docs/neutrino-atlas.md`](../../agent_docs/neutrino-atlas.md), constraint 3
 
 Every Neutrino Atlas page is a Markdown file, and three independent editors read and write those
@@ -151,6 +151,39 @@ wrong out of the box and MUST normalise its output. The corpus covers each one:
 - footnote labels with characters other than letters, digits, `-` and `_` (accepted);
 - `$$` math blocks inside a list item or blockquote (recognised by micromark's math extension);
 - an empty task item, `- [ ] ` (read by micromark as a plain item whose text is `[ ]`).
+
+cmark-gfm also differs from micromark in places that are its own reading of CommonMark 0.29 and
+GFM rather than either spec's text. Atlas follows cmark-gfm in these too, since AtlasKit runs it,
+and the corpus pins each one:
+- tables: the header row is the paragraph's last line, so the lines before it stay a paragraph
+  and a reference definition among them is text; a paragraph that has had a line shaped like a
+  delimiter row which didn't match the line above it never becomes a table; a row of only `|`
+  ends a table; a cell's `\|` is unescaped before its inlines are read;
+- tasks: a box needs a space after it (`- [ ]⏎` is text). Where the box starts its line, it is
+  taken out of the paragraph before that becomes a setext heading or a table's header row, and
+  reference definitions right after it define their labels for the whole page. An empty task
+  ends at a blank line, like any item that starts empty;
+- code spans: cmark's closer search remembers, per run length, the last run it passed, and
+  trusts that memory for later openers (`core/code-span-backtick-memory`); a lazy continuation
+  line keeps its indentation inside a span;
+- emphasis: the rule of 3 sums the lengths of the delimiter runs as written, not what's left of
+  them;
+- `---` right after reference definitions (with no blank line) is text, and a lazy line after
+  them keeps its indentation;
+- only the first definition of a footnote label counts;
+- an HTML declaration needs an uppercase letter after `<!`; an HTML tag alone on a line that
+  doesn't continue a list item, blockquote or footnote starts an HTML block after it, which runs
+  to the next blank line;
+- a `www.` link's domain check reads up to the character after it, so `www.` before a space
+  links `www`;
+- strikethrough runs flank as emphasis runs do, with cmark's whitespace and punctuation.
+
+A few of cmark-gfm's readings aren't followed by the web parser yet, and are left out of the
+corpus: a table's header line indented four or more columns under a paragraph line; a link
+destination with an unbalanced `(` before a space; a shortcut reference followed by `[`
+(`[r][`); `[^1]: x` right after a task's box, which cmark reads as a link definition for `^1`;
+and an empty task, a blank line, then an item indented one to three columns, which cmark makes a
+sibling of the task.
 
 Extension nodes and fields are defined in §4.
 
@@ -524,14 +557,14 @@ report that the edit wasn't made in place.
 | Bullet list | `-` marker plus one space. If the previous sibling block is also a bullet list, use the other marker of the pair (`-` ↔ `*`). Two adjacent lists with the same marker would merge into one. |
 | Ordered list | `N.` markers, numbered consecutively from `start`. After another ordered list, alternate `.` ↔ `)` in the same way. |
 | Nested content | Indented by the parent item's content offset (2 spaces for `- `, 3 for `1. `, 4 for `10. `), with spaces, never tabs. Blank lines inside are empty, not indented. |
-| Task item | `- [ ] ` / `- [x] ` (lowercase `x`). An empty task keeps the space after its box (`- [ ] `), the one place canonical output has trailing whitespace: without it, it isn't a task. |
+| Task item | `- [ ] ` / `- [x] ` (lowercase `x`). An empty task keeps the space after its box (`- [ ] `), the one place canonical output has trailing whitespace: without it, it isn't a task. A heading that is a task's first block is written setext, since `#` after the box is text. |
 | Code block | Fenced with backticks: three, or one more than the longest backtick run in the content. If the info string contains a backtick, use tildes instead (one more than the longest tilde run). The info string is `lang` and `meta` separated by one space, escaped like a link destination. Indented code is never written. |
 | Math block | `$$`, the value, `$$`. |
 | HTML | The value, as is. |
 | Blockquote | `> ` before every line, `>` alone on blank lines inside. An empty blockquote is `>`. |
 | Callout | First line `> [!type]` + fold + (space + title if any). A first child that is a paragraph continues on the next line; any other first child comes after a `>` line. |
 | Thematic break | `---`, except where `---` would be read as something else: on the first line of the file (frontmatter), as the first line of a `-` list item (a break of its own), or directly under a paragraph line in a tight list item (a setext underline). There it is `***`. |
-| Table | `\| a \| b \|` rows, one space of padding, no column alignment padding. An empty cell is `\|  \|`. Delimiter row uses `---`, `:--`, `--:` or `:-:` per `align`. A `\|` inside a cell, including inside a code span or a wiki link's alias separator, is written `\|`. |
+| Table | `\| a \| b \|` rows, one space of padding, no column alignment padding. An empty cell is `\|  \|`. Delimiter row uses `---`, `:--`, `--:` or `:-:` per `align`. A `\|` inside a cell, including inside a code span, a link's destination or title, or a wiki link's alias separator, is written `\|`. |
 | Links / images | `[text](url)` / `![alt](url)`, with `"title"` when set. The destination is written in `<…>` when empty or when it contains a space, parenthesis or angle bracket. In destinations, titles and code info strings, `\` is written `\\`, an `&` that would start an entity is written `\&`, and line endings are written `&#10;` / `&#13;`. In titles, `"` is written `\"`. The tree has no references (§3.2), so a changed block writes reference-style links inline; unchanged blocks and the definitions keep their bytes (§8.1). |
 | Autolinks | A `link` with no title and a single `text` child whose text matches its `url` is written in shorthand: `<url>` when the text equals the url, `<text>` when the url is `mailto:` + text, and bare `text` when the url is `http://` + text and the text starts with `www.`. `<…>` is only used when the url has no whitespace, `<`, `>`, `&` or `\`. If the block can't round-trip with these, url autolinks (`http://`, `https://`, `ftp://`) are written bare instead, and failing that every autolink is written `[text](url)` (§8.3.1). Text right after a bare link, up to and including the next whitespace, is written as is: cmark-gfm's autolinker reads raw source, so a `\` or `&#32;` there would become part of the link. |
 | Footnote definition | `[^label]: ` followed by its first block; the rest indented four spaces. |
