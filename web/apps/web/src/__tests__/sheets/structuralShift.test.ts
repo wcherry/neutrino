@@ -37,12 +37,16 @@ import {
     parseRangeToBounds,
     boundsToRange,
     shiftCFRules,
+    shiftFormula,
+    shiftReferencesFromOtherSheet,
+    rebuildFormulaGraph,
     computeStructuralShift,
     type RectBounds,
 } from '../../app/(apps)/sheets/editor/structuralShift';
 import { TABLE_STYLES } from '../../app/(apps)/sheets/editor/styles/tableStyles';
 import { computeTableStylePatches } from '../../app/(apps)/sheets/editor/styles/applyTableStyle';
 import { numToAlpha } from '../../app/(apps)/sheets/editor/utils';
+import { propagateDeps } from '../../app/(apps)/sheets/editor/formula';
 import type { CellProps, CFRule, TableRegion } from '../../app/(apps)/sheets/editor/types';
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
@@ -682,5 +686,134 @@ describe('chained computeStructuralShift (multi-header operations)', () => {
         expect(result.get('A1')?.raw).toBe('first');
         expect(result.get('A5')?.raw).toBe('second');
         expect(result.has('A2')).toBe(false);
+    });
+});
+
+// ── shiftFormula ─────────────────────────────────────────────────────────────
+
+describe('shiftFormula', () => {
+    it('moves a reference right of an inserted column and leaves one left of it', () => {
+        expect(shiftFormula('=A1+C1', 'col', 'insert', 2)).toBe('=A1+D1');
+    });
+
+    it('moves rows the same way', () => {
+        expect(shiftFormula('=B2+B5', 'row', 'insert', 3)).toBe('=B2+B6');
+        expect(shiftFormula('=B2+B5', 'row', 'delete', 3)).toBe('=B2+B4');
+    });
+
+    it('moves absolute references and keeps their markers', () => {
+        expect(shiftFormula('=$C$1+$C1+C$1', 'col', 'insert', 1)).toBe('=$D$1+$D1+D$1');
+    });
+
+    it('grows a range when inserting inside it and moves it when inserting before it', () => {
+        expect(shiftFormula('=SUM(B1:D1)', 'col', 'insert', 3)).toBe('=SUM(B1:E1)');
+        expect(shiftFormula('=SUM(B1:D1)', 'col', 'insert', 2)).toBe('=SUM(C1:E1)');
+        expect(shiftFormula('=SUM(B1:D1)', 'col', 'insert', 5)).toBe('=SUM(B1:D1)');
+    });
+
+    it('shrinks a range around a delete, and #REF!s it only when nothing is left', () => {
+        expect(shiftFormula('=SUM(B1:D1)', 'col', 'delete', 3)).toBe('=SUM(B1:C1)');
+        expect(shiftFormula('=SUM(B1:B1)', 'col', 'delete', 2)).toBe('=SUM(#REF!)');
+    });
+
+    it('turns a reference to a deleted cell into #REF!', () => {
+        expect(shiftFormula('=A1+B1', 'col', 'delete', 2)).toBe('=A1+#REF!');
+    });
+
+    it('keeps a range written back to front that way round', () => {
+        expect(shiftFormula('=SUM(D1:B1)', 'col', 'insert', 3)).toBe('=SUM(E1:B1)');
+    });
+
+    it('leaves string literals and function names alone', () => {
+        expect(shiftFormula('=IF(C1>0,"C1 ok",LOG10(C1))', 'col', 'insert', 1)).toBe('=IF(D1>0,"C1 ok",LOG10(D1))');
+    });
+
+    it('leaves references to other sheets alone', () => {
+        expect(shiftFormula("=Beta!C1+'Net Worth'!C1:D1+C1", 'col', 'insert', 1)).toBe("=Beta!C1+'Net Worth'!C1:D1+D1");
+    });
+
+    it('moves references that name the edited sheet, in any case', () => {
+        expect(shiftFormula("='Sheet 1'!C1", 'col', 'insert', 1, { target: 'sheet 1', formulaOnTarget: true })).toBe("='Sheet 1'!D1");
+    });
+
+    it('from another tab, moves only references naming the edited sheet', () => {
+        const scope = { target: 'Sheet 1', formulaOnTarget: false };
+        expect(shiftFormula("='Sheet 1'!C1:D1+C1", 'col', 'insert', 1, scope)).toBe("='Sheet 1'!D1:E1+C1");
+        expect(shiftFormula("='Sheet 1'!C1+1", 'col', 'delete', 3, scope)).toBe('=#REF!+1');
+    });
+});
+
+// ── formulas through a whole structural edit ─────────────────────────────────
+
+describe('structural edits keep formulas working', () => {
+    const sheet = (raws: Record<string, string>) => {
+        const cells = new Map<string, CellProps>(
+            Object.entries(raws).map(([id, raw]) => [id, { id, raw, value: raw, edit: false }]),
+        );
+        rebuildFormulaGraph(cells);
+        return cells;
+    };
+    const shift = (cells: Map<string, CellProps>, axis: 'row' | 'col', op: 'insert' | 'delete', index: number) => {
+        const { cells: shifted } = computeStructuralShift({
+            cells, colWidths: new Map(), rowHeights: new Map(), conditionalFormats: [], tableRegions: [], axis, op, index,
+        });
+        rebuildFormulaGraph(shifted);
+        return shifted;
+    };
+
+    it('a formula right of an inserted column still sums the cells it did', () => {
+        const cells = shift(sheet({ A1: '1', B1: '2', C1: '=A1+B1' }), 'col', 'insert', 2);
+        expect(cells.get('D1')).toMatchObject({ raw: '=A1+C1', value: '3', deps: ['A1', 'C1'] });
+        expect(cells.get('C1')?.dependents).toEqual(['D1']);
+    });
+
+    it('dependents follow the shift, so later edits still recalculate', () => {
+        const cells = shift(sheet({ A1: '1', A2: '=A1*2' }), 'row', 'insert', 1);
+        cells.set('A2', { ...cells.get('A2')!, raw: '5', value: '5' });
+        propagateDeps('A2', cells, new Set(['A2']));
+        expect(cells.get('A3')?.value).toBe('10');
+    });
+
+    it('a deleted input recalculates the range over it and whatever reads that', () => {
+        const cells = shift(sheet({ A1: '1', A2: '2', A3: '4', B1: '=SUM(A1:A3)', C1: '=B1*10' }), 'row', 'delete', 2);
+        expect(cells.get('B1')).toMatchObject({ raw: '=SUM(A1:A2)', value: '5' });
+        expect(cells.get('C1')?.value).toBe('50');
+    });
+
+    it('#REF! reaches the formulas that read it', () => {
+        const cells = shift(sheet({ A1: '1', B1: '=A1+1', B2: '=B1*2', B3: '=-B1' }), 'col', 'delete', 1);
+        expect(cells.get('A1')).toMatchObject({ raw: '=#REF!+1', value: '#REF!' });
+        expect(cells.get('A2')?.value).toBe('#REF!');
+        expect(cells.get('A3')?.value).toBe('#REF!');
+    });
+
+    it('does not cascade a recalculation when an insert changed no value', () => {
+        const raws: Record<string, string> = { A1: '1' };
+        for (let r = 2; r <= 2000; r++) raws[`A${r}`] = `=A${r - 1}+1`;
+        const started = performance.now();
+        const cells = shift(sheet(raws), 'row', 'insert', 1);
+        expect(cells.get('A2001')?.value).toBe('2000');
+        expect(performance.now() - started).toBeLessThan(2000);
+    });
+
+    it('rewrites a conditional format formula with its range', () => {
+        const rule = { id: 'r', range: 'B1:B5', rule: { kind: 'formula', formula: '=B1>A1', format: {} } } as CFRule;
+        const [shifted] = shiftCFRules([rule], 'col', 'insert', 1);
+        expect(shifted.range).toBe('C1:C5');
+        expect(shifted.rule).toMatchObject({ formula: '=C1>B1' });
+    });
+});
+
+describe('shiftReferencesFromOtherSheet', () => {
+    it('returns null when no formula names the edited sheet, so the tab is left untouched', () => {
+        const cells = new Map<string, CellProps>([['A1', { id: 'A1', raw: '=B1+Other!C1', value: '', edit: false }]]);
+        expect(shiftReferencesFromOtherSheet(cells, 'Sheet 1', 'col', 'insert', 1)).toBeNull();
+    });
+
+    it('rewrites a copy and leaves the original for undo', () => {
+        const cells = new Map<string, CellProps>([['A1', { id: 'A1', raw: "='Sheet 1'!C1", value: '', edit: false }]]);
+        const shifted = shiftReferencesFromOtherSheet(cells, 'Sheet 1', 'col', 'insert', 1);
+        expect(shifted?.get('A1')?.raw).toBe("='Sheet 1'!D1");
+        expect(cells.get('A1')?.raw).toBe("='Sheet 1'!C1");
     });
 });

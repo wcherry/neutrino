@@ -12,12 +12,17 @@
 //   along with the normal per-cell shift like any other cell.
 // - `colWidths`/`rowHeights` are keyed 0-based; the 1-based `index` is
 //   converted internally.
+// - Formula references follow the cells they point at (`shiftFormula`), including
+//   references to this sheet from other tabs (`shiftReferencesFromOtherSheet`).
+//   Both only rewrite text: `rebuildFormulaGraph` then brings deps, dependents
+//   and values back in line, once, however many shifts a single edit chained.
 // - `computeStructuralShift` is the orchestrator that also recomputes table
 //   style patches for every surviving TableRegion against its new bounds —
 //   this is what prevents an unstyled gap after a structural edit.
 
 import type { CellProps, CFRule, TableRegion } from './types';
-import { parseCellId, numToAlpha } from './utils';
+import { parseCellId, numToAlpha, alphaToNum, parseDeps } from './utils';
+import { computeCell, propagateDeps, type SheetRef } from './formula';
 import { TABLE_STYLES } from './styles/tableStyles';
 import { computeTableStylePatches } from './styles/applyTableStyle';
 
@@ -212,6 +217,107 @@ export function boundsToRange(bounds: RectBounds): string {
     return start === end ? start : `${start}:${end}`;
 }
 
+// ── shiftFormula ─────────────────────────────────────────────────────────────
+
+// A string literal, which is skipped, or a reference: an optional sheet prefix,
+// then a cell or range. The lookarounds keep identifiers and function names that
+// merely contain a reference (`LOG10(`, `Q1_total`) from matching.
+const FORMULA_REFERENCE =
+    /"[^"]*"|(?<![A-Za-z0-9_$.'])(?:('[^']+'|[A-Za-z_][A-Za-z0-9_]*)!)?(\$?)([A-Za-z]+)(\$?)(\d+)(?::(\$?)([A-Za-z]+)(\$?)(\d+))?(?![A-Za-z0-9_(!])/g;
+
+// `target` is the sheet being edited. References with no sheet prefix resolve to
+// the sheet holding the formula, so they move only if that sheet is the target.
+export type FormulaShiftScope = { target?: string; formulaOnTarget: boolean };
+
+/**
+ * Rewrites one formula for a row or column inserted or deleted: a reference moves
+ * with its cell, a range grows or shrinks around the edit, and a reference to a
+ * deleted cell becomes #REF!. Absolute ($) references move too, because $ pins a
+ * reference against being copied, not against the sheet changing under it.
+ */
+export function shiftFormula(
+    formula: string,
+    axis: Axis,
+    op: StructuralOp,
+    index: number,
+    scope: FormulaShiftScope = { formulaOnTarget: true },
+): string {
+    const target = scope.target?.toLowerCase();
+    return formula.replace(FORMULA_REFERENCE, (match, prefix: string | undefined, d1: string, col1: string, d2: string, row1: string, d3: string | undefined, col2: string | undefined, d4: string | undefined, row2: string | undefined) => {
+        if (col1 === undefined) return match; // string literal
+        const onTarget = prefix === undefined
+            ? scope.formulaOnTarget
+            : prefix.replace(/^'|'$/g, '').toLowerCase() === target;
+        if (!onTarget) return match;
+
+        const isRange = col2 !== undefined;
+        const c1 = alphaToNum(col1.toUpperCase()), r1 = parseInt(row1, 10);
+        const c2 = isRange ? alphaToNum(col2.toUpperCase()) : c1;
+        const r2 = isRange ? parseInt(row2!, 10) : r1;
+        const bounds: RectBounds = {
+            minR: Math.min(r1, r2), maxR: Math.max(r1, r2),
+            minC: Math.min(c1, c2), maxC: Math.max(c1, c2),
+        };
+        const shifted = shiftRect(bounds, axis, op, index);
+        if (shifted === null) return '#REF!';
+        if (shifted.minR === bounds.minR && shifted.maxR === bounds.maxR &&
+            shifted.minC === bounds.minC && shifted.maxC === bounds.maxC) return match;
+
+        // A range may be written back to front (B3:A1); keep it that way round.
+        const start = `${d1}${numToAlpha(c1 <= c2 ? shifted.minC : shifted.maxC)}${d2}${r1 <= r2 ? shifted.minR : shifted.maxR}`;
+        const sheet = prefix === undefined ? '' : `${prefix}!`;
+        if (!isRange) return `${sheet}${start}`;
+        return `${sheet}${start}:${d3}${numToAlpha(c1 <= c2 ? shifted.maxC : shifted.minC)}${d4}${r1 <= r2 ? shifted.maxR : shifted.minR}`;
+    });
+}
+
+/** The same edit as seen from another tab: only references naming `target` move. Null if nothing did. */
+export function shiftReferencesFromOtherSheet(
+    cells: Map<string, CellProps>,
+    target: string,
+    axis: Axis,
+    op: StructuralOp,
+    index: number,
+): Map<string, CellProps> | null {
+    let result: Map<string, CellProps> | null = null;
+    for (const [id, cell] of cells) {
+        if (!cell.raw?.startsWith('=')) continue;
+        const raw = shiftFormula(cell.raw, axis, op, index, { target, formulaOnTarget: false });
+        if (raw === cell.raw) continue;
+        result ??= new Map(cells);
+        result.set(id, { ...cell, raw });
+    }
+    return result;
+}
+
+/**
+ * Brings deps, dependents and values back in line after formulas were rewritten
+ * or cells moved. Mutates `cells`. Only a value that actually changed cascades:
+ * inserting a row near the top of a long chain rewrites every formula in it
+ * without changing any result, and that must not cost a recalculation per cell.
+ */
+export function rebuildFormulaGraph(cells: Map<string, CellProps>, allSheets?: SheetRef[]): void {
+    const formulaIds: string[] = [];
+    for (const [id, cell] of cells) {
+        const deps = parseDeps(cell.raw ?? '');
+        if (cell.raw?.startsWith('=')) formulaIds.push(id);
+        cells.set(id, { ...cell, deps, dependents: [] });
+    }
+    for (const id of formulaIds) {
+        for (const depId of cells.get(id)!.deps ?? []) {
+            const referenced = cells.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
+            cells.set(depId, { ...referenced, dependents: [...(referenced.dependents ?? []), id] });
+        }
+    }
+    for (const id of formulaIds) {
+        const cell = cells.get(id)!;
+        const { value } = computeCell(cell.raw ?? '', cells, allSheets);
+        if (value === cell.value) continue;
+        cells.set(id, { ...cell, value });
+        propagateDeps(id, cells, new Set([id]), allSheets);
+    }
+}
+
 // ── shiftCFRules ─────────────────────────────────────────────────────────────
 
 export function shiftCFRules(rules: CFRule[], axis: Axis, op: StructuralOp, index: number): CFRule[] {
@@ -224,7 +330,10 @@ export function shiftCFRules(rules: CFRule[], axis: Axis, op: StructuralOp, inde
         }
         const shifted = shiftRect(bounds, axis, op, index);
         if (shifted === null) continue;
-        result.push({ ...rule, range: boundsToRange(shifted) });
+        const shiftedRule = rule.rule.kind === 'formula'
+            ? { ...rule.rule, formula: shiftFormula(rule.rule.formula, axis, op, index) }
+            : rule.rule;
+        result.push({ ...rule, range: boundsToRange(shifted), rule: shiftedRule });
     }
     return result;
 }
@@ -240,6 +349,7 @@ export type StructuralShiftInput = {
     axis: Axis;
     op: StructuralOp;
     index: number;
+    sheetName?: string;
 };
 
 export type StructuralShiftResult = {
@@ -251,9 +361,14 @@ export type StructuralShiftResult = {
 };
 
 export function computeStructuralShift(input: StructuralShiftInput): StructuralShiftResult {
-    const { cells, colWidths, rowHeights, conditionalFormats, tableRegions, axis, op, index } = input;
+    const { cells, colWidths, rowHeights, conditionalFormats, tableRegions, axis, op, index, sheetName } = input;
 
     const resultCells = shiftCellMap(cells, axis, op, index);
+    for (const [id, cell] of resultCells) {
+        if (!cell.raw?.startsWith('=')) continue;
+        const raw = shiftFormula(cell.raw, axis, op, index, { target: sheetName, formulaOnTarget: true });
+        if (raw !== cell.raw) resultCells.set(id, { ...cell, raw });
+    }
 
     const newTableRegions: TableRegion[] = [];
     for (const region of tableRegions) {

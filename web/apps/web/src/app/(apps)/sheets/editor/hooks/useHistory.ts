@@ -13,7 +13,11 @@ import { useCommands } from '@neutrino/commands';
 // that haven't migrated yet) or a compact patch entry (for useCellEditing's
 // per-keystroke operations).  Both cases are handled transparently by undo/redo.
 
-type SnapshotEntry = { kind: 'snapshot'; map: Map<string, CellProps> };
+// Work an edit did outside the active sheet's cells, which a snapshot cannot
+// restore: a structural edit rewrites references to this sheet on other tabs.
+export type HistorySideEffect = { undo: () => void; redo: () => void };
+
+type SnapshotEntry = { kind: 'snapshot'; map: Map<string, CellProps>; sideEffect?: HistorySideEffect };
 type PatchEntry    = { kind: 'patch'; patch: UndoPatch };
 type HistoryEntry  = SnapshotEntry | PatchEntry;
 
@@ -46,8 +50,8 @@ export function useHistory({
 
     // Legacy full-snapshot push — kept for callers (clipboard, context menu, etc.)
     // that already hold a cloned Map and pass it here.
-    const pushToUndo = useCallback((snapshot: Map<string, CellProps>) => {
-        undoStackRef.current.push({ kind: 'snapshot', map: snapshot });
+    const pushToUndo = useCallback((snapshot: Map<string, CellProps>, sideEffect?: HistorySideEffect) => {
+        undoStackRef.current.push({ kind: 'snapshot', map: snapshot, sideEffect });
         if (undoStackRef.current.length > MAX_HISTORY) undoStackRef.current.shift();
         redoStackRef.current = [];
         setHistoryLen({ undo: undoStackRef.current.length, redo: 0 });
@@ -74,7 +78,7 @@ export function useHistory({
             return { kind: 'patch', patch: { before, after: entry.patch.after } };
         }
         // For snapshot entries, still do a full clone (backward compat).
-        return { kind: 'snapshot', map: new Map(dataRef.current) };
+        return { kind: 'snapshot', map: new Map(dataRef.current), sideEffect: entry.sideEffect };
     }, [dataRef]);
 
     const undo = useCallback(() => {
@@ -84,6 +88,7 @@ export function useHistory({
         if (entry.kind === 'patch') {
             setData(prev => applyPatch(prev, entry.patch.before));
         } else {
+            entry.sideEffect?.undo();
             setData(entry.map);
         }
         clearSelectionState();
@@ -99,7 +104,8 @@ export function useHistory({
             undoStackRef.current.push({ kind: 'patch', patch: { before, after: entry.patch.after } });
             setData(prev => applyPatch(prev, entry.patch.after));
         } else {
-            undoStackRef.current.push({ kind: 'snapshot', map: new Map(dataRef.current) });
+            undoStackRef.current.push({ kind: 'snapshot', map: new Map(dataRef.current), sideEffect: entry.sideEffect });
+            entry.sideEffect?.redo();
             setData(entry.map);
         }
         clearSelectionState();

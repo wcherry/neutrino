@@ -95,7 +95,7 @@ function buildTableHtml(
             if (cell?.mergeAnchor) { hidden.add(id); continue; }
 
             const cs: CellStyle | undefined = cell?.cellStyle;
-            const displayValue = cell ? formatCellValue(cell.value ?? cell.raw ?? '', cs) : '';
+            const displayValue = cell ? formatCellValue(cell.value ?? cell.raw ?? '', cs, cell.raw) : '';
             const colSpan = cell?.colSpan ?? 1;
             const rowSpan = cell?.rowSpan ?? 1;
 

@@ -150,6 +150,33 @@ test.describe('Insert and delete columns', () => {
     await expectCell(page, 'C1', 'col2');
   });
 
+  test('Insert column left keeps formulas to the right of it pointing at the same cells', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    await registerAndLogin(request, page, 'colformula');
+    await openNewSheet(page);
+
+    await setCell(page, 'A1', '1');
+    await setCell(page, 'B1', '2');
+    await setCell(page, 'C1', '=A1+B1');
+    await expectCell(page, 'C1', '3');
+
+    await openCellContextMenu(page, 'B1');
+    await page.getByRole('menuitem', { name: 'Insert column left' }).click();
+
+    await expectCell(page, 'C1', '2');
+    await expectCell(page, 'D1', '3');
+
+    // The dependency graph moved too: editing a shifted input recalculates.
+    await setCell(page, 'C1', '10');
+    await expectCell(page, 'D1', '11');
+
+    await page.keyboard.press('ControlOrMeta+z');
+    await expectCell(page, 'D1', '3');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expectCell(page, 'B1', '2');
+    await expectCell(page, 'C1', '3');
+  });
+
   test('Delete column removes and shifts remaining data left', async ({ page, request }) => {
     test.setTimeout(60_000);
     await registerAndLogin(request, page, 'col2');

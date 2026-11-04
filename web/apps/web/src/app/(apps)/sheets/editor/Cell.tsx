@@ -65,7 +65,7 @@ export const Cell = React.memo(function Cell(props: CellProps & {
         // data/progress bars need a positioning context
         ...(cf?.dataBar || cf?.progressBar ? { position: 'relative' } : {}),
     };
-    const content = props.edit ? props.raw : formatCellValue(props.value ?? '', props.cellStyle);
+    const content = props.edit ? props.raw : formatCellValue(props.value ?? '', props.cellStyle, props.raw);
     const hasBar = cf?.dataBar || cf?.progressBar;
     return (
         <div id={props.id} className={`${styles.cell}${props.selected ? ` ${styles.cellSelected}` : ''}`} data-type="cell" style={mergedStyle}>

@@ -227,7 +227,8 @@ function cellXml(id: string, cell: SavedCell, styleIndex: number): string {
     if (cached === '') return `<c r="${id}"${s}><f>${formula}</f></c>`;
     return `<c r="${id}"${s} t="str"><f>${formula}</f><v>${xmlEscape(xmlSafe(cached))}</v></c>`;
   }
-  const numeric = numericValue(raw);
+  // "1,234.50" is entered text the editor holds as the number in `value`.
+  const numeric = numericValue(raw) ?? (raw.includes(',') ? numericValue(cell.value) : null);
   if (numeric !== null) return `<c r="${id}"${s}><v>${numeric}</v></c>`;
   if (raw === '') return s ? `<c r="${id}"${s}/>` : '';
   // Inline rather than shared strings: one fewer part, one fewer table to keep

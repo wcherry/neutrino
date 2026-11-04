@@ -265,6 +265,52 @@ test.describe('Cross-sheet cell references', () => {
     await expectCell(page, 'A1', '#REF!');
   });
 
+  test('inserting a column keeps references from other tabs on the same cell, and undo restores them', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    await registerAndLogin(request, page, 'xsheetshift');
+    await openNewSheet(page);
+
+    await page.getByRole('button', { name: '+', exact: true }).click();
+    await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
+    await page.getByText('Sheet 2', { exact: true }).dblclick();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
+    await expect(renameInput).toBeVisible({ timeout: 5_000 });
+    await renameInput.fill('Beta');
+    await renameInput.press('Enter');
+    await expect(page.getByText('Beta', { exact: true })).toBeVisible({ timeout: 5_000 });
+
+    await setCell(page, 'C1', '42');
+    await page.getByText('Sheet 1', { exact: true }).click();
+    await setCell(page, 'A1', '=Beta!C1');
+    await expectCell(page, 'A1', '42');
+
+    const openBeta = async () => {
+      await page.getByText('Beta', { exact: true }).click();
+      await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
+    };
+    const expectSheet1Formula = async (formula: string) => {
+      await page.getByText('Sheet 1', { exact: true }).click();
+      await expectCell(page, 'A1', '42');
+      await page.locator('[data-type="cell"][id="A1"]').click();
+      await expect(page.getByTestId('formula-bar-input')).toHaveValue(formula, { timeout: 8_000 });
+      await page.locator('[data-type="cell"][id="B2"]').click();
+    };
+
+    await openBeta();
+    await page.locator('[data-type="cell"][id="C1"]').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Insert column left' }).click();
+    await expectCell(page, 'D1', '42');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expectCell(page, 'C1', '42');
+    await expectSheet1Formula('=Beta!C1');
+
+    await openBeta();
+    await page.locator('[data-type="cell"][id="C1"]').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Insert column left' }).click();
+    await expectCell(page, 'D1', '42');
+    await expectSheet1Formula('=Beta!D1');
+  });
+
   test('cleared referenced cells return 0 or empty', async ({ page, request }) => {
     test.setTimeout(90_000);
     await registerAndLogin(request, page, 'xsheet6');
