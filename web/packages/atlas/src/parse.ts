@@ -4,7 +4,7 @@ import { Preprocessed } from './preprocess';
 import type { MarkdownNode } from './tree';
 
 /** The spec this package implements; it must match the corpus manifest. */
-export const SPEC_VERSION = '1.0.0-draft.5';
+export const SPEC_VERSION = '1.0.0-draft.6';
 
 /** Parses a page into its Atlas Markdown tree (SPEC §3, §4). */
 export function parse(source: string): MarkdownNode {
