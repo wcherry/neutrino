@@ -6,6 +6,9 @@ import { Decoration, EditorView, WidgetType, keymap, type DecorationSet } from '
 import { defaultKeymap, history, historyKeymap, insertNewline, insertTab } from '@codemirror/commands';
 import {
   acceptCompletion,
+  dragBlocks,
+  moveBlock,
+  type DragBlock,
   anchorLine,
   applySlashCommand,
   blockImage,
@@ -284,6 +287,15 @@ async function imagesIn(files: Iterable<File>): Promise<ImageImport[]> {
 
 const imageFiles = (list: FileList | null | undefined) => [...(list ?? [])].filter((f) => f.type.startsWith('image/'));
 
+/** The handle's grip: three short lines. */
+function GripIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+      <path d="M5 7h14M5 12h14M5 17h14" />
+    </svg>
+  );
+}
+
 // ── The component ────────────────────────────────────────────────────────────
 
 export function AtlasEditor(props: AtlasEditorProps) {
@@ -300,6 +312,59 @@ export function AtlasEditor(props: AtlasEditorProps) {
   const dismissed = useRef<string | null>(null);
   const [fileMenu, setFileMenu] = useState<{ x: number; y: number; pos: number; isPreview: boolean } | null>(null);
   const handledInsertion = useRef<number>(insertion?.id ?? 0);
+
+  // ── The drag handle ─────────────────────────────────────────────────────────
+  // A grip in the margin beside the block under the pointer (AtlasKit's BlockHandle). Dragging it
+  // shows a line where the block will land; letting go moves it there, as one undoable edit.
+  const [handle, setHandle] = useState<{ block: DragBlock; top: number } | null>(null);
+  const [dragging, setDragging] = useState<{ block: DragBlock; target: number | null; y: number } | null>(null);
+
+  /** Where the block starting at `offset` is drawn, relative to the editor: its first line's top and bottom. */
+  const lineAt = (v: EditorView, offset: number) => {
+    const c = v.coordsAtPos(offset, 1);
+    if (!c) return null;
+    const box = host.current!.getBoundingClientRect();
+    return { top: c.top - box.top, bottom: c.bottom - box.top };
+  };
+
+  const showHandle = (event: React.MouseEvent) => {
+    const v = view.current;
+    if (!v || dragging) return;
+    const content = v.contentDOM.getBoundingClientRect();
+    const pos = v.posAtCoords({ x: content.left + 10, y: event.clientY });
+    const block = pos === null ? undefined : dragBlocks(text(v), syntaxOf(v)).find((b) => b.from <= pos && pos <= b.to);
+    const line = block && lineAt(v, block.from);
+    setHandle(block && line ? { block, top: (line.top + line.bottom) / 2 - 9 } : null);
+  };
+
+  /** While dragging: before the first block whose first line's middle is below the pointer, else the end. */
+  const dragTo = (event: React.PointerEvent) => {
+    const v = view.current;
+    if (!v || !dragging) return;
+    const y = event.clientY - host.current!.getBoundingClientRect().top;
+    const blocks = dragBlocks(text(v), syntaxOf(v));
+    let target: number | null = null;
+    let at = blocks.length ? (lineAt(v, blocks[blocks.length - 1].to)?.bottom ?? 0) : 0;
+    for (const b of blocks) {
+      const line = lineAt(v, b.from);
+      if (line && (line.top + line.bottom) / 2 > y) {
+        target = b.from;
+        at = line.top - 2;
+        break;
+      }
+    }
+    setDragging({ ...dragging, target, y: at });
+  };
+
+  const drop = () => {
+    const v = view.current;
+    const d = dragging;
+    setDragging(null);
+    setHandle(null);
+    if (!v || !d || d.y < 0) return;
+    const block = dragBlocks(text(v), syntaxOf(v)).find((b) => b.from === d.block.from);
+    if (block && perform(v, moveBlock(block, d.target, text(v)), 'move.block')) v.focus();
+  };
 
   const env = (): Env => ({
     mode: latest.current.mode,
@@ -547,8 +612,32 @@ export function AtlasEditor(props: AtlasEditorProps) {
   }, [insertion]);
 
   return (
-    <div className={styles.editorHost}>
+    <div className={styles.editorHost} onMouseMove={showHandle} onMouseLeave={() => !dragging && setHandle(null)}>
       <div ref={host} className={styles.editor} data-tour="atlas-editor" />
+      {(handle || dragging) && (
+        <button
+          type="button"
+          className={styles.blockHandle}
+          style={{ top: handle?.top ?? 0 }}
+          aria-label="Drag to move this block"
+          title="Drag to move this block"
+          onPointerDown={(e) => {
+            if (!handle) return;
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setDragging({ block: handle.block, target: handle.block.from, y: -1 });
+          }}
+          onPointerMove={dragTo}
+          onPointerUp={drop}
+          onPointerCancel={() => {
+            setDragging(null);
+            setHandle(null);
+          }}
+        >
+          <GripIcon />
+        </button>
+      )}
+      {dragging && dragging.y >= 0 && <div className={styles.dropIndicator} style={{ top: dragging.y }} aria-hidden />}
       {menu && (
         <ul className={styles.suggestions} style={{ left: menu.left, top: menu.top }} role="listbox" aria-label={menu.kind === 'link' ? 'Pages' : 'Commands'}>
           {menu.items.map((item, k) => (

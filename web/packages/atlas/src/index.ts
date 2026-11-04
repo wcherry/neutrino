@@ -134,3 +134,4 @@ export {
   type PickedFile,
 } from './workspace/importExport';
 export { AtlasLog, LogChannel, logLine, type LogEntry, type LogLevel } from './log';
+export { dragBlocks, moveBlock, editBetween, type DragBlock } from './editing/blockDrag';

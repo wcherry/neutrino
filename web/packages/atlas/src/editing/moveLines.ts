@@ -2,7 +2,7 @@ import type { PageSyntax } from '../syntax/pageSyntax';
 import { listLine, type TextEdit } from './markdownEditing';
 
 /** A page's lines, split at `\n`, with their UTF-16 offsets. */
-class PageLines {
+export class PageLines {
   /** Where each line starts. */
   private readonly starts = [0];
 
