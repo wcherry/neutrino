@@ -1,6 +1,6 @@
 import type { CellProps } from './types';
 import { measurePhaseSync } from '@neutrino/utils';
-import { expandRange, parseDeps, alphaToNum, numToAlpha, dateStringToSerial, parseCellDateValue } from './utils';
+import { expandRange, parseDeps, alphaToNum, numToAlpha, dateStringToSerial, parseCellDateValue, groupedNumberValue } from './utils';
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -357,6 +357,9 @@ function tokenize(s: string): Token[] {
             continue;
         }
         if (ch === '=') { tokens.push({ type: 'EQ' }); i++; continue; }
+        // A reference a structural delete removed. As a string it is an error
+        // value like any other, which arithmetic hands on rather than reading as NaN.
+        if (s.startsWith('#REF!', i)) { tokens.push({ type: 'STRING', value: '#REF!' }); i += 5; continue; }
         if (ch === '"') {
             let j = i + 1, str = '';
             while (j < s.length && s[j] !== '"') str += s[j++];
@@ -634,6 +637,8 @@ class FormulaParser {
         while (this.peek()?.type === 'PLUS' || this.peek()?.type === 'MINUS') {
             const op = this.consume();
             const right = this.parseMul();
+            if (isErrorVal(left)) continue;
+            if (isErrorVal(right)) { left = right; continue; }
             const l = this.coerceNum(left);
             const r = this.coerceNum(right);
             left = op.type === 'PLUS' ? l + r : l - r;
@@ -646,6 +651,8 @@ class FormulaParser {
         while (this.peek()?.type === 'STAR' || this.peek()?.type === 'SLASH') {
             const op = this.consume();
             const right = this.parseUnary();
+            if (isErrorVal(left)) continue;
+            if (isErrorVal(right)) { left = right; continue; }
             const l = this.coerceNum(left);
             const r = this.coerceNum(right);
             if (op.type === 'SLASH') { left = r === 0 ? '#DIV/0!' : l / r; }
@@ -658,7 +665,7 @@ class FormulaParser {
         if (this.peek()?.type === 'MINUS') {
             this.consume();
             const v = this.parsePrimary();
-            return -this.coerceNum(v);
+            return isErrorVal(v) ? v : -this.coerceNum(v);
         }
         return this.parsePrimary();
     }
@@ -1321,7 +1328,7 @@ export function computeCell(
 ): { value: string; deps: string[] } {
     if(raw==undefined) return {value: "", deps: []};
     const deps = parseDeps(raw);
-    if (!raw.startsWith('=')) return { value: raw, deps };
+    if (!raw.startsWith('=')) return { value: groupedNumberValue(raw) ?? raw, deps };
     try {
         const tokens = tokenize(raw.slice(1).trim());
         const result = new FormulaParser(tokens, data, allSheets).parseExpr();

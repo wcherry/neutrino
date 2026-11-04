@@ -30,7 +30,7 @@ import { useExport } from './hooks/useExport';
 import { useCellEditing } from './hooks/useCellEditing';
 import { useConditionalFormatting } from './hooks/useConditionalFormatting';
 import { useTableRegions } from './hooks/useTableRegions';
-import { computeStructuralShift } from './structuralShift';
+import { computeStructuralShift, rebuildFormulaGraph, shiftReferencesFromOtherSheet } from './structuralShift';
 import {
     selectHeader, extendHeaderSelection, headerRuns, headerSelectionLabel,
     headerSelectionCellBounds, headerSelectionCells,
@@ -947,7 +947,8 @@ export function SheetEditor() {
     const runStructuralShifts = useCallback((axis: 'row' | 'col', op: 'insert' | 'delete', indices: number[]) => {
         if (indices.length === 0) return;
         const prev = dataRef.current;
-        history.pushToUndo(new Map(prev));
+        const activeIndex = sheets.activeSheetIndexRef.current;
+        const sheetName = sheets.sheetNamesRef.current[activeIndex];
         let result = {
             cells: prev,
             colWidths: colWidthsRef.current,
@@ -956,15 +957,45 @@ export function SheetEditor() {
             tableRegions: tableRegions.tableRegionsRef.current,
         };
         for (const index of indices) {
-            result = computeStructuralShift({ ...result, axis, op, index });
+            result = computeStructuralShift({ ...result, axis, op, index, sheetName });
         }
+
+        // Other tabs' references to this sheet move with it. Their maps are swapped
+        // by identity on undo, since a tab can be reordered without clearing history.
+        const sheetData = [...sheets.sheetsDataRef.current];
+        sheetData[activeIndex] = result.cells;
+        const rewritten: { before: Map<string, CellProps>; after: Map<string, CellProps> }[] = [];
+        sheetData.forEach((before, i) => {
+            if (i === activeIndex) return;
+            let after = before;
+            for (const index of indices) {
+                after = shiftReferencesFromOtherSheet(after, sheetName, axis, op, index) ?? after;
+            }
+            if (after === before) return;
+            sheetData[i] = after;
+            rewritten.push({ before, after });
+        });
+        const allSheets = sheets.sheetNamesRef.current.map((name, i) => ({ name, data: sheetData[i] ?? new Map() }));
+        rebuildFormulaGraph(result.cells, allSheets);
+        for (const { after } of rewritten) rebuildFormulaGraph(after, allSheets);
+
+        const swapSheet = (from: Map<string, CellProps>, to: Map<string, CellProps>) => {
+            const i = sheets.sheetsDataRef.current.indexOf(from);
+            if (i !== -1) sheets.sheetsDataRef.current[i] = to;
+        };
+        for (const { before, after } of rewritten) swapSheet(before, after);
+        history.pushToUndo(new Map(prev), rewritten.length === 0 ? undefined : {
+            undo: () => { for (const { before, after } of rewritten) swapSheet(after, before); },
+            redo: () => { for (const { before, after } of rewritten) swapSheet(before, after); },
+        });
+
         setData(result.cells);
         setColWidths(result.colWidths);
         setRowHeights(result.rowHeights);
         cf.updateConditionalFormats(result.conditionalFormats);
         tableRegions.updateTableRegions(result.tableRegions);
         dirtyRef.current = true;
-    }, [dataRef, setData, history, cf, tableRegions, setColWidths, setRowHeights, dirtyRef]);
+    }, [dataRef, setData, history, cf, tableRegions, setColWidths, setRowHeights, dirtyRef, sheets]);
 
     const runStructuralShift = useCallback((axis: 'row' | 'col', op: 'insert' | 'delete', index: number) => {
         runStructuralShifts(axis, op, [index]);

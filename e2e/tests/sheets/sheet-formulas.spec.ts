@@ -77,6 +77,23 @@ test.describe('Spreadsheet formulas', () => {
     await expectCell(page, 'E2', '500');
     await expectCell(page, 'E3', '30');
   });
+
+  test('a pasted number with thousands separators keeps its whole value', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    await registerAndLogin(request, page, 'groupedpaste');
+    await openNewSheet(page);
+
+    await page.locator('[data-type="cell"][id="A1"]').click();
+    await page.evaluate(() => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', '-2,373.14');
+      document.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+    });
+
+    await expectCell(page, 'A1', '-2,373.14');
+    await setCell(page, 'B1', '=A1*2');
+    await expectCell(page, 'B1', '-4746.28');
+  });
 });
 
 // ── Math functions ───────────────────────────────────────────────────────────

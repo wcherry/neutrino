@@ -254,6 +254,21 @@ export function parseCellDateValue(value: string): Date {
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 }
 
+/**
+ * The plain number behind text written with thousands separators, or null when
+ * the text is anything else: "-2,373.14" gives "-2373.14".
+ *
+ * Every reader of a cell's value goes through parseFloat, which stops at the
+ * first comma, so "-2,373.14" would otherwise format and sum as -2. The grouping
+ * has to be well formed ("1,234,567"), because "1,2" and "12,34" are more likely
+ * lists or European decimals than numbers, and those stay text.
+ */
+export function groupedNumberValue(text: string): string | null {
+    const trimmed = text.trim();
+    if (!/^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed)) return null;
+    return trimmed.replace(/,/g, '').replace(/^\+/, '');
+}
+
 export function applyCustomFormat(value: string, fmt: string): string {
     if (!value) return value;
     // Date/time format
@@ -279,10 +294,12 @@ export function applyCustomFormat(value: string, fmt: string): string {
     return num.toLocaleString('en-US', { useGrouping, minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-export function formatCellValue(value: string, style?: CellStyle): string {
+// `raw` is only consulted for an unformatted cell: a number typed with thousands
+// separators keeps them on screen, while its value is the plain number.
+export function formatCellValue(value: string, style?: CellStyle, raw?: string): string {
     if (!value) return value;
     if (style?.customFormat) return applyCustomFormat(value, style.customFormat);
-    if (!style?.numberFormat) return value;
+    if (!style?.numberFormat) return raw !== undefined && groupedNumberValue(raw) !== null ? raw.trim() : value;
     const num = parseFloat(value);
     if (isNaN(num)) return value;
     const decimals = style.decimalPlaces ?? (style.numberFormat === 'currency' ? 2 : 0);
