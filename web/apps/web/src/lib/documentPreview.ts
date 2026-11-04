@@ -10,7 +10,6 @@
  *
  * `useDocumentPreview` decides *when*; this file only knows *how*.
  */
-import { toCanvas } from 'html-to-image';
 
 /** The longest edge of a stored preview, in pixels — the size uploads use too. */
 export const PREVIEW_MAX_EDGE = 512;
@@ -87,6 +86,11 @@ export async function renderElementPreview(
   const height = Math.round(options.height ?? element.scrollHeight);
   if (!width || !height) return null;
   const background = options.background ?? '#ffffff';
+  // Loaded here rather than at the top of the file: this runs when the browser
+  // is idle, and every editor imports this module, so a static import would put
+  // the library in each editor's first-load JS (route-budgets.json), including
+  // Drawing's and Diagrams', which never rasterise their DOM.
+  const { toCanvas } = await import('html-to-image');
   const canvas = await toCanvas(element, {
     width,
     height,
