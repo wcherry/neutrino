@@ -344,7 +344,8 @@ export function ThemeEditorModal({ open, onClose, mode, theme, onSaved, onDelete
           </div>
         </ModalBody>
         <ModalFooter>
-          {mode === 'edit' && theme && (
+          {/* A public theme can't be deleted, the same rule as the grid's menu. */}
+          {mode === 'edit' && theme && !theme.isPublic && (
             <div className={styles.footerLeft}>
               <Button
                 variant="ghost"

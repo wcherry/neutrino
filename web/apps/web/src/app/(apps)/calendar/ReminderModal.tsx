@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import type { CreateReminderRequest, UpdateReminderRequest } from '@/lib/api';
 import type { ReminderModalProps } from './calendarTypes';
-import { REPEAT_OPTIONS } from './calendarConstants';
+import { buildRepeatRule, parseRepeatRule, type RepeatRule } from './repeatRule';
+import RepeatFields from './RepeatFields';
 import { scopeLabel } from './RecurrenceScopeModal';
 import styles from './page.module.css';
 
@@ -27,15 +28,20 @@ export default function ReminderModal({ initial, scope, onClose, onSave, isPendi
   const [dueTime, setDueTime] = useState(() =>
     initial ? toLocal(initial.dueTime) : defaultDue()
   );
-  const [recurrence, setRecurrence] = useState(initialRule);
+  // The form's times are the browser's, so its zone is the one a repeat's end date is read in.
+  const repeatContext = { allDay: false, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const [repeat, setRepeat] = useState<RepeatRule | null>(() =>
+    initialRule ? parseRepeatRule(initialRule, repeatContext) : null);
+  // Until the repeat is changed, the stored rule stands exactly as it was, so opening and saving
+  // a reminder never rewrites a rule from the iOS app, a synced calendar or the API.
+  const [repeatTouched, setRepeatTouched] = useState(false);
 
-  // A rule written somewhere else (the iOS app, a synced calendar, the API) that isn't one of the
-  // standard choices is offered as it is, so opening and saving a reminder never rewrites it.
-  const isCustomRule = initialRule !== '' && !REPEAT_OPTIONS.some((o) => o.value === initialRule);
+  const recurrence = !repeatTouched ? initialRule : repeat ? buildRepeatRule(repeat, repeatContext) : '';
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
+    if (repeat?.end.kind === 'on' && repeat.end.date < dueTime.slice(0, 10)) return;
     const base = { title: title.trim(), dueTime: new Date(dueTime).toISOString() };
     if (!initial) {
       onSave({ ...base, recurrenceRule: recurrence || null } satisfies CreateReminderRequest);
@@ -75,23 +81,20 @@ export default function ReminderModal({ initial, scope, onClose, onSave, isPendi
             />
           </div>
           {showsRepeat && (
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel} htmlFor="reminder-repeat">Repeats</label>
-              <select
-                id="reminder-repeat"
-                className={styles.formInput}
-                value={recurrence}
-                onChange={(e) => setRecurrence(e.target.value)}
-              >
-                {REPEAT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-                {isCustomRule && <option value={initialRule}>Custom ({initialRule})</option>}
-              </select>
+            <>
+              <RepeatFields
+                rule={repeat}
+                customRule={!repeatTouched && !repeat && initialRule ? initialRule : null}
+                start={dueTime}
+                onChange={(rule) => {
+                  setRepeat(rule);
+                  setRepeatTouched(true);
+                }}
+              />
               {recurrence && (
                 <div className={styles.formHint}>Completing it moves it to the next time it&apos;s due.</div>
               )}
-            </div>
+            </>
           )}
         </form>
       </ModalBody>
