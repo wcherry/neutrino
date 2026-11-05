@@ -85,14 +85,16 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
     setEditorOpen(true);
   }
 
+  function openEdit(theme: CustomTheme) {
+    setEditorMode('edit');
+    setEditingTheme(theme);
+    setEditorOpen(true);
+  }
+
   // Duplicate a built-in preset or an existing custom theme (own or someone
   // else's public one) into a brand-new private custom theme, then land the
   // user directly in the editor for the fresh copy — same mechanism openEdit
   // already uses, just fed the newly-created record instead of a list entry.
-  //
-  // No standalone "Edit" entry point exists in this iteration — the only way
-  // into ThemeEditorModal's edit mode is via this Duplicate flow. See
-  // ThemeContextMenu.tsx for the corresponding note.
   async function handleDuplicate(name: string, colorScheme: ThemeColorScheme, tokens: Record<string, string>) {
     if (duplicating) return;
     setDuplicating(true);
@@ -129,19 +131,23 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
     setDeleteTarget(theme);
   }
 
+  // Deleting the currently-active custom theme must never leave the UI
+  // stuck on a data-theme value with no backing stylesheet rule — fall
+  // back to 'system', applied + persisted via the same onSelect contract
+  // the parent already wires up for every other selection.
+  async function afterDelete(themeId: string) {
+    if (activeTheme === `custom-${themeId}`) {
+      onSelect('system');
+    }
+    await refetch();
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
       await themesApi.deleteTheme(deleteTarget.id);
-      // Deleting the currently-active custom theme must never leave the UI
-      // stuck on a data-theme value with no backing stylesheet rule — fall
-      // back to 'system', applied + persisted via the same onSelect contract
-      // the parent already wires up for every other selection.
-      if (activeTheme === `custom-${deleteTarget.id}`) {
-        onSelect('system');
-      }
-      await refetch();
+      await afterDelete(deleteTarget.id);
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
@@ -259,6 +265,11 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
           x={menuTarget.x}
           y={menuTarget.y}
           onClose={() => setMenuTarget(null)}
+          onEdit={
+            menuTarget.kind === 'custom' && menuTarget.theme.isOwner
+              ? () => openEdit(menuTarget.theme)
+              : undefined
+          }
           onDuplicate={
             menuTarget.kind === 'preset'
               ? () => handleDuplicatePreset(menuTarget.preset)
@@ -283,6 +294,7 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
         theme={editingTheme}
         onClose={() => setEditorOpen(false)}
         onSaved={() => { void refetch(); }}
+        onDelete={(themeId) => { void afterDelete(themeId); }}
       />
 
       <AlertDialog

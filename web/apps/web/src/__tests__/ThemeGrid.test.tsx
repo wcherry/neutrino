@@ -245,13 +245,14 @@ describe('ThemeGrid', () => {
     expect(menu).toBeInTheDocument();
   });
 
-  it('public custom theme menu (isOwner: true) contains only Duplicate', async () => {
+  it('public custom theme menu (isOwner: true) contains Edit and Duplicate', async () => {
     mockUseCustomThemes.mockReturnValue({ themes: [ownedPublicTheme], loaded: true, refetch: mockRefetch });
     renderGrid();
     await openMenuFor('My Public Theme');
     const items = screen.getAllByRole('menuitem');
-    expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent('Duplicate');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('Edit');
+    expect(items[1]).toHaveTextContent('Duplicate');
   });
 
   it("public custom theme menu (someone else's, isOwner: false) contains only Duplicate", async () => {
@@ -263,22 +264,37 @@ describe('ThemeGrid', () => {
     expect(items[0]).toHaveTextContent('Duplicate');
   });
 
-  it('private custom theme menu contains Duplicate, Make public, then Delete (in that order)', async () => {
+  it('private custom theme menu contains Edit, Duplicate, Make public, then Delete (in that order)', async () => {
     mockUseCustomThemes.mockReturnValue({ themes: [ownedPrivateTheme], loaded: true, refetch: mockRefetch });
     renderGrid();
     await openMenuFor('My Owned Theme');
     const items = screen.getAllByRole('menuitem');
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Duplicate');
-    expect(items[1]).toHaveTextContent('Make public');
-    expect(items[2]).toHaveTextContent('Delete');
+    expect(items).toHaveLength(4);
+    expect(items[0]).toHaveTextContent('Edit');
+    expect(items[1]).toHaveTextContent('Duplicate');
+    expect(items[2]).toHaveTextContent('Make public');
+    expect(items[3]).toHaveTextContent('Delete');
   });
 
-  it('there is no standalone Edit item in any menu', async () => {
+  it('Edit opens the editor on the theme itself and creates nothing', async () => {
     mockUseCustomThemes.mockReturnValue({ themes: [ownedPrivateTheme], loaded: true, refetch: mockRefetch });
     renderGrid();
     await openMenuFor('My Owned Theme');
-    expect(screen.queryByRole('menuitem', { name: /edit/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    expect(editorModalProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ open: true, mode: 'edit', theme: ownedPrivateTheme }),
+    );
+    expect(mockCreateTheme).not.toHaveBeenCalled();
+  });
+
+  it('deleting the active theme from the editor falls back to system and refreshes the grid', async () => {
+    mockUseCustomThemes.mockReturnValue({ themes: [ownedPrivateTheme], loaded: true, refetch: mockRefetch });
+    mockUseTheme.mockReturnValue({ theme: `custom-${ownedPrivateTheme.id}` });
+    const { onSelect } = renderGrid();
+    const { onDelete } = editorModalProps.mock.lastCall![0] as { onDelete: (id: string) => void };
+    onDelete(ownedPrivateTheme.id);
+    expect(onSelect).toHaveBeenCalledWith('system');
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalled());
   });
 
   // ── Menu open/close behavior ──────────────────────────────────────────

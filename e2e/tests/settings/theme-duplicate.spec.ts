@@ -102,6 +102,25 @@ async function createCustomTheme(
   await expect(dialog).not.toBeVisible({ timeout: 5_000 });
 }
 
+test.describe('Editing a custom theme', () => {
+  test('Edit changes the theme in place, without a copy', async ({ page, request }) => {
+    await registerAndLogin(request, page, 'edit_theme');
+    await gotoAppearance(page);
+    await createCustomTheme(page, 'Mine');
+
+    await openThemeMenu(page, 'Mine');
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+    const dialog = await expectEditorOpenWithName(page, 'Mine');
+    await dialog.getByLabel('Name').fill('Renamed');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+
+    await expect(page.getByRole('button', { name: 'Renamed', exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('button', { name: 'Mine', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Renamed copy', exact: true })).toHaveCount(0);
+  });
+});
+
 test.describe('Theme duplication', () => {
   test('duplicating a built-in preset creates a new custom theme and opens the editor on it', async ({
     page,

@@ -226,6 +226,11 @@ describe('ThemeEditorModal', () => {
 
   // ── Delete (AlertDialog, never window.confirm) ──────────────────────
 
+  it('offers no Delete on a public theme, the same rule as the grid menu', () => {
+    renderModal({ mode: 'edit', theme: { ...existingTheme, isPublic: true } });
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
   it('uses an AlertDialog to confirm deletion and never calls window.confirm', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
     const onDelete = vi.fn();
