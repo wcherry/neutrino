@@ -23,12 +23,12 @@ interface RepeatFieldsProps {
   rule: RepeatRule | null;
   /** A stored rule the form can't represent, shown as "Custom" and kept until changed. */
   customRule: string | null;
-  /** The event's start, as the form holds it (`yyyy-mm-dd` or `yyyy-mm-ddThh:mm`). */
+  /** When it first happens, as the form holds it (`yyyy-mm-dd` or `yyyy-mm-ddThh:mm`). */
   start: string;
   onChange: (rule: RepeatRule | null) => void;
 }
 
-/** How often an event repeats — "every 3 days" — and when it stops: never, on a date, or after N times. */
+/** How often an event or reminder repeats — "every 3 days" — and when it stops: never, on a date, or after N times. */
 export default function RepeatFields({ rule, customRule, start, onChange }: RepeatFieldsProps) {
   const preset = rule ? repeatPreset(rule) : customRule ? CUSTOM : '';
   const startDate = start.slice(0, 10);

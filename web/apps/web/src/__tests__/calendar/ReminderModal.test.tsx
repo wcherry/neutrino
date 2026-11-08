@@ -95,10 +95,46 @@ describe('ReminderModal repeat field', () => {
     expect(onSave.mock.calls[0][0]).toHaveProperty('recurrenceRule', '');
   });
 
-  it('keeps a rule it has no choice for, rather than rewriting it on save', () => {
+  it('repeats every 6 months', () => {
+    const onSave = renderModal();
+    fireEvent.change(screen.getByPlaceholderText('Reminder title'), { target: { value: 'Dentist' } });
+    fireEvent.change(repeat(), { target: { value: 'FREQ=MONTHLY' } });
+    fireEvent.change(screen.getByLabelText('Every'), { target: { value: '6' } });
+    expect(screen.getByText('months')).toBeTruthy();
+    submit();
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ recurrenceRule: 'FREQ=MONTHLY;INTERVAL=6' }));
+  });
+
+  it('stops after a number of times', () => {
+    const onSave = renderModal();
+    fireEvent.change(screen.getByPlaceholderText('Reminder title'), { target: { value: 'Dentist' } });
+    fireEvent.change(repeat(), { target: { value: 'FREQ=YEARLY' } });
+    fireEvent.change(screen.getByLabelText('Ends'), { target: { value: 'after' } });
+    submit();
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ recurrenceRule: 'FREQ=YEARLY;COUNT=10' }));
+  });
+
+  it('shows a stored interval, and sends the rule only once it changes', () => {
     const onSave = renderModal(existing('FREQ=MONTHLY;INTERVAL=3'));
-    expect(repeat().value).toBe('FREQ=MONTHLY;INTERVAL=3');
-    expect(screen.getByText('Custom (FREQ=MONTHLY;INTERVAL=3)')).toBeTruthy();
+    expect(repeat().value).toBe('FREQ=MONTHLY');
+    expect((screen.getByLabelText('Every') as HTMLInputElement).value).toBe('3');
+    submit();
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('recurrenceRule');
+
+    fireEvent.change(screen.getByLabelText('Every'), { target: { value: '6' } });
+    submit();
+    expect(onSave.mock.calls[1][0]).toHaveProperty('recurrenceRule', 'FREQ=MONTHLY;INTERVAL=6');
+  });
+
+  it('does not reorder a stored rule that was not changed', () => {
+    const onSave = renderModal(existing('INTERVAL=2;FREQ=WEEKLY'));
+    submit();
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('recurrenceRule');
+  });
+
+  it('keeps a rule the form cannot represent, rather than rewriting it on save', () => {
+    const onSave = renderModal(existing('FREQ=HOURLY'));
+    expect(screen.getByText('Custom (FREQ=HOURLY)')).toBeTruthy();
     submit();
     expect(onSave.mock.calls[0][0]).not.toHaveProperty('recurrenceRule');
   });

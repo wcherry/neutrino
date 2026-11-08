@@ -240,6 +240,26 @@ test.describe('Calendar repeating events', () => {
     expect(await listEvents(request, token)).toEqual([]);
   });
 
+  test('a reminder can repeat every 6 months', async ({ page, request }) => {
+    const token = await registerAndLogin(request, page);
+    const title = uniqueTitle('Dentist');
+
+    await page.goto('/calendar');
+    await page.getByTitle('New reminder').click();
+    const form = page.getByRole('dialog');
+    await form.getByPlaceholder('Reminder title').fill(title);
+    await form.getByLabel('Repeats').selectOption({ label: 'Monthly' });
+    await form.getByLabel('Every').fill('6');
+    await expect(form.getByText('months', { exact: true })).toBeVisible();
+    await form.getByRole('button', { name: 'Create Reminder' }).click();
+    await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 10_000 });
+
+    const listed = await request.get(`${BASE_URL}/api/v1/calendar/reminders`, { headers: headers(token) });
+    expect(listed.ok()).toBeTruthy();
+    const body = (await listed.json()) as { reminders: { title: string; recurrenceRule: string | null }[] };
+    expect(body.reminders.find((r) => r.title === title)?.recurrenceRule).toBe('FREQ=MONTHLY;INTERVAL=6');
+  });
+
   test('editing this reminder makes a one-off and moves the repeating one on', async ({ page, request }) => {
     const token = await registerAndLogin(request, page);
     const title = uniqueTitle('Vitamins');

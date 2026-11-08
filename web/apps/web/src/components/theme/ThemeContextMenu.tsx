@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Copy, Globe, Trash2 } from 'lucide-react';
+import { Copy, Globe, Pencil, Trash2 } from 'lucide-react';
 import { useDismiss } from '@neutrino/commands';
 import styles from './ThemeContextMenu.module.css';
 
@@ -9,6 +9,9 @@ interface Props {
   x: number;
   y: number;
   onClose: () => void;
+  /** Present only when the menu should offer Edit — i.e. the subject is a
+   *  custom theme the caller owns, public or private. */
+  onEdit?: () => void;
   onDuplicate: () => void;
   /** Present only when the menu should offer "Make public" — i.e. the
    *  subject is a private custom theme (see ThemeGrid's per-kind wiring). */
@@ -19,7 +22,7 @@ interface Props {
   onDelete?: () => void;
 }
 
-export function ThemeContextMenu({ x, y, onClose, onDuplicate, onMakePublic, onDelete }: Props) {
+export function ThemeContextMenu({ x, y, onClose, onEdit, onDuplicate, onMakePublic, onDelete }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
 
@@ -44,10 +47,8 @@ export function ThemeContextMenu({ x, y, onClose, onDuplicate, onMakePublic, onD
     setPos({ x: Math.max(4, clampedX), y: Math.max(4, clampedY) });
   }, [x, y]);
 
-  // No standalone "Edit" item, intentionally: the only path into
-  // ThemeEditorModal's edit mode is via Duplicate, which opens the editor on
-  // the fresh copy. Revisit if a direct-edit entry point is ever wanted.
   const items = [
+    ...(onEdit ? [{ icon: <Pencil size={14} />, label: 'Edit', action: onEdit }] : []),
     { icon: <Copy size={14} />, label: 'Duplicate', action: onDuplicate },
     ...(onMakePublic ? [{ icon: <Globe size={14} />, label: 'Make public', action: onMakePublic }] : []),
     ...(onDelete
