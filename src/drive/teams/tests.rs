@@ -15,11 +15,11 @@ use super::dto::*;
 use super::quota::DEFAULT_TEAM_QUOTA_BYTES;
 use super::repository::{DbPool, TeamsRepository};
 use super::roles::Role;
-use super::service::{TeamsService, FLAG_TEAM_FILE_TRANSFERS, FLAG_TEAM_SPACES};
+use super::service::TeamsService;
 use crate::drive::activity::{repository::ActivityRepository, service::ActivityService};
 use crate::drive::feature_flags::gate::FeatureGate;
 use crate::drive::feature_flags::repository::FeatureFlagsRepository;
-use crate::schema::{feature_flags, files, teams, users};
+use crate::schema::{files, teams, users};
 use crate::shared::AuthenticatedUser;
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -39,36 +39,8 @@ fn user(id: &str, email: &str) -> AuthenticatedUser {
 }
 
 impl Fixture {
-    /// A stack with `teamSpaces` on, since a test that leaves it off is testing the gate rather
-    /// than the feature. `gated_off` covers the other side.
+    /// A stack with every team route reachable — nothing in Team Spaces is gated during the beta.
     fn new() -> Self {
-        let f = Self::gated_off();
-        diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
-            .set(feature_flags::enabled.eq(1))
-            .execute(&mut f.pool.get().expect("conn"))
-            .expect("enable flag");
-        f
-    }
-
-    /// `teamSpaces` on *and* `teamFileTransfers` on — the stack the move and share routes need.
-    ///
-    /// A separate constructor rather than folding it into `new`, so that every test written before
-    /// the second flag existed goes on running with it off and would catch a transfer route that
-    /// forgot to ask for it.
-    fn with_transfers() -> Self {
-        let f = Self::new();
-        f.set_flag(FLAG_TEAM_FILE_TRANSFERS, true);
-        f
-    }
-
-    fn set_flag(&self, key: &str, on: bool) {
-        diesel::update(feature_flags::table.filter(feature_flags::key.eq(key)))
-            .set(feature_flags::enabled.eq(i32::from(on)))
-            .execute(&mut self.pool.get().expect("conn"))
-            .expect("set flag");
-    }
-
-    fn gated_off() -> Self {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
         let pool: DbPool = Pool::builder().max_size(1).build(manager).expect("pool");
         pool.get()
@@ -177,88 +149,6 @@ fn update_team_request() -> UpdateTeamRequest {
 }
 
 // ── The gate ─────────────────────────────────────────────────────────────────
-
-/// With the flag off the routes behave as though the feature does not exist — 404, not 403, so
-/// probing team ids reveals nothing about what a deployment is about to ship.
-#[test]
-fn every_team_route_is_dark_while_the_flag_is_off() {
-    let f = Fixture::gated_off();
-    let owner = user("u1", "owner@example.com");
-
-    let err = f.service.list_teams(&owner).expect_err("gated");
-    assert_eq!(err.status, 404);
-
-    let err = f
-        .service
-        .create_team(
-            CreateTeamRequest {
-                name: "Marketing".into(),
-                description: None,
-                avatar_color: None,
-                avatar_emoji: None,
-                visibility: None,
-            },
-            &owner,
-        )
-        .expect_err("gated");
-    assert_eq!(err.status, 404);
-}
-
-/// The one flag governs the whole feature — pages, the file library and the activity feed
-/// included. There is no state in which a team exists but its wiki does not.
-#[test]
-fn the_single_flag_governs_every_part_of_the_feature() {
-    let f = Fixture::new();
-    let owner = user("u1", "owner@example.com");
-    let team = f.create_team("Marketing", &owner);
-
-    // On: every surface answers.
-    assert!(f.service.list_pages(&team.id, None, &owner).is_ok());
-    assert!(f.service.list_library(&team.id, None, &owner).is_ok());
-    assert!(f.service.list_activity(&team.id, &owner).is_ok());
-
-    // Off: all of them go dark together, and so does the team itself.
-    diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
-        .set(feature_flags::enabled.eq(0))
-        .execute(&mut f.pool.get().expect("conn"))
-        .expect("disable");
-
-    for status in [
-        f.service.get_team(&team.id, &owner).expect_err("gated").status,
-        f.service
-            .list_pages(&team.id, None, &owner)
-            .expect_err("gated")
-            .status,
-        f.service
-            .list_library(&team.id, None, &owner)
-            .expect_err("gated")
-            .status,
-        f.service.list_activity(&team.id, &owner).expect_err("gated").status,
-        f.service.list_discoverable(&owner).expect_err("gated").status,
-        f.service.join_team(&team.id, &owner).expect_err("gated").status,
-    ] {
-        assert_eq!(status, 404);
-    }
-}
-
-/// The gate is read per request, not cached at startup — which is the whole reason these are rows
-/// rather than environment variables.
-#[test]
-fn toggling_the_flag_takes_effect_without_a_restart() {
-    let f = Fixture::gated_off();
-    let owner = user("u1", "owner@example.com");
-    f.add_user("u1", "owner@example.com", "Owner");
-
-    assert_eq!(f.service.list_teams(&owner).expect_err("off").status, 404);
-
-    diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
-        .set(feature_flags::enabled.eq(1))
-        .execute(&mut f.pool.get().expect("conn"))
-        .expect("enable");
-
-    // The same service instance, no rebuild, no restart.
-    assert_eq!(f.service.list_teams(&owner).expect("on").total, 0);
-}
 
 // ── Phase 1: the Team object ─────────────────────────────────────────────────
 
@@ -1429,7 +1319,7 @@ fn team_membership_grants_a_drive_role_over_the_teams_files() {
 /// here rather than as a team that was created with one limit and backfilled to another.
 #[test]
 fn the_backfilled_quota_matches_the_constant() {
-    let f = Fixture::gated_off();
+    let f = Fixture::new();
     // Before taking the connection: the test pool holds exactly one, and `add_user` wants it.
     f.add_user("u1", "owner@example.com", "Owner");
     let mut conn = f.pool.get().expect("conn");
@@ -1484,7 +1374,7 @@ fn a_new_team_is_created_with_the_default_quota() {
 /// repaired rather than displayed wrong for ever.
 #[test]
 fn reading_a_team_repairs_a_drifted_storage_counter() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Budget.xlsx", 2048);
@@ -1505,7 +1395,7 @@ fn reading_a_team_repairs_a_drifted_storage_counter() {
 /// The listing is the console's whole reason to exist: which team is closest to full.
 #[test]
 fn the_admin_listing_orders_teams_by_how_full_they_are() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let small = f.create_team("Small", &owner);
     let big = f.create_team("Big", &owner);
@@ -1536,7 +1426,7 @@ fn the_admin_listing_orders_teams_by_how_full_they_are() {
 /// is not — an administrator diagnosing a full disk must not be shown the stale number.
 #[test]
 fn the_admin_listing_does_not_trust_the_cached_counter() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Budget.xlsx", 2048);
@@ -1685,7 +1575,7 @@ fn a_quota_change_is_logged_where_the_team_can_see_it() {
 /// work": the files stay, and the next one is refused.
 #[test]
 fn a_lowered_quota_keeps_the_files_and_refuses_the_next_one() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Budget.xlsx", 5000);
@@ -1802,63 +1692,6 @@ fn an_archived_teams_quota_can_still_be_set() {
         .expect("set on an archived team");
     assert!(updated.archived);
     assert_eq!(updated.storage_limit_bytes, Some(4096));
-}
-
-/// The admin routes are behind `teamSpaces` like everything else here: with the flag off no team
-/// can exist, so a console listing them is a page about nothing, and a 404 keeps the rule that a
-/// gated feature is invisible rather than merely refused.
-#[test]
-fn the_admin_routes_are_behind_the_flag() {
-    let f = Fixture::gated_off();
-
-    assert_eq!(
-        f.service.admin_list_teams(None, 50, 0).expect_err("gated").status,
-        404
-    );
-    assert_eq!(
-        f.service
-            .admin_set_team_quota(
-                "any-team",
-                SetTeamQuotaRequest {
-                    storage_limit_bytes: Some(1),
-                },
-                "admin-1",
-            )
-            .expect_err("gated")
-            .status,
-        404
-    );
-    assert_eq!(
-        f.service
-            .admin_set_team_owner(
-                "any-team",
-                SetTeamOwnerRequest {
-                    email: "someone@example.com".into(),
-                },
-                "admin-1",
-            )
-            .expect_err("gated")
-            .status,
-        404
-    );
-    assert_eq!(
-        f.service
-            .admin_set_team_archived(
-                "any-team",
-                SetTeamArchivedRequest { archived: true },
-                "admin-1",
-            )
-            .expect_err("gated")
-            .status,
-        404
-    );
-    assert_eq!(
-        f.service
-            .admin_delete_team("any-team", "admin-1")
-            .expect_err("gated")
-            .status,
-        404
-    );
 }
 
 // ── Administering a team from outside it ─────────────────────────────────────
@@ -2286,65 +2119,9 @@ fn share_request(file_id: &str, role: Option<&str>) -> ShareFileWithTeamRequest 
     }
 }
 
-/// The second flag is a switch of its own: with Team Spaces fully on and this off, the team is
-/// there, its library is there, and the two routes that reach into My Drive are not.
-#[test]
-fn transfers_are_dark_while_only_team_spaces_is_on() {
-    let f = Fixture::new();
-    let owner = user("u1", "owner@example.com");
-    let team = f.create_team("Marketing", &owner);
-    f.add_file("file-1", "u1", "Budget.xlsx", 10);
-
-    // Team Spaces itself is unaffected.
-    assert!(f.service.list_library(&team.id, None, &owner).is_ok());
-
-    for status in [
-        f.service
-            .move_file_into_team(&team.id, move_request("file-1"), &owner)
-            .expect_err("gated")
-            .status,
-        f.service
-            .share_file_with_team(&team.id, share_request("file-1", None), &owner)
-            .expect_err("gated")
-            .status,
-        f.service
-            .list_shared_files(&team.id, &owner)
-            .expect_err("gated")
-            .status,
-        f.service
-            .unshare_file_from_team(&team.id, "file-1", &owner)
-            .expect_err("gated")
-            .status,
-        f.service
-            .list_file_team_shares("file-1", &owner)
-            .expect_err("gated")
-            .status,
-    ] {
-        assert_eq!(status, 404, "a gated-off transfer route must be invisible");
-    }
-}
-
-/// `teamSpaces` is checked first, so a deployment with only the transfer flag on is
-/// indistinguishable from one with neither — no route starts answering differently for a real team
-/// id while Team Spaces is switched off.
-#[test]
-fn the_transfer_flag_alone_turns_nothing_on() {
-    let f = Fixture::with_transfers();
-    let owner = user("u1", "owner@example.com");
-    let team = f.create_team("Marketing", &owner);
-    f.add_file("file-1", "u1", "Budget.xlsx", 10);
-    f.set_flag(FLAG_TEAM_SPACES, false);
-
-    let err = f
-        .service
-        .move_file_into_team(&team.id, move_request("file-1"), &owner)
-        .expect_err("gated");
-    assert_eq!(err.status, 404);
-}
-
 #[test]
 fn moving_a_personal_file_puts_it_in_the_team_and_moves_the_meter() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Budget.xlsx", 2048);
@@ -2367,7 +2144,7 @@ fn moving_a_personal_file_puts_it_in_the_team_and_moves_the_meter() {
 /// than after.
 #[test]
 fn a_move_reports_the_shares_it_makes_inert() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Budget.xlsx", 10);
@@ -2405,7 +2182,7 @@ fn a_move_reports_the_shares_it_makes_inert() {
 /// in a team, or somebody else's, cannot be pulled across by id.
 #[test]
 fn a_move_cannot_take_a_file_that_is_not_the_callers() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u2", "Someone else's.txt", 10);
@@ -2432,7 +2209,7 @@ fn a_move_cannot_take_a_file_that_is_not_the_callers() {
 /// write however it got there.
 #[test]
 fn a_viewer_can_neither_move_nor_share_into_a_team() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let viewer = user("u2", "viewer@example.com");
     let team = f.create_team("Marketing", &owner);
@@ -2468,7 +2245,7 @@ fn a_viewer_can_neither_move_nor_share_into_a_team() {
 /// A Contributor adds but does not remove, and both of these add.
 #[test]
 fn a_contributor_can_move_and_share() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let contributor = user("u2", "contrib@example.com");
     let team = f.create_team("Marketing", &owner);
@@ -2500,7 +2277,7 @@ fn a_contributor_can_move_and_share() {
 /// a route that happens to be about the caller's own file.
 #[test]
 fn a_non_member_cannot_move_a_file_into_a_team() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     let stranger = f.outsider("u9");
@@ -2515,7 +2292,7 @@ fn a_non_member_cannot_move_a_file_into_a_team() {
 
 #[test]
 fn a_move_is_refused_when_the_team_has_no_room() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     diesel::update(teams::table.filter(teams::id.eq(&team.id)))
@@ -2542,7 +2319,7 @@ fn a_move_is_refused_when_the_team_has_no_room() {
 /// An archived team is read-only for everyone, and a move is a write to it.
 #[test]
 fn an_archived_team_accepts_neither_a_move_nor_a_share() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.service
@@ -2577,7 +2354,7 @@ fn an_archived_team_accepts_neither_a_move_nor_a_share() {
 /// is what makes a share revocable: the file never stopped being the sharer's.
 #[test]
 fn sharing_lends_a_file_without_moving_it() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Roadmap.md", 64);
@@ -2608,7 +2385,7 @@ fn sharing_lends_a_file_without_moving_it() {
 /// exactly one answer and it is not decided by row order.
 #[test]
 fn re_sharing_changes_the_role_rather_than_adding_a_second_share() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Roadmap.md", 10);
@@ -2629,7 +2406,7 @@ fn re_sharing_changes_the_role_rather_than_adding_a_second_share() {
 /// handing every member the authority to give it away.
 #[test]
 fn a_share_will_not_grant_ownership_or_an_unknown_role() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Roadmap.md", 10);
@@ -2654,7 +2431,7 @@ fn a_share_will_not_grant_ownership_or_an_unknown_role() {
 /// rendering as a row pointing at nothing. There is no cleanup pass; the join is the cleanup.
 #[test]
 fn a_shared_file_that_stops_being_personal_leaves_the_listing() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     let other = f.create_team("Design", &owner);
@@ -2682,7 +2459,7 @@ fn a_shared_file_that_stops_being_personal_leaves_the_listing() {
 /// appears on its own Files page. Nobody else can, including the team's other content editors.
 #[test]
 fn only_the_sharer_or_a_team_admin_can_unshare() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let editor = user("u2", "editor@example.com");
     let team = f.create_team("Marketing", &owner);
@@ -2726,7 +2503,7 @@ fn only_the_sharer_or_a_team_admin_can_unshare() {
 /// An admin can turn down a file lent by somebody else.
 #[test]
 fn a_team_admin_can_remove_a_file_someone_else_shared() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let contributor = user("u2", "contrib@example.com");
     let team = f.create_team("Marketing", &owner);
@@ -2760,7 +2537,7 @@ fn a_team_admin_can_remove_a_file_someone_else_shared() {
 /// pause button for the team's own content, not a lock on other people's.
 #[test]
 fn a_lend_can_be_taken_back_from_an_archived_team() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Roadmap.md", 10);
@@ -2787,7 +2564,7 @@ fn a_lend_can_be_taken_back_from_an_archived_team() {
 /// a team that never existed.
 #[test]
 fn shares_are_invisible_outside_the_team() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     let stranger = f.outsider("u9");
@@ -2816,7 +2593,7 @@ fn shares_are_invisible_outside_the_team() {
 /// have access: every team, with the identity the picker showed and the role each was lent at.
 #[test]
 fn a_file_says_which_teams_it_is_lent_to() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let marketing = f.create_team("Marketing", &owner);
     let design = f.create_team("Design", &owner);
@@ -2860,7 +2637,7 @@ fn a_file_says_which_teams_it_is_lent_to() {
 /// see it. A team's own admin is not exempt: the question is about somebody's personal file.
 #[test]
 fn only_the_files_owner_can_ask_which_teams_it_is_lent_to() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let member = user("u2", "member@example.com");
     let team = f.create_team("Marketing", &owner);
@@ -2901,7 +2678,7 @@ fn only_the_files_owner_can_ask_which_teams_it_is_lent_to() {
 /// that ends it, which `a_lend_can_be_taken_back_from_an_archived_team` proves still works.
 #[test]
 fn an_archived_teams_lend_is_still_listed_on_the_file() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.add_file("file-1", "u1", "Roadmap.md", 10);
@@ -2928,7 +2705,7 @@ fn an_archived_teams_lend_is_still_listed_on_the_file() {
 /// read by your team" has no subject left once the file is a team's.
 #[test]
 fn moving_a_file_into_a_team_ends_its_lends_to_other_teams() {
-    let f = Fixture::with_transfers();
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let lender = f.create_team("Design", &owner);
     let destination = f.create_team("Marketing", &owner);

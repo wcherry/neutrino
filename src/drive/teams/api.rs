@@ -3,9 +3,6 @@
 //! Everything hangs off `/api/v1/drive/teams`, additively: no existing Drive route changes shape,
 //! so the six iOS apps and the macOS client are unaffected by this release and can adopt the team
 //! routes on their own schedule.
-//!
-//! Every handler is gated in the service rather than here, so a route cannot be added without
-//! passing through the gate, and a gated-off route answers 404 — see `feature_flags::gate`.
 
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
@@ -853,9 +850,8 @@ pub async fn restore_page_version(
 
 /// The team's recent activity, newest first.
 ///
-/// Behind `teamSpaces` like every other team route. The entries were written on each team write
-/// since the flag went on, so the feed has a history from the first team created rather than from
-/// whenever someone first looked at it.
+/// The entries are written on each team write, so the feed has a history from the first team
+/// created rather than from whenever someone first looked at it.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/teams/{teamId}/activity",
@@ -1027,9 +1023,7 @@ pub async fn trash_library_file(
 
 // ── Transfers ────────────────────────────────────────────────────────────────
 //
-// The four routes behind the second flag, `teamFileTransfers`, and the only ones here that touch a
-// file outside a team. All four answer 404 when either flag is off — `teamSpaces` is checked first,
-// so a deployment with only the transfer flag on is indistinguishable from one with neither.
+// The only routes here that touch a file outside a team.
 
 /// Move a file out of the caller's My Drive and into this team's library.
 ///
@@ -1375,7 +1369,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     )),
     tags((
         name = "drive-teams",
-        description = "Team Spaces: a Team owns its members, its wiki pages, its file library, its activity and its storage. Membership decides access to everything beneath a team, and a private team a caller has no role in answers 404 rather than 403 — whether it exists is itself something membership decides. `visibility` is the one exception and the only thing that relaxes it: an `organization` team is discoverable by any signed-in user and joined by adding yourself, and an `invite_only` team is discoverable and joined by asking. Discovery is confined to GET /teams/discoverable, which returns a summary rather than the members' view — every other route still requires membership. Every route here is behind the `teamSpaces` feature flag and answers 404 when it is off. The five transfer routes — POST /{teamId}/library/moves, the /{teamId}/shares family, and GET /files/{fileId}/team-shares — need `teamFileTransfers` as well, because they are the only ones that touch a file outside a team: a move gives a personal file to the team for good, and a share lends one without moving it, revocably. `teamSpaces` is checked first, so a deployment with only `teamFileTransfers` on behaves exactly like one with neither."
+        description = "Team Spaces: a Team owns its members, its wiki pages, its file library, its activity and its storage. Membership decides access to everything beneath a team, and a private team a caller has no role in answers 404 rather than 403 — whether it exists is itself something membership decides. `visibility` is the one exception and the only thing that relaxes it: an `organization` team is discoverable by any signed-in user and joined by adding yourself, and an `invite_only` team is discoverable and joined by asking. Discovery is confined to GET /teams/discoverable, which returns a summary rather than the members' view — every other route still requires membership. The five transfer routes — POST /{teamId}/library/moves, the /{teamId}/shares family, and GET /files/{fileId}/team-shares — are the only ones that touch a file outside a team: a move gives a personal file to the team for good, and a share lends one without moving it, revocably."
     )),
     security(("bearer_auth" = []))
 )]
@@ -1386,13 +1380,12 @@ pub struct TeamsApiDoc;
 /// `configure` registers by hand in an order that matters: actix matches in registration order, so
 /// a literal segment has to come before the `/{team_id}` pattern that would otherwise capture it.
 /// Nothing about the service can catch that being wrong — the handler would simply never be
-/// reached — and from the e2e suite, with the flag off, both the right and the wrong handler answer
-/// 404 with the same body. So it is pinned here, with the flag on.
+/// reached, and from the e2e suite a missing team makes the right and the wrong handler answer 404
+/// alike. So it is pinned here.
 #[cfg(test)]
 mod routing {
     use super::*;
     use actix_web::{test, App};
-    use diesel::prelude::*;
     use diesel::r2d2::{ConnectionManager, Pool};
     use diesel_migrations::MigrationHarness;
 
@@ -1400,11 +1393,10 @@ mod routing {
     use crate::drive::feature_flags::gate::FeatureGate;
     use crate::drive::feature_flags::repository::FeatureFlagsRepository;
     use crate::drive::teams::repository::{DbPool, TeamsRepository};
-    use crate::drive::teams::service::{TeamsService, FLAG_TEAM_SPACES};
-    use crate::schema::feature_flags;
+    use crate::drive::teams::service::TeamsService;
     use crate::shared::TokenService;
 
-    /// A stack with the real routes and `teamSpaces` on.
+    /// A stack with the real routes.
     fn app_state() -> (web::Data<TeamsApiState>, web::Data<Arc<TokenService>>) {
         let manager = ConnectionManager::<diesel::SqliteConnection>::new(":memory:");
         let pool: DbPool = Pool::builder().max_size(1).build(manager).expect("pool");
@@ -1412,10 +1404,6 @@ mod routing {
             .expect("conn")
             .run_pending_migrations(crate::MIGRATIONS)
             .expect("migrations");
-        diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
-            .set(feature_flags::enabled.eq(1))
-            .execute(&mut pool.get().expect("conn"))
-            .expect("enable flag");
 
         let service = TeamsService::new(
             Arc::new(TeamsRepository::new(pool.clone())),
@@ -1502,8 +1490,7 @@ mod routing {
     }
 
     /// `/{team_id}/shares/{file_id}` must reach its own handler rather than being matched as the
-    /// collection path — the same hazard the join-request routes carry, and unobservable from the
-    /// e2e suite because both flags are off there and everything answers 404 alike.
+    /// collection path — the same hazard the join-request routes carry.
     #[actix_web::test]
     async fn the_share_routes_do_not_shadow_each_other() {
         let (state, ts) = app_state();
@@ -1522,11 +1509,11 @@ mod routing {
             .to_request();
         let resp = test::call_service(&app, req).await;
 
-        // 404 from the gate — `teamFileTransfers` is off in this fixture — rather than 405 from a
-        // route that only accepts the collection path, or an empty body from no route at all.
+        // 404 from the service — the team does not exist — rather than 405 from a route that only
+        // accepts the collection path, or an empty body from no route at all.
         assert_eq!(resp.status(), 404);
         let body: serde_json::Value = test::read_body_json(resp).await;
-        assert_eq!(body["error"]["message"], "Not found");
+        assert_eq!(body["error"]["message"], "Team not found");
     }
 
     /// The join-request routes nest three deep under the same `{team_id}`, so they carry the same

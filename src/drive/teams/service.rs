@@ -29,25 +29,6 @@ use crate::drive::activity::service::ActivityService;
 use crate::drive::feature_flags::gate::FeatureGate;
 use crate::shared::{ApiError, AuthenticatedUser};
 
-/// The flag every team route is behind — the only one.
-///
-/// Team Spaces was specified with per-phase sub-flags beside this (`teamSpacesPages`,
-/// `teamSpacesFiles`, `teamSpacesActivity`) and deliberately does not have them. Each would have
-/// been defensible on its own, which is precisely how the system this replaces reached fifteen
-/// keys; and the phases are not separately shippable anyway, since a team whose wiki is switched
-/// off is a navigation entry leading to a page that says a feature is missing. One feature, one
-/// switch: Team Spaces is on, or it is off.
-pub const FLAG_TEAM_SPACES: &str = "teamSpaces";
-
-/// The second flag, and the only one added beside `teamSpaces`.
-///
-/// It covers the two routes that reach *out* of a team, at a file with `team_id IS NULL` in a
-/// member's own My Drive: moving one in, and lending one without moving it. Every other team route
-/// only ever touches rows a team already owns, which is why one switch covered them; these two can
-/// give a team a claim on a personal file, and being able to close that without closing Team Spaces
-/// is worth a second boolean. See [`TeamsService::require_transfers`] for the ordering.
-pub const FLAG_TEAM_FILE_TRANSFERS: &str = "teamFileTransfers";
-
 /// The markdown a team's Home page is created with.
 ///
 /// A blank page is a worse starting point than a wrong one: it gives a new team nothing to react to
@@ -138,6 +119,10 @@ fn parse_visibility(value: &str) -> Result<Visibility, ApiError> {
 pub struct TeamsService {
     pub(super) repo: Arc<TeamsRepository>,
     activity: Arc<ActivityService>,
+    /// Wired in but read by nothing: no feature is behind a flag while Neutrino is in beta. Kept so
+    /// that gating something after the public release is a one-line change, not a constructor
+    /// change across every caller.
+    #[allow(dead_code)]
     pub(super) gate: FeatureGate,
 }
 
@@ -212,17 +197,6 @@ impl TeamsService {
         Ok((team, role))
     }
 
-    /// Both flags, `teamSpaces` first.
-    ///
-    /// The order is what makes the second flag safe to reason about. `teamSpaces` off has to answer
-    /// 404 whatever `teamFileTransfers` says, or a deployment with Team Spaces switched off would
-    /// still have two routes that take a team id and behave differently for a real one — which
-    /// leaks exactly the roadmap the 404 rule exists to keep. Checking `teamSpaces` first makes a
-    /// deployment with only `teamFileTransfers` on indistinguishable from one with neither.
-    fn require_transfers(&self) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_FILE_TRANSFERS)
-    }
 
     /// The team's live occupancy against its limit.
     ///
@@ -284,7 +258,6 @@ impl TeamsService {
     // ── Teams ────────────────────────────────────────────────────────────────
 
     pub fn list_teams(&self, user: &AuthenticatedUser) -> Result<TeamListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         let teams = self.repo.list_for_user(&user.user_id)?;
         let mut out = Vec::with_capacity(teams.len());
@@ -312,7 +285,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
         write: bool,
     ) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let action = if write { TeamAction::ManageSettings } else { TeamAction::ViewTeam };
         self.authorize(team_id, user, action).map(|_| ())
     }
@@ -322,7 +294,6 @@ impl TeamsService {
         team_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (mut team, role) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
         // Recomputed here, and only here, because this is what the team's Settings page reads its
         // storage figure from. `storage_used_bytes` is maintained by every path that adds or
@@ -346,7 +317,6 @@ impl TeamsService {
         req: CreateTeamRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         let name = req.name.trim();
         if name.is_empty() {
@@ -450,7 +420,6 @@ impl TeamsService {
         req: UpdateTeamRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         // Un-archiving has to be reachable on a team that is archived, and `authorize` refuses
         // every write on one — so restoring is checked against the role directly.
@@ -543,7 +512,6 @@ impl TeamsService {
     }
 
     pub fn delete_team(&self, team_id: &str, user: &AuthenticatedUser) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         // Deleting an archived team has to work — archiving is often the step before deleting —
         // so this resolves and checks the role rather than going through `authorize`.
         let (team, role) = self.resolve(team_id, user)?;
@@ -572,7 +540,6 @@ impl TeamsService {
         &self,
         user: &AuthenticatedUser,
     ) -> Result<DiscoverableTeamListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         let teams = self.repo.list_discoverable_for_user(&user.user_id)?;
         let pending = self.repo.teams_with_open_request(&user.user_id)?;
@@ -657,7 +624,6 @@ impl TeamsService {
         team_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamMemberResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, visibility) = self.resolve_joinable(team_id, user)?;
 
         match visibility.join_policy() {
@@ -713,7 +679,6 @@ impl TeamsService {
         req: RequestAccessRequest,
         user: &AuthenticatedUser,
     ) -> Result<JoinRequestResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, visibility) = self.resolve_joinable(team_id, user)?;
 
         match visibility.join_policy() {
@@ -794,7 +759,6 @@ impl TeamsService {
         status: Option<&str>,
         user: &AuthenticatedUser,
     ) -> Result<JoinRequestListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ManageJoinRequests)?;
 
         let status = status.unwrap_or(RequestStatus::PENDING);
@@ -822,7 +786,6 @@ impl TeamsService {
         req: ApproveJoinRequestRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamMemberResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, actor_role) = self.authorize(team_id, user, TeamAction::ManageJoinRequests)?;
 
         let role = match req.role.as_deref() {
@@ -899,7 +862,6 @@ impl TeamsService {
         request_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::ManageJoinRequests)?;
 
         let request = self.pending_request(team_id, request_id)?;
@@ -964,7 +926,6 @@ impl TeamsService {
         team_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamMemberListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
         let members = self.repo.list_members(team_id)?;
         Ok(TeamMemberListResponse {
@@ -979,7 +940,6 @@ impl TeamsService {
         req: AddMemberRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamMemberResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, actor_role) = self.authorize(team_id, user, TeamAction::InviteMember)?;
 
         let role = Role::parse(&req.role)
@@ -1041,7 +1001,6 @@ impl TeamsService {
         req: UpdateMemberRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamMemberResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, actor_role) = self.authorize(team_id, user, TeamAction::ManagePermissions)?;
 
         let new_role = Role::parse(&req.role)
@@ -1090,7 +1049,6 @@ impl TeamsService {
         member_user_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         // Leaving a team is not managing its permissions, so it is allowed to anyone in it —
         // including a Viewer, who can manage nothing else.
@@ -1136,7 +1094,6 @@ impl TeamsService {
         query: Option<&str>,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         let pages = match query.map(str::trim).filter(|q| !q.is_empty()) {
@@ -1155,7 +1112,6 @@ impl TeamsService {
         page_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         let page = self
@@ -1171,7 +1127,6 @@ impl TeamsService {
         req: CreatePageRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::CreatePage)?;
 
         let title = req.title.trim();
@@ -1277,7 +1232,6 @@ impl TeamsService {
         req: UpdatePageRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::EditPage)?;
 
         let page = self
@@ -1367,7 +1321,6 @@ impl TeamsService {
         page_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::DeletePage)?;
 
         let page = self
@@ -1419,7 +1372,6 @@ impl TeamsService {
         page_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::CreatePage)?;
 
         let source = self
@@ -1468,7 +1420,6 @@ impl TeamsService {
         page_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageVersionListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
         // Through the team, so a page id from another team cannot be read by a member of this one.
         self.repo
@@ -1492,7 +1443,6 @@ impl TeamsService {
         version_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageVersionResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
         self.repo
             .find_page(team_id, page_id)?
@@ -1517,7 +1467,6 @@ impl TeamsService {
         version_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::EditPage)?;
 
         let page = self
@@ -1572,16 +1521,13 @@ impl TeamsService {
 
     /// The team's activity feed (phase 8's groundwork).
     ///
-    /// Behind `teamSpaces` like everything else here: the feed exists exactly when teams do, and
-    /// the entries it reads were written by [`Self::log`] on every team write since the flag went
-    /// on — so it has a history from the first team that was created rather than from whenever
-    /// someone thought to look at it.
+    /// The entries it reads are written by [`Self::log`] on every team write, so it has a history
+    /// from the first team that was created rather than from whenever someone thought to look at it.
     pub fn list_activity(
         &self,
         team_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamActivityResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         // A feed is a recent-activity list, not an audit log; the audit trail is the same table
@@ -1614,7 +1560,6 @@ impl TeamsService {
         folder_id: Option<&str>,
         user: &AuthenticatedUser,
     ) -> Result<TeamLibraryResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         if let Some(id) = folder_id {
@@ -1659,7 +1604,6 @@ impl TeamsService {
         req: CreateTeamFolderRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamFolderResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
 
         let name = req.name.trim();
@@ -1711,7 +1655,6 @@ impl TeamsService {
         req: ClaimFileRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamFileResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
 
         if let Some(folder) = req.folder_id.as_deref() {
@@ -1773,7 +1716,6 @@ impl TeamsService {
         req: RenameTeamFileRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamFileResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
 
         let name = req.name.trim();
@@ -1807,7 +1749,6 @@ impl TeamsService {
         file_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::DeleteFile)?;
 
         let file = self
@@ -1830,8 +1771,7 @@ impl TeamsService {
 
     // ── Transfers: moving and sharing a personal file ─────────────────────────
     //
-    // Both behind `teamFileTransfers` as well as `teamSpaces`, and both about the same file: one
-    // the caller owns, in their own My Drive. They differ in what happens to that ownership, which
+    // Both about the same file: one the caller owns, in their own My Drive. They differ in what happens to that ownership, which
     // is the whole of the distinction and the reason the UI has to offer two things rather than
     // one. A move gives the file to the team and cannot be undone from here. A share lends it and
     // can be taken back.
@@ -1856,7 +1796,6 @@ impl TeamsService {
         req: MoveFileIntoTeamRequest,
         user: &AuthenticatedUser,
     ) -> Result<MoveFileIntoTeamResponse, ApiError> {
-        self.require_transfers()?;
         // The same authority as uploading, because that is what this is from the team's side: a
         // file appearing in its library. A Contributor may, a Viewer may not.
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
@@ -1933,7 +1872,6 @@ impl TeamsService {
         req: ShareFileWithTeamRequest,
         user: &AuthenticatedUser,
     ) -> Result<TeamSharedFileResponse, ApiError> {
-        self.require_transfers()?;
         // Adding to what the team can see is adding content to the team, so it takes the same role
         // as putting a file in the library. That a Viewer cannot do it is deliberate: a Viewer
         // reads the team and writes nothing to it, and a shared file is something every other
@@ -1993,7 +1931,6 @@ impl TeamsService {
         team_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamSharedFileListResponse, ApiError> {
-        self.require_transfers()?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         let shares = self.repo.list_team_file_shares(team_id)?;
@@ -2039,7 +1976,6 @@ impl TeamsService {
         file_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<FileTeamShareListResponse, ApiError> {
-        self.require_transfers()?;
 
         self.repo
             .find_own_unclaimed_file(file_id, &user.user_id)?
@@ -2080,7 +2016,6 @@ impl TeamsService {
         file_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
-        self.require_transfers()?;
         // Resolve rather than authorize: an owner taking their own file back is a read of the team
         // as far as the team is concerned, and an archived team must not be able to hold on to
         // someone's personal file. `authorize` would refuse both.
@@ -2117,17 +2052,12 @@ impl TeamsService {
     // pages, its files or its activity, which stay behind membership.
 
     /// Every live team with its true occupancy, for the console's Teams tab.
-    ///
-    /// Behind `teamSpaces` like the rest of the module: with the flag off no team can be created,
-    /// reached or written to, so a console listing them would be a page about nothing. It is not
-    /// behind `teamFileTransfers` — a quota is core Team Spaces, not part of the transfer flows.
     pub fn admin_list_teams(
         &self,
         query: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<AdminTeamListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         // Clamped rather than trusted: this is an admin route, but a page size is still a number
         // arriving from a URL, and an unbounded one is an unbounded query.
@@ -2198,7 +2128,6 @@ impl TeamsService {
         req: SetTeamQuotaRequest,
         admin_id: &str,
     ) -> Result<AdminTeamResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         if let Some(limit) = req.storage_limit_bytes {
             if limit < 0 {
@@ -2260,7 +2189,6 @@ impl TeamsService {
         req: SetTeamOwnerRequest,
         admin_id: &str,
     ) -> Result<AdminTeamResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         // Existence only — nothing about the team decides this, not even its archived state. The
         // check is here so that handing over a team that does not exist is a 404 before an account
@@ -2337,7 +2265,6 @@ impl TeamsService {
         req: SetTeamArchivedRequest,
         admin_id: &str,
     ) -> Result<AdminTeamResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         let team = self
             .repo
@@ -2388,7 +2315,6 @@ impl TeamsService {
     /// Reachable for a team whose Owners have all gone, which is the case the member-facing route
     /// cannot serve: `delete_team` requires an Owner, and an ownerless team has none.
     pub fn admin_delete_team(&self, team_id: &str, admin_id: &str) -> Result<(), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
 
         let team = self
             .repo

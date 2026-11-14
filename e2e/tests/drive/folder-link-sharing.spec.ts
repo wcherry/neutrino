@@ -2,13 +2,8 @@
  * Folder links with a password, and guest sessions that end with the link (#321).
  *
  * Driven through the API: the property under test is what the server lets a guest do, and the
- * browser half (link key in the fragment, decryption) is covered by the web unit tests.
- *
- * **What is deliberately not covered here.** The guest folder API (`/api/v1/share/folder/...`) is
- * gated by `folderLinkEditing`, which is off by default, and this suite has no way to make an admin
- * to turn it on (see `tests/settings/feature-flags.spec.ts` for why). It is checked here only as
- * off — a 404 — and its behaviour with the flag on is covered by the Rust tests in
- * `src/drive/link_folders/tests.rs`, which run the same services against a real database.
+ * browser half (link key in the fragment, decryption) is covered by the web unit tests. Files here
+ * are plaintext uploads, which is enough to exercise who may reach what.
  */
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext } from '@playwright/test';
@@ -198,12 +193,103 @@ test.describe('Folder link with a password', () => {
     expect(read.ok()).toBeTruthy();
   });
 
-  test('the guest folder API is off by default', async ({ request }) => {
-    const { folderId, token } = await setUp(request);
+  test('an editor guest lists, uploads, organises and trashes inside the folder', async ({
+    request,
+  }) => {
+    const { owner, folderId, fileId, token } = await setUp(request);
     const guest = await openSession(request, token, PASSWORD);
-    const res = await request.get(`${BASE_URL}/api/v1/share/folder/${folderId}`, {
+
+    const listed = await request.get(`${BASE_URL}/api/v1/share/folder/${folderId}`, {
       headers: bearer(guest),
     });
-    expect(res.status()).toBe(404);
+    expect(listed.ok(), `list: ${listed.status()} ${await listed.text()}`).toBeTruthy();
+    const contents = (await listed.json()) as {
+      rootFolderId: string;
+      role: string;
+      files: { id: string }[];
+    };
+    expect(contents.rootFolderId).toBe(folderId);
+    expect(contents.role).toBe('editor');
+    expect(contents.files.map((f) => f.id)).toContain(fileId);
+
+    const sub = await request.post(`${BASE_URL}/api/v1/share/folder/${folderId}/folders`, {
+      headers: bearer(guest),
+      data: { name: 'From guest' },
+    });
+    expect(sub.ok(), `create folder: ${sub.status()}`).toBeTruthy();
+    const subId = ((await sub.json()) as { id: string }).id;
+
+    const upload = await request.post(`${BASE_URL}/api/v1/share/folder/upload`, {
+      headers: bearer(guest),
+      multipart: {
+        folder_id: subId,
+        file: { name: 'guest.txt', mimeType: 'text/plain', buffer: Buffer.from('from a guest') },
+      },
+    });
+    expect(upload.ok(), `guest upload: ${upload.status()} ${await upload.text()}`).toBeTruthy();
+    const uploadedId = ((await upload.json()) as { id: string }).id;
+
+    // The upload is the owner's file, and the owner reads it as their own.
+    const ownerRead = await request.get(`${BASE_URL}/api/v1/drive/files/${uploadedId}`, {
+      headers: bearer(owner),
+    });
+    expect(await ownerRead.text()).toBe('from a guest');
+
+    const renamed = await request.patch(`${BASE_URL}/api/v1/share/files/${uploadedId}`, {
+      headers: bearer(guest),
+      data: { name: 'renamed.txt', folderId },
+    });
+    expect(renamed.ok(), `rename + move: ${renamed.status()}`).toBeTruthy();
+
+    const trashed = await request.delete(`${BASE_URL}/api/v1/share/files/${fileId}`, {
+      headers: bearer(guest),
+    });
+    expect(trashed.status()).toBe(204);
+    const trash = await request.get(`${BASE_URL}/api/v1/drive/trash`, { headers: bearer(owner) });
+    expect(JSON.stringify(await trash.json())).toContain(fileId);
+
+    // The shared folder itself is the owner's to change.
+    const root = await request.delete(`${BASE_URL}/api/v1/share/folders/${folderId}`, {
+      headers: bearer(guest),
+    });
+    expect(root.status()).toBe(403);
+  });
+
+  test('a guest cannot reach outside the folder, and a viewer cannot write', async ({
+    request,
+  }) => {
+    const { owner, folderId, token } = await setUp(request);
+    const guest = await openSession(request, token, PASSWORD);
+
+    const elsewhere = await request.post(`${BASE_URL}/api/v1/drive/folders`, {
+      headers: bearer(owner),
+      data: { name: `Private ${Date.now()}` },
+    });
+    const elsewhereId = ((await elsewhere.json()) as { id: string }).id;
+    const outside = await request.get(`${BASE_URL}/api/v1/share/folder/${elsewhereId}`, {
+      headers: bearer(guest),
+    });
+    expect(outside.status()).toBe(404);
+    const intoOutside = await request.post(`${BASE_URL}/api/v1/share/folder/${elsewhereId}/folders`, {
+      headers: bearer(guest),
+      data: { name: 'nope' },
+    });
+    expect(intoOutside.status()).toBe(404);
+
+    // Down to view-only: no password change, so the same session carries on, now read-only.
+    const viewer = await request.patch(`${BASE_URL}/api/v1/drive/folders/${folderId}/share-link`, {
+      headers: bearer(owner),
+      data: { role: 'viewer' },
+    });
+    expect(viewer.ok()).toBeTruthy();
+    const listed = await request.get(`${BASE_URL}/api/v1/share/folder/${folderId}`, {
+      headers: bearer(guest),
+    });
+    expect(listed.ok()).toBeTruthy();
+    const write = await request.post(`${BASE_URL}/api/v1/share/folder/${folderId}/folders`, {
+      headers: bearer(guest),
+      data: { name: 'nope' },
+    });
+    expect(write.status()).toBe(403);
   });
 });

@@ -2,7 +2,7 @@
 //! with the link, the guest's confinement to the shared folder, and the key bookkeeping that lets
 //! a link open end-to-end encrypted files.
 
-use super::service::{LinkFoldersService, FLAG_FOLDER_LINK_EDITING};
+use super::service::LinkFoldersService;
 use crate::auth::password_policy::PasswordPolicyRepository;
 use crate::auth::repository::AuthRepository;
 use crate::auth::service::AuthService;
@@ -31,7 +31,6 @@ const LINK_PUBLIC_KEY: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 struct Fixture {
     pool: DbPool,
-    flags: Arc<FeatureFlagsRepository>,
     permissions: Arc<PermissionsService>,
     sharing: Arc<SharingService>,
     encryption: EncryptionService,
@@ -62,9 +61,7 @@ impl Fixture {
             .run_pending_migrations(crate::MIGRATIONS)
             .expect("migrations");
 
-        let flags = Arc::new(FeatureFlagsRepository::new(pool.clone()));
-        flags.update(FLAG_FOLDER_LINK_EDITING, true).expect("flag");
-        let gate = FeatureGate::new(flags.clone());
+        let gate = FeatureGate::new(Arc::new(FeatureFlagsRepository::new(pool.clone())));
         let tokens = Arc::new(TokenService::new_with_expiry("test-secret".into(), 3600, 0));
         let workspace = Arc::new(WorkspaceService::new(Arc::new(WorkspaceRepository::new(
             pool.clone(),
@@ -93,7 +90,7 @@ impl Fixture {
             Arc::new(LocalFileStore::new(dir).expect("store")),
             permissions.clone(),
         ));
-        let links = LinkFoldersService::new(sharing.clone(), sharing_repo, filesystem, gate);
+        let links = LinkFoldersService::new(sharing.clone(), sharing_repo, filesystem);
         let encryption = EncryptionService::new(
             Arc::new(EncryptionRepository::new(pool.clone())),
             permissions.clone(),
@@ -101,7 +98,6 @@ impl Fixture {
 
         let f = Fixture {
             pool,
-            flags,
             permissions,
             sharing,
             encryption,
@@ -614,20 +610,6 @@ fn key_recipients_name_the_owner_and_the_link_but_never_the_caller() {
 }
 
 // ── Guest folder API ────────────────────────────────────────────────────────
-
-#[test]
-fn the_guest_folder_api_is_off_without_the_flag() {
-    let f = Fixture::new();
-    let guest = f.session(&f.link(LinkRole::Editor, None), None);
-    f.flags.update(FLAG_FOLDER_LINK_EDITING, false).unwrap();
-    assert_eq!(
-        f.links
-            .contents(&guest, "shared", &query())
-            .unwrap_err()
-            .status,
-        404
-    );
-}
 
 #[test]
 fn a_guest_lists_folders_inside_the_link_only() {

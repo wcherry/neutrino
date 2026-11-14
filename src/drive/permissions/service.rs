@@ -11,7 +11,6 @@ use crate::drive::permissions::{
 };
 use crate::drive::sharing::model::GuestSubject;
 use crate::drive::teams::model::ShareRole;
-use crate::drive::teams::service::{FLAG_TEAM_FILE_TRANSFERS, FLAG_TEAM_SPACES};
 use crate::drive::workspace::service::WorkspaceService;
 use crate::shared::{fetch_auth_profile, ApiError, AuthenticatedUser};
 use std::sync::Arc;
@@ -22,10 +21,8 @@ pub struct PermissionsService {
     workspace: Arc<WorkspaceService>,
     encryption: Arc<EncryptionRepository>,
     auth_service: Arc<AuthService>,
-    /// Consulted only for a file that actually has a team share — see
-    /// [`Self::team_share_role`]. This is the hottest read in the product, and a flag lookup on
-    /// every download for the sake of a table most files have no row in would be a real cost for
-    /// no information.
+    /// Wired in but read by nothing: no feature is behind a flag while Neutrino is in beta.
+    #[allow(dead_code)]
     gate: FeatureGate,
 }
 
@@ -499,18 +496,6 @@ impl PermissionsService {
 
     /// The role a file has been lent to the caller at, through any team they belong to.
     ///
-    /// The rows are read *before* the flag, and only a hit reaches the gate. That ordering is
-    /// deliberate and it is about cost, not correctness: `get_effective_role` runs on every
-    /// download, preview, thumbnail and file-info request in the product, and the overwhelming
-    /// majority of files have no row in `team_file_shares` at all. Asking the flag first would put
-    /// a second lookup on every one of those requests to decide whether to do a lookup that will
-    /// miss. Asking the flag second costs it only where there is something to gate.
-    ///
-    /// And it *is* gated, rather than left to grant access once written. `teamFileTransfers` is a
-    /// kill switch, and a switch that stops new shares being created while every existing one goes
-    /// on granting access is not one — turning it off has to close the access, or there is no
-    /// answer to "a file is reachable through a team and it should not be".
-    ///
     /// A team share never applies to a file the *team* owns: `get_effective_role` short-circuits on
     /// those before reaching here, and sharing requires `team_id IS NULL` in the first place.
     fn team_share_role(&self, user_id: &str, file_id: &str) -> Result<Option<String>, ApiError> {
@@ -518,12 +503,6 @@ impl PermissionsService {
         let Some(first) = roles.first() else {
             return Ok(None);
         };
-
-        if !self.gate.is_enabled(FLAG_TEAM_SPACES)?
-            || !self.gate.is_enabled(FLAG_TEAM_FILE_TRANSFERS)?
-        {
-            return Ok(None);
-        }
 
         // Two teams may have been lent the same file at different roles; the stronger stands,
         // because both were things the owner chose to say.
@@ -561,7 +540,7 @@ impl PermissionsService {
 /// The order is the rule, not an implementation detail. Team ownership beats everything (a share
 /// made before a file joined a team is stale, and honouring it would let it outlive the move), an
 /// individual grant beats a team share (a grant names this person), a team share beats folder
-/// inheritance (a share names this file), and `teamFileTransfers` off makes every share inert.
+/// inheritance (a share names this file).
 /// Each of those is a sentence somebody could reasonably have written the other way round, so each
 /// gets a test rather than a comment.
 #[cfg(test)]
@@ -573,7 +552,7 @@ mod tests {
     use crate::drive::permissions::repository::DbPool;
     use crate::drive::workspace::repository::WorkspaceRepository;
     use crate::schema::{
-        feature_flags, files, folders, team_file_shares, team_members, teams, users,
+        files, folders, team_file_shares, team_members, teams, users,
     };
     use crate::shared::TokenService;
     use diesel::prelude::*;
@@ -586,8 +565,6 @@ mod tests {
     }
 
     impl Fixture {
-        /// Both team flags on, since a test that leaves them off is testing the gate — which
-        /// `a_share_stops_granting_when_the_flag_goes_off` does deliberately.
         fn new() -> Self {
             let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
             let pool: DbPool = diesel::r2d2::Pool::builder()
@@ -600,9 +577,6 @@ mod tests {
                 .expect("migrations");
 
             let flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
-            for key in [FLAG_TEAM_SPACES, FLAG_TEAM_FILE_TRANSFERS] {
-                flags_repo.update(key, true).expect("enable flag");
-            }
 
             let service = PermissionsService::new(
                 Arc::new(PermissionsRepository::new(pool.clone())),
@@ -724,12 +698,6 @@ mod tests {
                 .expect("grant");
         }
 
-        fn set_flag(&self, key: &str, on: bool) {
-            diesel::update(feature_flags::table.filter(feature_flags::key.eq(key)))
-                .set(feature_flags::enabled.eq(i32::from(on)))
-                .execute(&mut self.conn())
-                .expect("set flag");
-        }
 
         fn role(&self, user_id: &str, file_id: &str) -> Option<String> {
             self.service
@@ -811,27 +779,6 @@ mod tests {
         f.share("t2", "file-1", "editor", "u1");
 
         assert_eq!(f.role("u2", "file-1").as_deref(), Some("editor"));
-    }
-
-    /// The flag is a kill switch, not merely a stop on new shares. Turning it off has to close the
-    /// access the existing rows grant, or there is no answer to "a file is reachable through a team
-    /// and it should not be".
-    #[test]
-    fn a_share_stops_granting_when_either_flag_goes_off() {
-        let f = Fixture::new();
-        f.add_file("file-1", "u1", None);
-        f.add_team("t1", "u1");
-        f.add_member("t1", "u2", "viewer");
-        f.share("t1", "file-1", "viewer", "u1");
-        assert_eq!(f.role("u2", "file-1").as_deref(), Some("viewer"));
-
-        f.set_flag(FLAG_TEAM_FILE_TRANSFERS, false);
-        assert_eq!(f.role("u2", "file-1"), None);
-
-        // And Team Spaces itself going off closes it too — a share is part of that feature.
-        f.set_flag(FLAG_TEAM_FILE_TRANSFERS, true);
-        f.set_flag(FLAG_TEAM_SPACES, false);
-        assert_eq!(f.role("u2", "file-1"), None);
     }
 
     /// A stored role nothing recognises grants nothing — the same rule the team roles follow, for

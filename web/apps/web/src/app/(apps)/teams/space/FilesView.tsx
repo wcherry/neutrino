@@ -65,8 +65,6 @@ import {
   type TeamSharedFile,
 } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { canTransferToTeams } from '@/lib/featureFlags';
 import {
   sortEntries,
   teamFileToGridItem,
@@ -256,11 +254,9 @@ export function FilesView({ team }: { team: Team }) {
   // a separate grid, deliberately: a lent file is not in the library, does not count against the
   // team's meter, and is still somebody's to take back — folding it into the list above would make
   // all three invisible.
-  const transfersOn = canTransferToTeams(useFeatureFlags());
   const { data: sharedData } = useQuery({
     queryKey: ['team-shares', team.id],
     queryFn: () => teamsApi.listSharedFiles(team.id),
-    enabled: transfersOn,
   });
 
   const unshare = useMutation({

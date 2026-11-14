@@ -34,12 +34,7 @@ const BASE_URL = 'http://localhost:9880';
  * web monorepo — and a copy that has to be updated by hand is exactly what this test catches when
  * it is not.
  */
-const DECLARED_BY_CLIENT = [
-  'teamSpaces',
-  'teamFileTransfers',
-  'e2eeChunkedWrites',
-  'folderLinkEditing',
-];
+const DECLARED_BY_CLIENT: string[] = [];
 
 function uniqueEmail(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -83,26 +78,9 @@ test.describe('feature flags', () => {
     expect(res.status()).toBe(200);
   });
 
-  test('both Team Spaces flags ship disabled', async ({ request }) => {
-    const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<
-      string,
-      boolean
-    >;
-    for (const key of DECLARED_BY_CLIENT) {
-      expect(flags[key], `${key} should be seeded off`).toBe(false);
-    }
-  });
-
   /**
-   * The exact set, and a new key should have to argue for itself.
-   *
-   * The system this replaces reached fifteen keys one defensible addition at a time, until the app
-   * a deployment served was something you worked out by reading rows. This test is the tripwire:
-   * adding a key makes it fail, which is the point at which someone has to decide the flag is worth
-   * having rather than noticing later that it is. `teamFileTransfers` and `e2eeChunkedWrites` are
-   * the additions so far, and their arguments are in `src/drive/feature_flags/catalog.rs`: the
-   * first gates the only routes that reach a file outside a team, the second whether clients write
-   * a file format older builds cannot read.
+   * The exact set — empty, because no feature is behind a flag while Neutrino is in beta. Flags
+   * are for after a stable public release; this fails the moment one is declared before then.
    */
   test('the flag list is exactly what the product declares', async ({ request }) => {
     const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<
@@ -122,7 +100,7 @@ test.describe('feature flags', () => {
     });
     expect(list.status()).toBe(403);
 
-    const patch = await request.patch(`${BASE_URL}/api/v1/admin/feature-flags/teamSpaces`, {
+    const patch = await request.patch(`${BASE_URL}/api/v1/admin/feature-flags/anyFlag`, {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       data: { enabled: true },
     });
@@ -130,7 +108,7 @@ test.describe('feature flags', () => {
   });
 
   test('changing a flag needs authentication at all', async ({ request }) => {
-    const res = await request.patch(`${BASE_URL}/api/v1/admin/feature-flags/teamSpaces`, {
+    const res = await request.patch(`${BASE_URL}/api/v1/admin/feature-flags/anyFlag`, {
       headers: { 'Content-Type': 'application/json' },
       data: { enabled: true },
     });

@@ -80,44 +80,21 @@ describe('withActiveItem', () => {
   });
 });
 
-/**
- * Team Spaces replaces Shared Drives in the sidebar rather than sitting beside it (issue #185).
- *
- * Two entries would be two answers to "where does my team's stuff live", and replacing is also
- * what makes the flag a real kill switch: turning it off puts the old entry back, and the Shared
- * Drives page and its endpoint were never removed — they are what the iOS and macOS clients read.
- */
-describe('the Team section and the teamSpaces flag', () => {
-  it('shows Shared Drives while the flag is off', () => {
-    const team = getNavSections(false, [], false).find((s) => s.id === 'team');
-    expect(team?.items.map((i) => [i.label, i.href])).toEqual([
-      ['Shared Drives', '/drive/team'],
-    ]);
-  });
-
-  it('replaces it with Shared Spaces when the flag is on', () => {
-    const team = getNavSections(false, [], true).find((s) => s.id === 'team');
+describe('the Team section', () => {
+  it('links to Shared Spaces', () => {
+    const team = getNavSections(false, []).find((s) => s.id === 'team');
     expect(team?.items.map((i) => [i.label, i.href])).toEqual([['Shared Spaces', '/teams']]);
   });
 
-  /**
-   * Fails closed: a caller that has not read the flag — or is rendering before the flag map has
-   * arrived — gets the pre-#185 sidebar rather than an entry that appears and then disappears.
-   */
-  it('defaults to the pre-Team-Spaces sidebar', () => {
-    const team = getNavSections(false, []).find((s) => s.id === 'team');
-    expect(team?.items[0].label).toBe('Shared Drives');
-  });
-
   it('lights up the Shared Spaces entry inside a team', () => {
-    const sections = getNavSections(false, [], true);
+    const sections = getNavSections(false, []);
     expect(activeHref(sections, '/teams/space')).toBe('/teams');
   });
 });
 
 describe('the organisation and team parts of the sidebar (UI roadmap stage 3)', () => {
   it('leaves out the apps an administrator has hidden, and keeps the rest in order', () => {
-    const apps = getNavSections(false, [], false, { enabledApps: ['calendar', 'docs'] }).find((s) => s.id === 'apps')!;
+    const apps = getNavSections(false, [], { enabledApps: ['calendar', 'docs'] }).find((s) => s.id === 'apps')!;
     expect(apps.items.map((i) => i.label)).toEqual(['Docs', 'Calendar']);
   });
 
@@ -125,7 +102,7 @@ describe('the organisation and team parts of the sidebar (UI roadmap stage 3)', 
     const team = (id: string, name: string, avatarColor: string | null, extra = {}) => ({
       id, name, avatarColor, avatarEmoji: null, archived: false, ...extra,
     }) as unknown as import('@/lib/api').Team;
-    const teams = getNavSections(false, [], true, {
+    const teams = getNavSections(false, [], {
       teams: [
         team('t1', 'Design', '#16a34a'),
         team('t2', 'finance', 'url(https://example.com/x)'),
@@ -139,7 +116,7 @@ describe('the organisation and team parts of the sidebar (UI roadmap stage 3)', 
   });
 
   it('keeps the classic single Team entry when no team list is given', () => {
-    const team = getNavSections(false, [], true).find((s) => s.id === 'team')!;
+    const team = getNavSections(false, []).find((s) => s.id === 'team')!;
     expect(team.items.map((i) => i.label)).toEqual(['Shared Spaces']);
   });
 });

@@ -67,6 +67,7 @@ impl FeatureFlagsRepository {
     /// A key with no row reads as off rather than as an error. This is the one place that
     /// distinction is deliberate: a gate's job is to keep a feature dark, and the safe answer to
     /// "is this on?" when the table cannot say is no. `list` is where the gap is reported.
+    #[allow(dead_code)] // read only through `FeatureGate`, which nothing uses during the beta
     pub fn is_enabled(&self, key: &str) -> Result<bool, ApiError> {
         let mut conn = self.get_conn()?;
         let enabled: Option<i32> = feature_flags::table

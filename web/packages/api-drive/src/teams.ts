@@ -1,10 +1,7 @@
 /**
  * Team Spaces client (issue #185).
  *
- * Mirrors `src/drive/teams/api.rs`. Everything here is behind the `teamSpaces` feature flag on the
- * server, and a gated-off route answers **404** — so a caller that reaches these methods with the
- * flag off gets "not found", not "forbidden". Read the flag before rendering a team surface rather
- * than inferring it from a failed request.
+ * Mirrors `src/drive/teams/api.rs`.
  */
 
 import { request, buildQuery } from '@neutrino/api-core';
@@ -317,7 +314,7 @@ export interface TeamLibraryResponse {
   storageUsedBytes: number;
 }
 
-// Transfers (behind `teamFileTransfers` as well as `teamSpaces`)
+// Transfers
 
 /** What a file may be lent to a team at. `owner` is deliberately not offered. */
 export type TeamShareRole = 'viewer' | 'editor';
@@ -618,10 +615,8 @@ export const teamsApi = {
   },
 
   /**
-   * Recent activity in the team.
-   *
-   * Behind `teamSpaces` like every other team route. The entries were written on each team write
-   * since the flag went on, so the feed has a history from the first team created.
+   * Recent activity in the team. The entries are written on each team write, so the feed has a
+   * history from the first team created.
    */
   async listActivity(teamId: string): Promise<TeamActivityResponse> {
     return request<TeamActivityResponse>(`${base}/${encodeURIComponent(teamId)}/activity`);
@@ -676,9 +671,7 @@ export const teamsApi = {
     );
   },
 
-  // Transfers — behind `teamFileTransfers` as well as `teamSpaces`, so check both flags before
-  // offering either of these. A gated-off route answers 404, which is indistinguishable from a
-  // team that does not exist.
+  // Transfers.
 
   /**
    * Move one of the caller's own My Drive files into the team's library, for good.

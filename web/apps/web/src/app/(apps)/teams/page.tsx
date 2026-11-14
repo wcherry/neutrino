@@ -3,10 +3,7 @@
 /**
  * Shared Spaces — the list of teams the signed-in person belongs to (issue #185, phase 1).
  *
- * Replaces Shared Drives in the navigation when `teamSpaces` is on. With the flag off this route
- * still exists but says so rather than 404ing at the router: the API answers 404 for every team
- * route while the flag is off, and "not found" on a page the sidebar did not link to is a worse
- * explanation than the real one.
+ * Replaces Shared Drives in the navigation.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -28,7 +25,6 @@ import {
   useToast,
 } from '@neutrino/ui';
 import { teamsApi, type Team } from '@neutrino/api-drive';
-import { useFeatureFlags, useFeatureFlagsLoaded } from '@/providers/FeatureFlagsProvider';
 import { teamHref } from './teamHref';
 import { AVATAR_COLORS } from './teamColors';
 import styles from './page.module.css';
@@ -262,37 +258,16 @@ function CreateTeamDialog({
 export default function SharedSpacesPage() {
   const router = useRouter();
   const qc = useQueryClient();
-  const flags = useFeatureFlags();
-  const flagsLoaded = useFeatureFlagsLoaded();
   const [creating, setCreating] = useState(false);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['teams'],
     queryFn: () => teamsApi.list(),
-    // Nothing to ask for while the feature is off — every team route answers 404.
-    enabled: flags.teamSpaces,
   });
 
   const teams = useMemo(() => data?.teams ?? [], [data]);
 
-  if (flagsLoaded && !flags.teamSpaces) {
-    return (
-      <div className={styles.page}>
-        <div className={styles.header}>
-          <Heading level={1} size="xl">
-            Shared Spaces
-          </Heading>
-        </div>
-        <EmptyState
-          icon={Users}
-          title="Team Spaces is not enabled"
-          description="An administrator can turn it on under Admin → Feature Flags."
-        />
-      </div>
-    );
-  }
-
-  if (!flagsLoaded || isLoading) {
+  if (isLoading) {
     return (
       <div className={styles.page}>
         <div className={styles.loading}>

@@ -2,34 +2,14 @@
  * Asking a team for a file's key — UI roadmap stage 6. Someone who joins a team after a file was
  * added can see it but cannot open it; they ask, and an Owner seals the key to them and approves,
  * or denies with a reason. Two real accounts, each with its own encryption keys, in two browsers.
- *
- * Team Spaces is behind a flag an administrator switches; as in `team-sharing.spec.ts` the admin
- * call uses a token signed with the test stack's JWT secret, and the flag goes back off afterwards.
  */
 
-import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { test, expect } from '../../fixtures/base';
 import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
 const PASSWORD = 'Password123!';
-
-function jwtSecret(): string {
-  if (process.env.NEUTRINO_E2E_JWT_SECRET) return process.env.NEUTRINO_E2E_JWT_SECRET;
-  return fs.readFileSync(path.join(__dirname, '../../secrets/jwt_secret.txt'), 'utf8').trim();
-}
-
-function adminToken(userId: string, email: string): string {
-  const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
-  const now = Math.floor(Date.now() / 1000);
-  const head = b64({ alg: 'HS256', typ: 'JWT' });
-  const body = b64({ sub: userId, email, iat: now, exp: now + 900, is_admin: true });
-  const sig = crypto.createHmac('sha256', jwtSecret()).update(`${head}.${body}`).digest('base64url');
-  return `${head}.${body}.${sig}`;
-}
 
 interface Session { token: string; id: string; email: string }
 
@@ -56,10 +36,6 @@ const json = (token: string) => ({ Authorization: `Bearer ${token}`, 'Content-Ty
 test.describe('Asking a team for a file’s key', () => {
   test('a late joiner asks, the owner approves, and the file opens for them', async ({ page, request, browser }) => {
     const owner = await signUp(request, page, 'Team Owner');
-    const admin = adminToken(owner.id, owner.email);
-    const flag = (enabled: boolean) =>
-      request.patch(`${BASE_URL}/api/v1/admin/feature-flags/teamSpaces`, { headers: json(admin), data: { enabled } });
-    expect((await flag(true)).ok()).toBeTruthy();
 
     const lateContext = await browser.newContext({ baseURL: test.info().project.use.baseURL });
     try {
@@ -135,7 +111,6 @@ test.describe('Asking a team for a file’s key', () => {
       await expect(latePage.getByRole('dialog').getByText(/added before you joined/)).toHaveCount(0);
     } finally {
       await lateContext.close();
-      await flag(false);
     }
   });
 });

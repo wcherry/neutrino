@@ -20,7 +20,7 @@ const NAV_LINKS: { label: string; href: string; pageTitle?: string }[] = [
   { label: 'Drawings',       href: '/drawing',       pageTitle: 'Drawings' },
   { label: 'Photos',         href: '/photos',        pageTitle: 'Photos' },
   { label: 'Calendar',       href: '/calendar' },
-  { label: 'Shared Drives',  href: '/drive/team',    pageTitle: 'Shared Drives' },
+  { label: 'Shared Spaces',  href: '/teams',         pageTitle: 'Shared Spaces' },
 ];
 
 async function registerAndLogin(

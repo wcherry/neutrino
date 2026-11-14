@@ -49,11 +49,6 @@ Numbered list of discrete implementation steps, each scoped to a single file or 
 - Unit: what to test per service
 - E2E: which flows to cover in neutrino-e2e
 
-## Feature Flag
-Only if this change is being gated (see Step 4). Name: `FEATURE_<SCREAMING_SNAKE>` —
-describe what it gates and its default value. Omit this section entirely when there
-is no flag.
-
 ## Open Questions
 Any decisions that need user input before proceeding.
 ```
@@ -93,52 +88,21 @@ cd e2e && pnpm exec playwright test
 
 ---
 
-## Step 4 — Add a Feature Flag (opt-in)
+## Step 4 — No Feature Flags
 
-**A feature flag is optional.** Most changes ship unflagged. Add one only when this
-change specifically needs to be switched off without a redeploy — and when you do,
-say so in the plan (Step 2) and in the PR.
+**Neutrino is in beta, and nothing ships behind a feature flag.** Feature flags are for
+after a stable public release. Until then every change ships unconditionally:
 
-Reach for a flag when:
+- Work that is not ready stays on its branch. It is not merged dark.
+- A change that is risky to roll back is made safe some other way — additive, reversible,
+  covered by tests — or rolled back by reverting the commit.
+- Do not add a key to `src/drive/feature_flags/catalog.rs`, `FLAG_KEYS` in
+  `web/apps/web/src/lib/featureFlags.ts` or the `feature_flags` table, and do not add a
+  `FEATURE_*` environment variable. Tests in both suites assert the flag list is empty.
 
-- The change is risky to roll back — a migration-adjacent behaviour change, a new
-  write path, something touching auth or encryption.
-- It lands across repos that release on different schedules, so the server side has
-  to sit dark until the clients catch up.
-- It is genuinely incomplete and has to be merged anyway to unblock other work.
-  Prefer a branch; a flag is the fallback when the branch would live too long.
-
-Do not add one:
-
-- To hide unfinished work that could just as easily stay on a branch.
-- Around a self-contained change behind existing UI, where the way to disable it is
-  to revert the commit.
-- Out of habit, because the last change had one.
-
-An unnecessary flag is not free: it is a second code path that has to be built,
-tested in both states, and then removed.
-
-### Implementation (when you are adding one)
-
-Use an environment variable checked at runtime:
-
-**In Rust services**, read the flag from the environment at startup or at the call site:
-```rust
-let feature_enabled = std::env::var("FEATURE_<NAME>").unwrap_or_default() == "true";
-```
-
-**In TypeScript (web/worker)**, read from the environment:
-```typescript
-const featureEnabled = process.env.FEATURE_<NAME> === 'true';
-```
-
-### Requirements
-- Default value must be `false` (disabled) unless there is an explicit reason to default on.
-- Document the flag name, description, and default in the plan (Step 2).
-- Add the flag to `docker-compose-dev.yml` under the relevant service, set to `false`.
-- Add the flag to `docker-compose-test.yml` in `neutrino-e2e/` so e2e tests can control it.
-- The feature flag must be removable in one cleanup PR once the feature is proven stable.
-  Name that follow-up when you add the flag; a flag with no removal plan is permanent.
+The flag mechanism itself (the table, `FeatureGate`, the endpoints and the admin console's
+Feature Flags tab) is kept so it is ready after the release. If a change seems to need a kill
+switch before then, say so and ask rather than adding one.
 
 ---
 
@@ -157,13 +121,11 @@ Implement the changes described in the plan, one task at a time.
 2. Fix any failures before moving on.
 
 **After all tasks are complete:**
-1. If the change is flagged, enable it (`FEATURE_<NAME>=true`) in the test environment.
-   An unflagged change needs nothing here.
-2. Run the full e2e suite:
+1. Run the full e2e suite:
    ```bash
    cd /Users/williamcherry/Playground/getneutrino.app/neutrino/e2e && ./scripts/run-tests.sh
    ```
-3. All tests must pass before proceeding. Fix failures before continuing.
+2. All tests must pass before proceeding. Fix failures before continuing.
 
 ---
 
@@ -178,7 +140,6 @@ Write a `VERIFY.md` file at the root of the primary affected repo. This file doc
 
 ## Prerequisites
 - Stack running locally via docker-compose-dev.yml
-- (flagged changes only) FEATURE_<NAME>=true set in the environment
 
 ## Steps
 
@@ -190,14 +151,8 @@ Write a `VERIFY.md` file at the root of the primary affected repo. This file doc
 ### Edge Cases
 1. <Scenario>: <Steps> → <Expected result>
 
-### Feature Disabled
-Only for a flagged change; omit this section otherwise.
-1. Set FEATURE_<NAME>=false and restart the service.
-2. Confirm <expected disabled behavior>.
-
 ## Cleanup
-Delete VERIFY.md once the feature is proven stable — for a flagged change, in the
-same PR that removes the flag.
+Delete VERIFY.md once the feature is proven stable.
 ```
 
 ---
@@ -209,7 +164,7 @@ Commit each repo separately. Each commit must be scoped to only that repo's chan
 **Rules:**
 - One commit per repo (or more if logically distinct changes require it).
 - Commit message format: `<imperative verb> <what and why in one sentence>`
-- Examples: `Add file-sharing endpoint with owner permission check`, `Gate note encryption behind FEATURE_ENCRYPTION flag`
+- Examples: `Add file-sharing endpoint with owner permission check`, `Encrypt note titles client-side before upload`
 - Do NOT use `git add .` or `git add -A`. Stage specific files by name.
 - Do NOT skip pre-commit hooks (`--no-verify` is not allowed).
 
@@ -233,11 +188,6 @@ gh pr create --repo wcherry/<repo> \
   --body "$(cat <<'EOF'
 ## Summary
 <1-3 bullets describing the change>
-
-## Feature Flag
-Include this section only for a flagged change; drop it otherwise rather than
-writing "none".
-`FEATURE_<NAME>` — defaults to `false`. Set to `true` to enable.
 
 ## Test Plan
 - [ ] Unit tests pass (`cargo test`)

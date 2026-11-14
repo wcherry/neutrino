@@ -197,9 +197,6 @@ export const adminApi = {
    * "which team is about to run out?" should be a glance, not a search. The
    * usage figure is summed from the file rows by the query, so it is right even
    * when a team's cached counter has drifted.
-   *
-   * 404s when `teamSpaces` is off — with the flag down no team can exist, so
-   * the tab is hidden rather than shown empty.
    */
   async listTeams(
     params: { q?: string; limit?: number; offset?: number } = {}

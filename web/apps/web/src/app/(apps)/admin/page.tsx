@@ -30,7 +30,7 @@ import { FontsTab } from './FontsTab';
 import { ProductUpdatesTab } from './ProductUpdatesTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
 import { TeamsTab } from './TeamsTab';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { useFeatureFlags, type FeatureFlagKey } from '@/providers/FeatureFlagsProvider';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -1144,14 +1144,13 @@ type Tab =
   | 'jobs';
 
 /**
- * A tab that only exists on some deployments.
+ * The console's tabs.
  *
- * `flag` names the feature flag that has to be on. Teams is the first such tab and the reason the
- * field exists: with `teamSpaces` off no team can be created or reached and the admin endpoint
- * 404s, so the tab would render "failed to load" on a deployment that has deliberately not enabled
- * the feature. Hiding it is the honest rendering of "this is not on here".
+ * `flag` hides a tab unless that feature flag is on, so a flagged feature's admin panel is not a
+ * page whose every request fails. No tab uses it while Neutrino is in beta (no feature is flagged);
+ * it is kept for after the public release.
  */
-const TABS: { id: Tab; label: string; flag?: 'teamSpaces' }[] = [
+const TABS: { id: Tab; label: string; flag?: FeatureFlagKey }[] = [
   // First: what the instance is called and what everyone on it starts with — the decisions an
   // administrator makes once, before anyone else signs in.
   { id: 'organisation', label: 'Organisation' },
@@ -1167,7 +1166,7 @@ const TABS: { id: Tab; label: string; flag?: 'teamSpaces' }[] = [
   { id: 'queue', label: 'Work Queue' },
   // Beside Users, because a team's storage limit is the same kind of decision as a person's and an
   // admin arriving to free up disk space has to look at both.
-  { id: 'teams', label: 'Teams', flag: 'teamSpaces' },
+  { id: 'teams', label: 'Teams' },
   { id: 'flags', label: 'Feature Flags' },
   { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
@@ -1239,9 +1238,7 @@ export default function AdminPage() {
           {activeTab === 'services' && <ServicesTab />}
           {activeTab === 'users' && <UsersTab />}
           {activeTab === 'queue' && <WorkQueueTab />}
-          {/* Guarded as well as hidden: the flag can go off while the tab is open, and rendering it
-              then would leave an admin looking at a panel whose every request 404s. */}
-          {activeTab === 'teams' && flags.teamSpaces && <TeamsTab />}
+          {activeTab === 'teams' && <TeamsTab />}
           {activeTab === 'flags' && <FeatureFlagsTab />}
           {activeTab === 'versions' && <VersionsTab />}
           {activeTab === 'fonts' && <FontsTab />}

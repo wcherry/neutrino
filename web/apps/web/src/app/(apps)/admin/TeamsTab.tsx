@@ -11,10 +11,6 @@
  * about its pages, its files or its activity: being a deployment's administrator is authority over
  * the deployment, not membership of every team on it. The server enforces that; this simply has
  * nothing to render that would breach it.
- *
- * Hidden entirely when `teamSpaces` is off, because with the flag down no team can exist and the
- * endpoint 404s — a tab that renders "failed to load" on a deployment that has deliberately not
- * enabled the feature is worse than no tab.
  */
 
 import React, { useState } from 'react';
