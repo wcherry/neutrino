@@ -1,9 +1,13 @@
 # Chunked File Encryption Format (NEB1)
 
-**Date:** 2026-08-13
-**Status:** Proposed
+**Date:** 2026-08-13 (accepted 2026-11-13, #318)
+**Status:** Accepted — readers and the first writer (Drive iOS photo sync) in progress; see §10
 **Owner:** William Cherry
-**Affects:** `neutrino` (web + server), `neutrino_drive_mac_desktop`, `neutrino_notes_ios_mobile`, `neutrino_docs_ios_mobile`
+**Affects:** `neutrino` (web, vectors, the `e2eeChunkedWrites` flag), `neutrino_shared_ios` (every iOS app and the Mac Drive client), `neutrino_drive_ios_mobile` (its own encrypt and decrypt paths), `neutrino_photos_ios_mobile` (`MediaCrypto`), `neutrino_drive_windows_desktop`, `neutrino_shared_android`. The server is unaffected.
+
+> **Decision (#318):** NEB1 is the format for new chunked writes. The **Photos-chunked** shape that
+> Neutrino Photos iOS already writes (§3.6) is a second, permanent legacy shape every reader also
+> opens — files in it exist, and Photos keeps writing it until it adopts NEB1.
 
 ---
 
@@ -162,10 +166,13 @@ Let `P = plaintextLength`, `C = chunkSize`, `A = 17`
   `plaintextLength` makes the very first tag fail to verify, rather than being caught later by
   luck or not at all.
 
-  > **Verify before implementing:** swift-sodium's `SecretStream` push/pull must expose an
-  > `additionalData:` parameter on the target version in all three Swift codebases. If any
-  > binding lacks it, do **not** silently drop the AD on that platform — that would produce blobs
-  > other clients reject. Raise it as a blocking issue; the fallback is §12 Q3.
+  > **Verified (2026-11-13).** swift-sodium's `SecretStream` has `push(message:tag:ad:)` and
+  > `pull(cipherText:ad:)`; the Rust `crypto_secretstream` 0.2 crate takes `associated_data` on
+  > both; libsodium-wrappers takes it as the third argument. The one binding without AD is
+  > `neutrino_shared_android`'s own Kotlin secretstream, which must gain it (the Poly1305 input is
+  > `AD ‖ pad16 ‖ block ‖ c ‖ pad16 ‖ le64(adlen) ‖ le64(64 + mlen)`, as libsodium) before Android
+  > can read NEB1. Do **not** drop the AD on any platform — that would produce blobs other clients
+  > reject.
 
 ### 3.4 Size
 
@@ -186,14 +193,22 @@ version marker of any kind. It is implemented identically in four codebases:
 - `neutrino_notes_ios_mobile/NeutrinoNotes/Services/NoteContentService.swift`
 - `neutrino_docs_ios_mobile/NeutrinoDocs/Services/DocContentService.swift`
 
-Every reader MUST implement this dispatch:
+Every reader MUST implement this dispatch, where `chunkSize` is the file's metadata field (§3.6),
+absent for most files:
 
 ```
 if length ≥ 44 and bytes[0..4] == "NEB1":
     try: return decryptV1(bytes)
-    catch InvalidHeader: fall through to v0     # see below
+    catch InvalidHeader: fall through           # see below
     catch AuthenticationFailure: raise          # do NOT fall through
-return decryptV0(bytes)
+if chunkSize is present:
+    return decryptPhotosChunked(bytes, chunkSize)
+try: return decryptV0(bytes)
+catch AuthenticationFailure as e:
+    if length > 24 + 1 MiB + 17:                # see §3.6: a reader without the metadata
+        try: return decryptPhotosChunked(bytes, 1 MiB)
+        catch: pass
+    raise e
 ```
 
 A v0 blob whose random 24-byte header happens to begin with the four bytes `NEB1` occurs with
@@ -205,10 +220,34 @@ back, an authentication failure must not.** Falling back on an auth failure woul
 tampered v1 blob into a v0 decryption attempt, and the error the user sees would name the wrong
 problem.
 
+(The 1 MiB retry is the one place a reader tries a second shape after an authentication failure,
+and it is safe for a different reason than the rule above forbids it for NEB1: both readings are
+fully authenticated — every chunk carries a tag and a FINAL tag is required — so the retry can only
+succeed on a genuine Photos-chunked body, and the error reported is still v0's.)
+
 v0 is **not deprecated and will not be removed.** Existing blobs are re-encryptable only by a
 client that downloads, decrypts, re-encrypts and re-uploads them, and there is no reason to spend
 a user's bandwidth on that. Editor content migrates for free — every save rewrites the whole body
 — and everything else stays v0 until it is next written. Both formats are permanent.
+
+### 3.6 The Photos-chunked shape (legacy, permanent)
+
+Before this spec was implemented, Neutrino Photos iOS (`NeutrinoPhotos/Services/MediaCrypto.swift`)
+began streaming originals over 64 MiB, which it could not hold in memory, in its own shape:
+
+```
+[24-byte ssHeader][chunk 0: C + 17]…[chunk n-1: ≤ C + 17, TAG_FINAL]     # no prefix, no AD
+```
+
+`C` is not in the blob. It is written into the file's **encrypted metadata** as `chunkSize` —
+`{ name, mimeType, chunkSize }` — and a file without the field is one push. A body that fits in one
+chunk is byte-identical to v0. Photos has only ever written `C = 1 MiB`.
+
+Readers MUST open it: take `C` from the metadata when they have it; enforce `1 ≤ C ≤ 16 MiB`;
+require every chunk before the last to be exactly `C` and the last to carry `TAG_FINAL` with no bytes
+after it. A reader that decrypts without the metadata (the web's file paths, most of them) MAY retry
+a body that fails as v0 at `C = 1 MiB` (§3.5). New writers MUST NOT produce this shape; it is read
+forever and written by Photos only until Photos adopts NEB1.
 
 ---
 
@@ -421,8 +460,7 @@ argument is the AD, currently passed as `null` by v0. State is a JS object held 
 it once. Read the source with `FileHandle` reads of `chunkSize` (or `InputStream`) rather than
 `Data(contentsOf:)`, and write with `FileHandle.write` rather than accumulating `Data`.
 
-Note the AD caveat in §3.3 — this is the one place the three Swift codebases could diverge from
-web, and it is a blocking check, not a detail.
+The AD caveat in §3.3 was checked and holds for swift-sodium; see the note there.
 
 ### 8.3 The local stores are not on the wire
 
@@ -469,11 +507,17 @@ downloads) need the streaming variant.
 
 ### Native
 
-| Codebase | File |
-|---|---|
-| `neutrino_drive_mac_desktop` | `Sources/NeutrinoDriveCore/Services/EncryptionService.swift:40-68` |
-| `neutrino_notes_ios_mobile` | `Services/NoteContentService.swift`, `Services/OfflineStore.swift`, `Services/VersionHistoryService.swift` |
-| `neutrino_docs_ios_mobile` | `Services/DocContentService.swift`, `Services/OfflineStore.swift`, `Services/VersionHistoryService.swift`, `Search/SearchIndexStore.swift` |
+Updated 2026-11-13; the table above this date listed codebases that have since moved their crypto
+into the shared packages.
+
+| Codebase | File | Reads | Writes |
+|---|---|---|---|
+| `neutrino_shared_ios` | `Sources/NeutrinoCrypto/DriveFileCrypto.swift` — every iOS app and, since #35, the Mac Drive client | Photos-chunked already; NEB1 to add | — |
+| `neutrino_drive_ios_mobile` | `Services/E2EEUploader.swift` (its own encrypt), `Services/DownloadService.swift` (its own decrypt) | NEB1 and Photos-chunked to add, streaming to disk | NEB1, gated (§10) |
+| `neutrino_photos_ios_mobile` | `Services/MediaCrypto.swift` | Photos-chunked; NEB1 to add | Photos-chunked (§3.6) |
+| `neutrino_drive_windows_desktop` | `crates/neutrino-core/src/crypto.rs` | NEB1 and Photos-chunked to add, streaming | — |
+| `neutrino_shared_android` | `neutrino-core/.../core/crypto/FileCrypto.kt`, `SecretStream.kt` | Photos-chunked already; NEB1 to add, after AD support | — |
+| `neutrino_notes_ios_mobile`, `neutrino_docs_ios_mobile` | their content services | through `neutrino_shared_ios` where they use it | — |
 
 ### Server
 
@@ -497,6 +541,11 @@ CI. No writer ships until this is green everywhere.
 (`GET /api/v1/feature-flags`; see the Feature flags section of `web/CLAUDE.md`) defaulting to
 off. Enable for internal accounts, then broadly.
 
+- The flag exists: `e2eeChunkedWrites`, migration 00154, read from `GET /api/v1/feature-flags`.
+  The web does not write NEB1 yet; the first writer is Drive iOS photo sync.
+- **Neutrino Photos iOS wrote chunked files before this gate existed** (§3.6) and is left as it is:
+  it chunks only originals it could not otherwise upload, and Phase 1's readers are what open them
+  everywhere. It is not retrofitted behind the flag.
 - Native clients must honour the same flag. An iOS build that ignores it and writes v1 to an
   account whose Mac client predates Phase 1 is exactly the bug this ordering prevents.
 - A client that cannot yet read v1 must never be able to enable writing it. Gate the flag's
@@ -529,8 +578,14 @@ bytes:
 | `v0-legacy` | a v0 blob — must still decrypt after the dispatch lands |
 | `v0-magic-collision` | a v0 blob hand-crafted to start with `NEB1` — must decrypt as v0 (§3.5) |
 
-Each fixture ships as `{ dek_hex, ciphertext_b64, expected_sha256_of_plaintext }`. Store under
-`web/apps/web/src/__tests__/fixtures/e2ee/` and mirror into each native repo's test bundle.
+**As implemented:** one file, `web/packages/e2e-crypto/src/__tests__/fixtures/chunked_file_vectors.json`,
+generated by `web/packages/e2e-crypto/scripts/generate-chunked-file-vectors.mjs` — an implementation
+over libsodium independent of `crypto.ts`, so the package's own code is checked against a second
+one. `cases` must decrypt (with `chunkSize` as the file metadata where given) and match `sha256`;
+`rejected` must fail. It adds four Photos-chunked cases (§3.6) — including `photos-1mib`, which must
+also open with no metadata — and three Photos negatives. `v1-1mib` is `1 MiB + 7` bytes rather than
+`3 MiB + 7`, to keep a file every client vendors under 3 MB; it still crosses a full chunk. **This
+copy in `neutrino` is the only editable one**; every other client vendors it unchanged.
 
 ### 11.2 Negative vectors — every one MUST fail to decrypt
 
@@ -567,10 +622,8 @@ wrongly.
    binding the file id into the AD (§5) less obvious than it looks. Decide before, not during,
    any future `alg = 0x02` work.
 
-3. **Fallback if a Swift binding lacks AEAD additional data** (§3.3). The options are: pass AD
-   only on the first chunk; drop AD and rely on step 8's length check plus boundary failure for
-   header integrity; or vendor the libsodium call directly. Preference order is that order, but it
-   should not be decided until someone has actually checked the binding.
+3. ~~Fallback if a Swift binding lacks AEAD additional data.~~ **Resolved (2026-11-13):** every
+   Swift, Rust and JS binding has it (§3.3). Android's own Kotlin secretstream gains it.
 
 4. **Does the search-index snapshot want v1?** It is a single blob that grows with the library and
    is re-uploaded on change. Probably yes, mechanically; nobody has measured how big it gets.

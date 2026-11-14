@@ -49,6 +49,13 @@ pub struct DeclaredFlag {
 /// is a different thing to be able to close, and closing it should not mean taking Team Spaces down
 /// with it. It is meaningless on its own, so the service requires `teamSpaces` first and this
 /// second; a deployment with only this one on is exactly a deployment with neither.
+///
+/// `e2eeChunkedWrites` is the third, and clears the bar differently: it is not a phase of anything,
+/// it is a **wire format**. On, clients write file bodies as NEB1 (`agent_docs/chunked-file-
+/// encryption.md`), which a build without the NEB1 reader cannot open — on any of the user's
+/// devices, and an installed native app cannot be recalled the way a web deploy can. The spec's
+/// rollout depends on stopping new NEB1 writes without a release. Nothing on the server reads it;
+/// clients do, and a client honours it only in a build that can also read NEB1.
 pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
     DeclaredFlag {
         key: "teamSpaces",
@@ -59,6 +66,11 @@ pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
         key: "teamFileTransfers",
         owner: "drive",
         removal: "Once moving and sharing into a team have both run enabled in production for a full release cycle with no rollback.",
+    },
+    DeclaredFlag {
+        key: "e2eeChunkedWrites",
+        owner: "crypto",
+        removal: "Once NEB1 has been the default writer in every client for a full release cycle with no rollback.",
     },
 ];
 
@@ -112,12 +124,18 @@ mod tests {
     fn missing_keys_reports_only_what_is_absent() {
         let all: Vec<String> = DECLARED_FLAGS.iter().map(|f| f.key.to_string()).collect();
         assert!(missing_keys(&all).is_empty());
-        assert_eq!(missing_keys(&["teamSpaces".to_string()]), vec!["teamFileTransfers"]);
-        assert_eq!(missing_keys(&[]), vec!["teamSpaces", "teamFileTransfers"]);
+        assert_eq!(
+            missing_keys(&["teamSpaces".to_string()]),
+            vec!["teamFileTransfers", "e2eeChunkedWrites"]
+        );
+        assert_eq!(
+            missing_keys(&[]),
+            vec!["teamSpaces", "teamFileTransfers", "e2eeChunkedWrites"]
+        );
         // A table holding only unrelated keys is missing everything the server declares.
         assert_eq!(
             missing_keys(&["somethingElse".to_string()]),
-            vec!["teamSpaces", "teamFileTransfers"]
+            vec!["teamSpaces", "teamFileTransfers", "e2eeChunkedWrites"]
         );
     }
 
