@@ -34,7 +34,7 @@ const BASE_URL = 'http://localhost:9880';
  * web monorepo — and a copy that has to be updated by hand is exactly what this test catches when
  * it is not.
  */
-const DECLARED_BY_CLIENT = ['teamSpaces', 'teamFileTransfers'];
+const DECLARED_BY_CLIENT = ['teamSpaces', 'teamFileTransfers', 'e2eeChunkedWrites'];
 
 function uniqueEmail(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -94,9 +94,10 @@ test.describe('feature flags', () => {
    * The system this replaces reached fifteen keys one defensible addition at a time, until the app
    * a deployment served was something you worked out by reading rows. This test is the tripwire:
    * adding a key makes it fail, which is the point at which someone has to decide the flag is worth
-   * having rather than noticing later that it is. `teamFileTransfers` is the one addition so far,
-   * and its argument is in `src/drive/feature_flags/catalog.rs`: it gates the only routes that
-   * reach a file outside a team.
+   * having rather than noticing later that it is. `teamFileTransfers` and `e2eeChunkedWrites` are
+   * the additions so far, and their arguments are in `src/drive/feature_flags/catalog.rs`: the
+   * first gates the only routes that reach a file outside a team, the second whether clients write
+   * a file format older builds cannot read.
    */
   test('the flag list is exactly what the product declares', async ({ request }) => {
     const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<

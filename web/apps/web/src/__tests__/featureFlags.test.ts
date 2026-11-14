@@ -42,7 +42,7 @@ describe('featureFlags', () => {
    * the moment to write down the argument — see the comment above `FLAG_KEYS`.
    */
   it('declares exactly the flags the server does', () => {
-    expect([...FLAG_KEYS]).toEqual(['teamSpaces', 'teamFileTransfers']);
+    expect([...FLAG_KEYS]).toEqual(['teamSpaces', 'teamFileTransfers', 'e2eeChunkedWrites']);
   });
 
   /**

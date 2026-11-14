@@ -24,8 +24,15 @@
  * a personal file into a team for good, and lending one without moving it. Being able to close
  * that without taking Team Spaces down is worth a boolean. It is meaningless alone: the server
  * checks `teamSpaces` first, so the client should too, and `canTransferToTeams` below is how.
+ *
+ * `e2eeChunkedWrites` is the third, and is not a phase of anything: it is a wire format. On,
+ * clients write file bodies as NEB1 (`agent_docs/chunked-file-encryption.md`), which a build
+ * without the NEB1 reader cannot open, on any of the user's devices — and a native app that is
+ * already installed cannot be recalled the way this deploy can. The rollout depends on stopping new
+ * NEB1 writes without a release. The web does not write NEB1 yet; native writers read it from
+ * `GET /api/v1/feature-flags`.
  */
-export const FLAG_KEYS = ['teamSpaces', 'teamFileTransfers'] as const;
+export const FLAG_KEYS = ['teamSpaces', 'teamFileTransfers', 'e2eeChunkedWrites'] as const;
 
 export type FeatureFlagKey = (typeof FLAG_KEYS)[number];
 
