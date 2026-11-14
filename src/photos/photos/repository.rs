@@ -259,6 +259,47 @@ impl PhotosRepository {
         self.get_photo_including_deleted(photo_id)
     }
 
+    /// Applies `patch` to a photo's metadata document as an RFC 7396 JSON Merge Patch, and
+    /// returns the result.
+    ///
+    /// Read and write happen in one `IMMEDIATE` transaction, so two clients patching the same
+    /// photo at once can't lose each other's keys — the race that read-merge-`PUT` leaves open,
+    /// and the reason this exists (`agent_docs/live-photos.md`). A stored document that isn't a
+    /// JSON object (null, or unreadable) is treated as empty rather than refused.
+    pub fn merge_metadata(
+        &self,
+        photo_id: &str,
+        patch: &serde_json::Value,
+    ) -> Result<serde_json::Value, ApiError> {
+        let mut conn = self.get_conn()?;
+        conn.immediate_transaction::<serde_json::Value, diesel::result::Error, _>(|conn| {
+            let stored: Option<String> = photos::table
+                .filter(photos::id.eq(photo_id))
+                .select(photos::metadata)
+                .first(conn)?;
+            let mut document = stored
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .filter(|v| v.is_object())
+                .unwrap_or_else(|| serde_json::json!({}));
+            apply_merge_patch(&mut document, patch);
+            diesel::update(photos::table.filter(photos::id.eq(photo_id)))
+                .set((
+                    photos::metadata.eq(Some(document.to_string())),
+                    photos::updated_at.eq(chrono::Utc::now().naive_utc()),
+                ))
+                .execute(conn)?;
+            Ok(document)
+        })
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => ApiError::not_found("Photo not found"),
+            other => {
+                tracing::error!("DB merge metadata error: {:?}", other);
+                ApiError::internal("Database error")
+            }
+        })
+    }
+
     pub fn set_metadata(&self, photo_id: &str, metadata: String) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::update(photos::table.filter(photos::id.eq(photo_id)))
@@ -607,9 +648,112 @@ impl PhotosRepository {
     }
 }
 
+/// RFC 7396 JSON Merge Patch: objects merge recursively, `null` removes a key, anything else
+/// replaces. A non-object patch replaces the target outright, as the RFC says.
+pub fn apply_merge_patch(target: &mut serde_json::Value, patch: &serde_json::Value) {
+    let Some(patch) = patch.as_object() else {
+        *target = patch.clone();
+        return;
+    };
+    if !target.is_object() {
+        *target = serde_json::json!({});
+    }
+    let object = target.as_object_mut().expect("just made an object");
+    for (key, value) in patch {
+        if value.is_null() {
+            object.remove(key);
+        } else {
+            apply_merge_patch(
+                object.entry(key.clone()).or_insert(serde_json::Value::Null),
+                value,
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn merge_patch_follows_rfc_7396() {
+        let mut doc = json!({
+            "width": 4032,
+            "device": { "localIdentifier": "A", "isRAW": true },
+            "motionPhoto": { "subtype": "live_photo_apple" },
+        });
+        apply_merge_patch(
+            &mut doc,
+            &json!({
+                "device": { "liveVideoFileID": "clip-1", "isRAW": null },
+                "exif": { "make": "Apple" },
+            }),
+        );
+        assert_eq!(
+            doc,
+            json!({
+                "width": 4032,
+                "device": { "localIdentifier": "A", "liveVideoFileID": "clip-1" },
+                "motionPhoto": { "subtype": "live_photo_apple" },
+                "exif": { "make": "Apple" },
+            })
+        );
+
+        // A non-object value replaces; a key set to null goes.
+        apply_merge_patch(&mut doc, &json!({ "device": "gone", "width": null }));
+        assert_eq!(doc["device"], json!("gone"));
+        assert!(doc.get("width").is_none());
+    }
+
+    #[test]
+    fn merging_keeps_keys_the_patch_does_not_name() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo(&pool, "p1", "u1", false);
+        repo.set_metadata(
+            "p1",
+            json!({ "motionPhoto": { "subtype": "live_photo_apple" } }).to_string(),
+        )
+        .expect("seed");
+
+        let merged = repo
+            .merge_metadata("p1", &json!({ "device": { "liveVideoFileID": "clip-1" } }))
+            .expect("merge");
+        assert_eq!(merged["motionPhoto"]["subtype"], "live_photo_apple");
+        assert_eq!(merged["device"]["liveVideoFileID"], "clip-1");
+
+        let stored = repo
+            .get_photo("p1")
+            .expect("get")
+            .metadata
+            .expect("metadata");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&stored).unwrap(),
+            merged
+        );
+    }
+
+    #[test]
+    fn merging_into_no_metadata_starts_from_an_empty_document() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo(&pool, "p1", "u1", false);
+        let merged = repo
+            .merge_metadata("p1", &json!({ "device": { "isLivePhoto": true } }))
+            .expect("merge");
+        assert_eq!(merged, json!({ "device": { "isLivePhoto": true } }));
+    }
+
+    #[test]
+    fn merging_an_unknown_photo_is_not_found() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        let err = repo
+            .merge_metadata("nope", &json!({ "a": 1 }))
+            .expect_err("missing");
+        assert_eq!(err.status, 404);
+    }
 
     fn test_pool() -> DbPool {
         use crate::MIGRATIONS;

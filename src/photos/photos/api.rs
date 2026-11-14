@@ -425,6 +425,40 @@ pub async fn put_metadata(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Merge keys into a photo's metadata document (RFC 7396 JSON Merge Patch).
+///
+/// Objects merge recursively, `null` removes a key, anything else replaces; the merged document
+/// is returned. Unlike `PUT`, which replaces the whole document, this keeps every key the caller
+/// didn't name — including ones another client wrote — and the read and write are one
+/// transaction. How Live Photo pairs are linked depends on it: see `agent_docs/live-photos.md`.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/photos/{id}/metadata",
+    params(("id" = String, Path, description = "Photo ID")),
+    request_body(content = Object, description = "A JSON Merge Patch (RFC 7396)"),
+    responses(
+        (status = 200, description = "The merged metadata document", body = Object),
+        (status = 400, description = "The body is not a JSON object"),
+        (status = 403, description = "Not the caller's photo"),
+        (status = 404, description = "Photo not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "photos"
+)]
+#[patch("/photos/{id}/metadata")]
+pub async fn patch_metadata(
+    state: web::Data<PhotosApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<serde_json::Value>,
+) -> Result<HttpResponse, ApiError> {
+    let merged =
+        state
+            .photos_service
+            .merge_metadata(&user, &path.into_inner(), body.into_inner())?;
+    Ok(HttpResponse::Ok().json(merged))
+}
+
 // ---- 6.7.1 Photo Map ----
 
 /// List photos that have GPS coordinates, for the map view.
@@ -778,6 +812,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
         .service(restore_photo)
         .service(delete_photo_permanently)
         .service(put_metadata)
+        .service(patch_metadata)
         .service(put_photo_edits)
         .service(get_photo_edits)
         .service(delete_photo_edits)
@@ -800,6 +835,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
         list_trash,
         empty_trash,
         put_metadata,
+        patch_metadata,
         get_photo_map,
         put_photo_edits,
         get_photo_edits,

@@ -19,6 +19,13 @@
  * browser: photo content is E2EE, so the server holds ciphertext and
  * `exiftool` server-side would have nothing to look at.
  *
+ * **A still that names its clip wins.** Under the platform's Live Photo convention
+ * (`agent_docs/live-photos.md`) a still's `metadata.device.liveVideoFileID` is
+ * the Drive file holding its clip — the iOS apps write it at import, and
+ * [missingMotionLinks] is how the web writes it for pairs it found the other
+ * ways. It is checked first: it is the only signal that survives a clip stored
+ * under another name in another folder, as Neutrino Photos iOS stores them.
+ *
  * **Pairing cannot rely on the identifier alone.** The still's copy of it is
  * buried in an Apple MakerNote we do not parse, the main library listing is
  * served by the generic Drive endpoint (which carries no photo metadata at
@@ -331,6 +338,20 @@ export function pairMotionPhotos(
     ...motionCandidates.filter((p) => isVideo(p) && !listed.has(p.id)),
   ];
 
+  const motionByStill = new Map<string, PhotoResponse>();
+  const claimed = new Set<string>();
+
+  // A still that names its clip claims it first, by file id: the convention's own link, and the
+  // only one that finds a clip stored under another name in another folder.
+  const candidateByFile = new Map(candidates.map((clip) => [clip.fileId, clip]));
+  for (const still of items.filter(isImage)) {
+    const fileId = still.metadata?.device?.liveVideoFileID;
+    const clip = fileId ? candidateByFile.get(fileId) : undefined;
+    if (!clip || claimed.has(clip.id) || motionByStill.has(still.id)) continue;
+    motionByStill.set(still.id, clip);
+    claimed.add(clip.id);
+  }
+
   const byIdentifier = new Map<string, PhotoResponse>();
   const byStem = new Map<string, PhotoResponse>();
   for (const still of items.filter(isImage)) {
@@ -340,9 +361,8 @@ export function pairMotionPhotos(
     if (stem && !byStem.has(stem)) byStem.set(stem, still);
   }
 
-  const motionByStill = new Map<string, PhotoResponse>();
-  const claimed = new Set<string>();
   for (const clip of candidates) {
+    if (claimed.has(clip.id)) continue;
     const identifier = motionContentIdentifier(clip);
     const stem = motionPhotoStem(clip.fileName);
     const still =
@@ -377,6 +397,25 @@ export function pairMotionPhotos(
     if (motionPhotoOf(clip)) result.push(itemFor(clip, null));
   }
   return result;
+}
+
+/**
+ * The links worth writing back: registered stills that paired with a separate clip by content
+ * identifier or filename stem, but don't yet store `device.liveVideoFileID`.
+ *
+ * Writing it is what lets the iOS apps — which look for that link, not for stems — play and save
+ * back a Live Photo imported here (`agent_docs/live-photos.md`). A still that already names a clip
+ * is left alone even when this pairing found a different one: the named clip may simply be on a
+ * page not yet fetched, and overwriting a link with a stem guess would be worse than no link.
+ */
+export function missingMotionLinks(items: LibraryItem[]): { photoId: string; liveVideoFileID: string }[] {
+  const links: { photoId: string; liveVideoFileID: string }[] = [];
+  for (const { photo, motion } of items) {
+    if (!motion || photo.isDriveOnly || !isImage(photo)) continue;
+    if (photo.metadata?.device?.liveVideoFileID) continue;
+    links.push({ photoId: photo.id, liveVideoFileID: motion.fileId });
+  }
+  return links;
 }
 
 /** What to call this on screen — each platform's own name for the thing. */
