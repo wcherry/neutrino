@@ -5,6 +5,11 @@
 //! replaces a primary navigation entry and writes to four tables, so its gate has to hold on the
 //! server too, and this is where the team module asks.
 //!
+//! **Nothing reads it while Neutrino is in beta.** Feature flags are for after a stable public
+//! release; until then every feature ships unconditionally and unfinished work stays on a branch.
+//! The gate stays wired into the services so that gating something later is one line, which is why
+//! it is marked `allow(dead_code)` rather than deleted.
+//!
 //! A gated route that is off answers **404, not 403**. 403 says "this exists and you may not have
 //! it", which is a different and wrong statement: with the flag off the feature does not exist on
 //! this deployment at all, and saying otherwise leaks a roadmap to anyone who probes the routes.
@@ -15,10 +20,12 @@ use super::repository::FeatureFlagsRepository;
 use crate::shared::ApiError;
 
 #[derive(Clone)]
+#[allow(dead_code)] // unused during the beta — see the module comment
 pub struct FeatureGate {
     repo: Arc<FeatureFlagsRepository>,
 }
 
+#[allow(dead_code)] // unused during the beta — see the module comment
 impl FeatureGate {
     pub fn new(repo: Arc<FeatureFlagsRepository>) -> Self {
         Self { repo }
@@ -61,18 +68,31 @@ mod tests {
             .expect("conn")
             .run_pending_migrations(crate::MIGRATIONS)
             .expect("migrations");
+        // No real flag exists during the beta, so the gate is exercised on a row of its own.
+        {
+            use crate::schema::feature_flags;
+            use diesel::prelude::*;
+            diesel::insert_into(feature_flags::table)
+                .values((
+                    feature_flags::key.eq("sampleFlag"),
+                    feature_flags::enabled.eq(0),
+                    feature_flags::updated_at.eq("2026-01-01T00:00:00Z"),
+                ))
+                .execute(&mut pool.get().expect("conn"))
+                .expect("seed sample flag");
+        }
         let repo = Arc::new(FeatureFlagsRepository::new(pool));
         (FeatureGate::new(repo.clone()), repo)
     }
 
     #[test]
-    fn seeded_team_spaces_flag_is_off_by_default() {
-        assert!(!gate().0.is_enabled("teamSpaces").expect("read"));
+    fn a_flag_seeded_off_reads_as_off() {
+        assert!(!gate().0.is_enabled("sampleFlag").expect("read"));
     }
 
     #[test]
     fn require_on_a_disabled_flag_reads_as_not_found() {
-        let err = gate().0.require("teamSpaces").expect_err("should be gated");
+        let err = gate().0.require("sampleFlag").expect_err("should be gated");
         assert_eq!(err.status, 404);
     }
 
@@ -85,7 +105,7 @@ mod tests {
     #[test]
     fn require_passes_once_the_flag_is_on() {
         let (g, repo) = gate();
-        repo.update("teamSpaces", true).expect("enable");
-        assert!(g.require("teamSpaces").is_ok());
+        repo.update("sampleFlag", true).expect("enable");
+        assert!(g.require("sampleFlag").is_ok());
     }
 }

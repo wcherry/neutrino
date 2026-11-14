@@ -10,10 +10,6 @@
 //! Not its pages, not its files, not its activity. Being a deployment's administrator is authority
 //! over the deployment, not membership of every team on it, and a team's wiki is exactly the sort
 //! of content where the difference matters.
-//!
-//! Behind `teamSpaces`, like the rest of the module. With the flag off no team can exist, so this
-//! is a console page about nothing — and a 404 keeps the rule that a gated feature is invisible
-//! rather than merely refused.
 
 use actix_web::{delete, get, patch, web, HttpResponse};
 
@@ -217,7 +213,7 @@ pub fn configure_admin(cfg: &mut web::ServiceConfig) {
     )),
     tags((
         name = "drive-teams-admin",
-        description = "The administrator's view of Team Spaces: every team's name, size, owners and membership count, and the four things an administrator can change about a team without being in it — its disk quota, its owner, whether it is archived, and whether it exists. Deliberately the outside of a team only: its pages, files and activity stay behind membership even here. The routes exist for the case the member-facing ones cannot serve, a team whose Owners have all gone, which is why the transfer works on a team with no Owner at all. Every change is written into the team's own activity feed, where its members can see it. Behind the `teamSpaces` feature flag, and 404 when it is off."
+        description = "The administrator's view of Team Spaces: every team's name, size, owners and membership count, and the four things an administrator can change about a team without being in it — its disk quota, its owner, whether it is archived, and whether it exists. Deliberately the outside of a team only: its pages, files and activity stay behind membership even here. The routes exist for the case the member-facing ones cannot serve, a team whose Owners have all gone, which is why the transfer works on a team with no Owner at all. Every change is written into the team's own activity feed, where its members can see it."
     )),
     security(("bearer_auth" = []))
 )]
@@ -232,7 +228,6 @@ pub struct TeamsAdminApiDoc;
 mod routing {
     use super::*;
     use actix_web::{test, App};
-    use diesel::prelude::*;
     use std::sync::Arc;
     use diesel::r2d2::{ConnectionManager, Pool};
     use diesel_migrations::MigrationHarness;
@@ -241,23 +236,16 @@ mod routing {
     use crate::drive::feature_flags::gate::FeatureGate;
     use crate::drive::feature_flags::repository::FeatureFlagsRepository;
     use crate::drive::teams::repository::{DbPool, TeamsRepository};
-    use crate::drive::teams::service::{TeamsService, FLAG_TEAM_SPACES};
-    use crate::schema::feature_flags;
+    use crate::drive::teams::service::TeamsService;
     use crate::shared::TokenService;
 
-    fn app_state(flag_on: bool) -> (web::Data<TeamsApiState>, web::Data<Arc<TokenService>>) {
+    fn app_state() -> (web::Data<TeamsApiState>, web::Data<Arc<TokenService>>) {
         let manager = ConnectionManager::<diesel::SqliteConnection>::new(":memory:");
         let pool: DbPool = Pool::builder().max_size(1).build(manager).expect("pool");
         pool.get()
             .expect("conn")
             .run_pending_migrations(crate::MIGRATIONS)
             .expect("migrations");
-        if flag_on {
-            diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
-                .set(feature_flags::enabled.eq(1))
-                .execute(&mut pool.get().expect("conn"))
-                .expect("enable flag");
-        }
 
         let service = TeamsService::new(
             Arc::new(TeamsRepository::new(pool.clone())),
@@ -276,8 +264,8 @@ mod routing {
         )
     }
 
-    async fn get_teams(flag_on: bool, admin: bool) -> u16 {
-        let (state, ts) = app_state(flag_on);
+    async fn get_teams(admin: bool) -> u16 {
+        let (state, ts) = app_state();
         let token = ts
             .generate_access_token_with_admin(
                 if admin { "a1" } else { "u1" },
@@ -302,21 +290,14 @@ mod routing {
 
     #[actix_web::test]
     async fn an_admin_reaches_the_team_list() {
-        assert_eq!(get_teams(true, true).await, 200);
+        assert_eq!(get_teams(true).await, 200);
     }
 
     /// The point of the file. An ordinary signed-in user gets 403 — not a list of every team on the
     /// deployment, which is what `AuthenticatedUser` here would have handed them.
     #[actix_web::test]
     async fn an_ordinary_user_is_refused() {
-        assert_eq!(get_teams(true, false).await, 403);
-    }
-
-    /// 403 for a non-admin, but 404 for everyone once the flag is off: the gate is checked inside
-    /// the service, so being an administrator does not make a disabled feature visible.
-    #[actix_web::test]
-    async fn the_flag_hides_the_list_from_an_admin_too() {
-        assert_eq!(get_teams(false, true).await, 404);
+        assert_eq!(get_teams(false).await, 403);
     }
 
     /// Each sub-route reaches its own handler rather than being swallowed by the collection path,
@@ -328,7 +309,7 @@ mod routing {
     /// apart from a route that was never reached at all — an unrouted path carries an empty body.
     #[actix_web::test]
     async fn every_admin_sub_route_reaches_its_own_handler() {
-        let (state, ts) = app_state(true);
+        let (state, ts) = app_state();
         let token = ts
             .generate_access_token_with_admin("a1", "admin@example.com", true)
             .expect("token");
@@ -377,7 +358,7 @@ mod routing {
     /// user a team that is not theirs — or take one away — if the extractor were wrong.
     #[actix_web::test]
     async fn an_ordinary_user_is_refused_every_write() {
-        let (state, ts) = app_state(true);
+        let (state, ts) = app_state();
         let token = ts
             .generate_access_token_with_admin("u1", "user@example.com", false)
             .expect("token");

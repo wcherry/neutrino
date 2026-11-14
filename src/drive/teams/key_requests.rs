@@ -22,7 +22,7 @@ use uuid::Uuid;
 use super::model::Team;
 use super::repository::{db_err, TeamsRepository};
 use super::roles::{Role, TeamAction};
-use super::service::{TeamsService, FLAG_TEAM_SPACES};
+use super::service::TeamsService;
 use crate::schema::{file_key_refs, files, team_key_requests, users};
 use crate::shared::{ApiError, AuthenticatedUser};
 
@@ -399,7 +399,6 @@ impl TeamsService {
         req: CreateKeyRequestRequest,
         user: &AuthenticatedUser,
     ) -> Result<(TeamKeyRequestResponse, Notice), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
         let (file_owner, file_name) = self.team_file_owner(team_id, &req.file_id)?;
         let message = tidy(req.message, "message")?;
@@ -465,7 +464,6 @@ impl TeamsService {
         status: Option<&str>,
         user: &AuthenticatedUser,
     ) -> Result<TeamKeyRequestListResponse, ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         let (_, role) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
         let status = status.unwrap_or(PENDING);
         if !matches!(status, PENDING | APPROVED | DENIED) {
@@ -499,7 +497,6 @@ impl TeamsService {
         request_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<(Team, TeamKeyRequest, String), ApiError> {
-        self.gate.require(FLAG_TEAM_SPACES)?;
         // ViewTeam, not a manager action: a file's owner may answer whatever their role. The
         // archived check is done by hand for the same reason.
         let (team, role) = self.authorize(team_id, user, TeamAction::ViewTeam)?;

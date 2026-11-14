@@ -93,12 +93,9 @@ Three things in today's code shape the work:
 
 ## Feature Flag
 
-`folderLinkEditing` (DB flag, default **off**). Gates the guest link-folder API (task 8) and, on the
-web, the folder link UI that mints a link key. Rationale: a new anonymous write path into a user's
-Drive and a new key-distribution path; the native clients that must seal to link keys ship on
-different schedules. The security fixes (no stale guest grants, password support, 1 h guest TTL)
-are **not** gated. Removal: once folder links have run enabled for a release cycle with every
-client sealing to `key-recipients`.
+None. This shipped behind `folderLinkEditing` in #322; the flag was removed shortly after, along
+with every other flag, because Neutrino ships no feature flags during the beta
+(`agent_docs/developer_workflow.md` Step 4). Folder links are always on.
 
 ## Open Questions
 

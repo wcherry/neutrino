@@ -166,15 +166,9 @@ export function LinkFolderBrowser({ token, initial, renew }: Props) {
   }
 
   if (error || !data) {
-    // At the shared folder itself, 404 means the guest folder API is switched off on this server
-    // (`folderLinkEditing`), not that the folder moved.
-    const offHere =
-      crumbs.length === 1 && error instanceof ApiClientError && error.statusCode === 404;
     return (
       <div className={styles.browserCard}>
-        <Text color="error">
-          {offHere ? 'Shared folders cannot be opened on this server yet.' : describe(error)}
-        </Text>
+        <Text color="error">{describe(error)}</Text>
       </div>
     );
   }

@@ -35,8 +35,6 @@ import type {
   ShareTeamRole,
 } from '@neutrino/ui';
 import { KeyChangeDialog } from '@/components/KeyChangeDialog';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { canTransferToTeams } from '@/lib/featureFlags';
 import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
 import { folderLinkUrl, makeLinkKey, recoverLinkSeed } from '@/lib/folderLinkKeys';
 
@@ -65,16 +63,11 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
   // ── Teams ──────────────────────────────────────────────────────────────────
   //
   // Sharing with a team is sharing (issue #185 shipped it as its own dialog; it belongs here, in
-  // the one place that answers "who can open this?"). Both flags, `teamSpaces` first — see
-  // `canTransferToTeams` — and files only: a *folder* cannot be lent to a team, the server has no
-  // route for it, so for one the dialog is exactly what it always was.
-  const flags = useFeatureFlags();
-  const teamsOn = canTransferToTeams(flags) && resourceType === 'file';
-  /**
-   * A folder link anyone can write through, end-to-end encrypted with a key in the URL (#321).
-   * Off, a folder link is exactly what it was.
-   */
-  const keyedFolderLinks = flags.folderLinkEditing && resourceType === 'folder';
+  // the one place that answers "who can open this?"). Files only: a *folder* cannot be lent to a
+  // team, the server has no route for it.
+  const teamsOn = resourceType === 'file';
+  /** A folder link anyone can write through, end-to-end encrypted with a key in the URL (#321). */
+  const keyedFolderLinks = resourceType === 'folder';
   const teamSharesKey = ['file-team-shares', resource.id];
 
   const { data: myTeams } = useQuery({

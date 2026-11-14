@@ -251,8 +251,24 @@ mod tests {
             .expect("conn")
             .run_pending_migrations(MIGRATIONS)
             .expect("migrations");
+        // No real flag exists during the beta, so the mechanism is exercised on a row of its own.
+        {
+            use crate::schema::feature_flags;
+            use diesel::prelude::*;
+            diesel::insert_into(feature_flags::table)
+                .values((
+                    feature_flags::key.eq(SAMPLE_KEY),
+                    feature_flags::enabled.eq(0),
+                    feature_flags::description.eq("Test-only flag"),
+                    feature_flags::updated_at.eq("2026-01-01T00:00:00Z"),
+                ))
+                .execute(&mut pool.get().expect("conn"))
+                .expect("seed sample flag");
+        }
         pool
     }
+
+    const SAMPLE_KEY: &str = "sampleFlag";
 
     fn test_state() -> web::Data<FeatureFlagsState> {
         let pool = test_pool();
@@ -300,9 +316,8 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert!(body.is_object());
-        assert!(body.get("teamSpaces").is_some());
         // Off in the seed, and the map has to say so rather than omit the key.
-        assert_eq!(body["teamSpaces"], false);
+        assert_eq!(body[SAMPLE_KEY], false);
     }
 
     #[actix_web::test]
@@ -350,7 +365,7 @@ mod tests {
         let app = make_app!(test_state(), ts.clone());
         let token = admin_bearer(&ts);
         let req = test::TestRequest::patch()
-            .uri("/admin/feature-flags/teamSpaces")
+            .uri(&format!("/admin/feature-flags/{SAMPLE_KEY}"))
             .insert_header(("Authorization", token.clone()))
             .insert_header(("Content-Type", "application/json"))
             .set_payload(r#"{"enabled":true}"#)
@@ -358,7 +373,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
         let body: serde_json::Value = test::read_body_json(resp).await;
-        assert_eq!(body["key"], "teamSpaces");
+        assert_eq!(body["key"], SAMPLE_KEY);
         assert_eq!(body["enabled"], true);
     }
 
@@ -375,96 +390,5 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 404);
-    }
-
-    /// A key the server declares but the table has no row for must not read as a feature that is
-    /// off. This is the exact shape of the bug #183 found — `docsCompare` and three others had no
-    /// row, so the client read `undefined`, and a feature nobody had disabled was disabled forever
-    /// with nothing anywhere to say so.
-    #[actix_web::test]
-    async fn public_endpoint_fails_loudly_when_a_declared_key_has_no_row() {
-        use crate::schema::feature_flags;
-        use diesel::prelude::*;
-
-        let pool = test_pool();
-        diesel::delete(feature_flags::table.filter(feature_flags::key.eq("teamSpaces")))
-            .execute(&mut pool.get().expect("conn"))
-            .expect("delete row");
-
-        let state = web::Data::new(FeatureFlagsState {
-            repo: Arc::new(FeatureFlagsRepository::new(pool)),
-        });
-        let app = make_app!(state, make_token_service());
-
-        let req = test::TestRequest::get().uri("/feature-flags").to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 500);
-
-        let body: serde_json::Value = test::read_body_json(resp).await;
-        assert!(
-            body["error"]["message"]
-                .as_str()
-                .unwrap_or_default()
-                .contains("teamSpaces"),
-            "the error has to name the missing key, or it is another silent failure: {body}"
-        );
-    }
-
-    /// The admin list is how an operator diagnoses the failure above, so it answers rather than
-    /// failing, and surfaces the missing key as a synthesised disabled row.
-    #[actix_web::test]
-    async fn admin_list_surfaces_a_declared_key_with_no_row() {
-        use crate::schema::feature_flags;
-        use diesel::prelude::*;
-
-        let pool = test_pool();
-        diesel::delete(feature_flags::table.filter(feature_flags::key.eq("teamSpaces")))
-            .execute(&mut pool.get().expect("conn"))
-            .expect("delete row");
-
-        let state = web::Data::new(FeatureFlagsState {
-            repo: Arc::new(FeatureFlagsRepository::new(pool)),
-        });
-        let ts = make_token_service();
-        let app = make_app!(state, ts.clone());
-
-        let req = test::TestRequest::get()
-            .uri("/admin/feature-flags")
-            .insert_header(("Authorization", admin_bearer(&ts)))
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 200);
-
-        let body: serde_json::Value = test::read_body_json(resp).await;
-        let row = body
-            .as_array()
-            .expect("array")
-            .iter()
-            .find(|f| f["key"] == "teamSpaces")
-            .expect("the missing key still has to appear in the admin list");
-        assert_eq!(row["missingRow"], true);
-        assert_eq!(row["enabled"], false);
-        assert_eq!(row["owner"], "drive");
-    }
-
-    /// Every flag the admin list serves carries the two things that make it removable later.
-    #[actix_web::test]
-    async fn admin_list_carries_owner_and_removal_condition() {
-        let ts = make_token_service();
-        let app = make_app!(test_state(), ts.clone());
-        let req = test::TestRequest::get()
-            .uri("/admin/feature-flags")
-            .insert_header(("Authorization", admin_bearer(&ts)))
-            .to_request();
-        let body: serde_json::Value =
-            test::read_body_json(test::call_service(&app, req).await).await;
-
-        for flag in body.as_array().expect("array") {
-            assert!(
-                flag["owner"].is_string() && flag["removal"].is_string(),
-                "{} has no owner or no removal condition",
-                flag["key"]
-            );
-        }
     }
 }

@@ -17,7 +17,6 @@ import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, FileText, Files, Folder, Home, LayoutTemplate, Pin, Settings, Users } from 'lucide-react';
 import { EmptyState, Spinner } from '@neutrino/ui';
 import { buildPageTree, flattenPageTree, teamsApi } from '@neutrino/api-drive';
-import { useFeatureFlags, useFeatureFlagsLoaded } from '@/providers/FeatureFlagsProvider';
 import { parseTeamView, teamHref, type TeamView } from '../teamHref';
 import { FilesView } from './FilesView';
 import { MembersView } from './MembersView';
@@ -42,8 +41,6 @@ function TeamSpace() {
   const router = useRouter();
   const params = useSearchParams();
   const teamPins = useTeamPins();
-  const flags = useFeatureFlags();
-  const flagsLoaded = useFeatureFlagsLoaded();
 
   const teamId = params.get('id');
   const view = parseTeamView(params.get('view'));
@@ -53,7 +50,7 @@ function TeamSpace() {
   const { data: team, isLoading, error } = useQuery({
     queryKey: ['team', teamId],
     queryFn: () => teamsApi.get(teamId!),
-    enabled: !!teamId && flags.teamSpaces,
+    enabled: !!teamId,
   });
 
   // The tree is one request for the whole team; the sidebar and the Pages list read the same copy,
@@ -61,7 +58,7 @@ function TeamSpace() {
   const { data: pagesData } = useQuery({
     queryKey: ['team-pages', teamId, search],
     queryFn: () => teamsApi.listPages(teamId!, search || undefined),
-    enabled: !!teamId && flags.teamSpaces,
+    enabled: !!teamId,
   });
 
   const pages = useMemo(() => pagesData?.pages ?? [], [pagesData]);
@@ -95,16 +92,6 @@ function TeamSpace() {
     if (view !== 'pages') setSearch('');
   }, [view]);
 
-  if (flagsLoaded && !flags.teamSpaces) {
-    return (
-      <EmptyState
-        icon={Users}
-        title="Team Spaces is not enabled"
-        description="An administrator can turn it on under Admin → Feature Flags."
-      />
-    );
-  }
-
   if (!teamId) {
     return (
       <EmptyState
@@ -115,7 +102,7 @@ function TeamSpace() {
     );
   }
 
-  if (!flagsLoaded || isLoading) {
+  if (isLoading) {
     return (
       <div className={styles.loading}>
         <Spinner size="md" />

@@ -541,8 +541,12 @@ CI. No writer ships until this is green everywhere.
 (`GET /api/v1/feature-flags`; see the Feature flags section of `web/CLAUDE.md`) defaulting to
 off. Enable for internal accounts, then broadly.
 
-- The flag exists: `e2eeChunkedWrites`, migration 00154, read from `GET /api/v1/feature-flags`.
-  The web does not write NEB1 yet; the first writer is Drive iOS photo sync.
+- **Update (2026-11-14): the flag is gone.** Neutrino ships no feature flags during the beta
+  (`agent_docs/developer_workflow.md` Step 4), so `e2eeChunkedWrites` was removed (migration 00156)
+  and `GET /api/v1/feature-flags` no longer carries it. Drive iOS reads a missing key as off, so it
+  keeps writing the pre-NEB1 format. Turning NEB1 writes on is now a change in each writing client,
+  made once every reader in use can open NEB1 — the ordering rule below still applies, enforced by
+  release order instead of a switch. The web does not write NEB1 yet.
 - **Neutrino Photos iOS wrote chunked files before this gate existed** (§3.6) and is left as it is:
   it chunks only originals it could not otherwise upload, and Phase 1's readers are what open them
   everywhere. It is not retrofitted behind the flag.

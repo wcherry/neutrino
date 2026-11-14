@@ -683,10 +683,9 @@ async fn main() -> std::io::Result<()> {
         notification_hub.clone(),
     ));
 
-    // Feature flags (#185). Rows rather than environment variables, because the property this
-    // needs is toggling without a redeploy. The gate is shared with the modules that read a flag
-    // server-side, so a flag has one reader and one meaning — which now includes the permission
-    // resolver, since `teamFileTransfers` decides whether a team share grants access at all.
+    // Feature flags (#185). The mechanism stays wired, but no feature is behind a flag while
+    // Neutrino is in beta: flags are for after a stable public release. Rows rather than
+    // environment variables, because the property a flag needs is toggling without a redeploy.
     let feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
     let feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
         repo: feature_flags_repo.clone(),
@@ -818,7 +817,6 @@ async fn main() -> std::io::Result<()> {
             drive_sharing_service.clone(),
             drive_sharing_repo.clone(),
             drive_fs_service.clone(),
-            feature_gate.clone(),
         )),
     });
     let drive_sharing_state = web::Data::new(drive::sharing::api::SharingApiState {
@@ -879,10 +877,7 @@ async fn main() -> std::io::Result<()> {
             service: drive_shared_drives_service,
         });
 
-    // Team Spaces (#185). Every route behind `teamSpaces`, which is seeded disabled — with it off
-    // the deployment is exactly what it was before this release. The two transfer routes are
-    // behind `teamFileTransfers` as well, since they are the only ones that reach a file outside a
-    // team.
+    // Team Spaces (#185).
     let drive_teams_repo = Arc::new(TeamsRepository::new(pool.clone()));
     let drive_teams_service = Arc::new(TeamsService::new(
         drive_teams_repo,

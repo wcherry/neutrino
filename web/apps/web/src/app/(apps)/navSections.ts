@@ -87,21 +87,14 @@ function teamItem(team: Team): NavItem {
 }
 
 /**
- * The Team section, in one of its two shapes.
+ * The Team section.
  *
- * With `teamSpaces` off this is what it has always been — a link to the Shared Drives page — and
- * the deployment is unchanged by #185. With the flag on, Shared Drives is replaced by Shared
- * Spaces: not added beside it, replaced, because a Team Space is what a shared drive was meant to
- * be and two entries would be two answers to "where does my team's stuff live".
- *
- * Replacing rather than adding is also what makes the flag a real kill switch. Turning it off puts
- * the old entry back, and the Shared Drives page and its endpoint were never removed — which is
- * what the six iOS apps and the macOS client still read.
+ * Shared Spaces replaced Shared Drives here (#185) rather than sitting beside it, because a Team
+ * Space is what a shared drive was meant to be and two entries would be two answers to "where does
+ * my team's stuff live". The Shared Drives page and its endpoint were not removed — the iOS apps
+ * and the macOS client still read them.
  */
-function teamSection(teamSpacesEnabled: boolean, teams?: readonly Team[], pins: Record<string, TeamPin[]> = {}): NavSection {
-  if (!teamSpacesEnabled) {
-    return { id: 'team', label: 'Team', items: [{ id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' }] };
-  }
+function teamSection(teams?: readonly Team[], pins: Record<string, TeamPin[]> = {}): NavSection {
   // The new shell lists the user's teams themselves, under Teams, as the mockups do; the
   // classic sidebar keeps its one entry.
   if (teams) {
@@ -136,13 +129,7 @@ const ADMIN_SECTION: NavSection = {
   ],
 };
 
-/**
- * The sidebar.
- *
- * `teamSpacesEnabled` defaults to `false` so a caller that has not read the flag — or is rendering
- * before the flag map has arrived — gets the pre-#185 sidebar. Failing closed here is what keeps a
- * slow flag fetch from flashing a Shared Spaces entry that then disappears.
- */
+/** The sidebar. */
 export interface NavOptions {
   /** `apps.enabled`; every app when omitted. */
   enabledApps?: readonly AppKey[];
@@ -155,13 +142,12 @@ export interface NavOptions {
 export function getNavSections(
   isAdmin: boolean,
   tags: Tag[],
-  teamSpacesEnabled = false,
   { enabledApps = APP_ITEMS.map((i) => i.app), teams, teamPins }: NavOptions = {},
 ): NavSection[] {
   const sections = [
     DRIVE_SECTION,
     appsSection(enabledApps),
-    teamSection(teamSpacesEnabled, teams, teamPins),
+    teamSection(teams, teamPins),
     tagNavSection(tags),
   ];
   return isAdmin ? [...sections, ADMIN_SECTION] : sections;

@@ -13,34 +13,14 @@
  * accept one missing a key *this* file declares. Adding a flag means a migration, an entry in the
  * server's catalog, and an entry here; the tests fail until all three agree.
  *
- * **The list should stay hard to lengthen, and the bar is a difference in blast radius.** Team
- * Spaces was specified with three per-phase sub-flags beside `teamSpaces`; they are not here. Each
- * would have been defensible alone, which is exactly how the previous list reached nineteen
- * declared keys — and a feature whose phases are separately switchable is a feature whose
- * behaviour you work out by reading rows. One feature, one switch.
- *
- * `teamFileTransfers` is the second key and clears that bar: every other part of Team Spaces acts
- * on rows a team already owns, and the two transfer flows act on a member's own My Drive — moving
- * a personal file into a team for good, and lending one without moving it. Being able to close
- * that without taking Team Spaces down is worth a boolean. It is meaningless alone: the server
- * checks `teamSpaces` first, so the client should too, and `canTransferToTeams` below is how.
- *
- * `e2eeChunkedWrites` is the third, and is not a phase of anything: it is a wire format. On,
- * clients write file bodies as NEB1 (`agent_docs/chunked-file-encryption.md`), which a build
- * without the NEB1 reader cannot open, on any of the user's devices — and a native app that is
- * already installed cannot be recalled the way this deploy can. The rollout depends on stopping new
- * NEB1 writes without a release. The web does not write NEB1 yet; native writers read it from
- * `GET /api/v1/feature-flags`.
- *
- * `folderLinkEditing` (#321) gates folder links that anyone can write through: the link-key UI in
- * the Share dialog and the guest folder browser on `/share`.
+ * **Empty while Neutrino is in beta.** Feature flags are for after a stable public release; until
+ * then every feature ships unconditionally and unfinished work stays on a branch. The four keys this
+ * held (`teamSpaces`, `teamFileTransfers`, `e2eeChunkedWrites`, `folderLinkEditing`) were removed
+ * with every check that read them. The mechanism — this list, `FeatureFlagsProvider`, the admin
+ * tab — stays, so a flag after the release is an entry here, one in the server's catalog and a
+ * migration.
  */
-export const FLAG_KEYS = [
-  'teamSpaces',
-  'teamFileTransfers',
-  'e2eeChunkedWrites',
-  'folderLinkEditing',
-] as const;
+export const FLAG_KEYS = [] as const;
 
 export type FeatureFlagKey = (typeof FLAG_KEYS)[number];
 
@@ -75,17 +55,4 @@ export function assertEveryFlagPresent(payload: unknown): FeatureFlags {
     );
   }
   return Object.fromEntries(FLAG_KEYS.map((k) => [k, record[k] as boolean])) as FeatureFlags;
-}
-
-/**
- * Whether to offer moving or sharing a file into a team.
- *
- * Both flags, `teamSpaces` first, mirroring `TeamsService::require_transfers` on the server. One
- * function rather than `flags.teamSpaces && flags.teamFileTransfers` at each call site, because
- * the half that is easy to forget is the first one — and forgetting it puts "Move to a team space"
- * in a Drive context menu on a deployment that has no teams, where every option in the dialog it
- * opens would be a 404.
- */
-export function canTransferToTeams(flags: FeatureFlags): boolean {
-  return flags.teamSpaces && flags.teamFileTransfers;
 }

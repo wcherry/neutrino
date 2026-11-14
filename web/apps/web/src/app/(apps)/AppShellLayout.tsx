@@ -45,7 +45,6 @@ import {
 } from '@/lib/api';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { APP_ITEMS, getNavSections, withActiveItem } from './navSections';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate, getGateState, subscribeToGateState } from '@/components/E2EEUnlockGate';
 import { TourControlsProvider, replayLabel, useTourController } from '@/components/Tour';
@@ -209,11 +208,6 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   });
   const tags = useMemo(() => tagsData?.tags ?? [], [tagsData]);
 
-  // Shared Drives becomes Shared Spaces when `teamSpaces` is on. The flag reads false until
-  // the map arrives, so the sidebar starts as the pre-#185 one rather than flashing an entry that
-  // then disappears.
-  const flags = useFeatureFlags();
-
   // The look decides the shell: classic keeps today's (the default until the editors are done,
   // ui-roadmap.md stage 5); the three new looks get the new top bar, sidebar and editor frame.
   const [look] = usePreference('appearance.look');
@@ -247,7 +241,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const { data: teamsData } = useQuery({
     queryKey: ['teams'],
     queryFn: () => teamsApi.list(),
-    enabled: auth.status === 'ready' && flags.teamSpaces && flow,
+    enabled: auth.status === 'ready' && flow,
     staleTime: 30_000,
   });
 
@@ -259,9 +253,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const [sidebarPref] = usePreference('shell.sidebar');
   const navSections = withActiveItem(
     applyLayout(
-      getNavSections(isAdmin, tags, flags.teamSpaces, {
+      getNavSections(isAdmin, tags, {
         enabledApps,
-        teams: flow && flags.teamSpaces ? teamsData?.teams ?? [] : undefined,
+        teams: flow ? teamsData?.teams ?? [] : undefined,
         teamPins,
       }),
       readLayout(sidebarPref),

@@ -114,9 +114,7 @@ export type {
   ListTaggedFilesResponse,
 } from './types';
 
-// Team Spaces (issue #185). Behind the `teamSpaces` feature flag server-side, where a gated-off
-// route answers 404 — read the flag before rendering a team surface rather than inferring it from
-// a failed request.
+// Team Spaces (issue #185).
 export {
   teamsApi,
   buildPageTree,

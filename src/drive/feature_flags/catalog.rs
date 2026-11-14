@@ -31,59 +31,13 @@ pub struct DeclaredFlag {
 
 /// Every key the server will serve, and the only keys it will accept a row for.
 ///
-/// The fifteen keys #183 removed are deliberately absent. Their features are unconditional now, so
-/// a row for one would describe a switch that controls nothing — which is precisely the drift that
-/// made the old system a second, invisible definition of the product.
-///
-/// **Adding an entry should be hard, and the bar is a difference in blast radius.** Team Spaces was
-/// specified with three per-phase sub-flags beside it; they are not here. Each would have been
-/// defensible alone, which is exactly how the last system reached fifteen — and a Team Space with
-/// its wiki switched off is not a shippable half-feature, it is a navigation entry leading to a
-/// page that says something is missing. A feature gets one switch, and the switch answers one
-/// question: is this on?
-///
-/// `teamFileTransfers` is the second entry and clears that bar for one reason: every other Team
-/// Spaces route touches rows that belong to a team, and turning `teamSpaces` off makes all of them
-/// 404. The transfer routes reach the other way — into a member's own My Drive, at files with
-/// `team_id IS NULL` — and `team_file_shares` grants access to a personal file through a team. That
-/// is a different thing to be able to close, and closing it should not mean taking Team Spaces down
-/// with it. It is meaningless on its own, so the service requires `teamSpaces` first and this
-/// second; a deployment with only this one on is exactly a deployment with neither.
-///
-/// `e2eeChunkedWrites` is the third, and clears the bar differently: it is not a phase of anything,
-/// it is a **wire format**. On, clients write file bodies as NEB1 (`agent_docs/chunked-file-
-/// encryption.md`), which a build without the NEB1 reader cannot open — on any of the user's
-/// devices, and an installed native app cannot be recalled the way a web deploy can. The spec's
-/// rollout depends on stopping new NEB1 writes without a release. Nothing on the server reads it;
-/// clients do, and a client honours it only in a build that can also read NEB1.
-///
-/// `folderLinkEditing` is the fourth (#321): it opens an anonymous write path into a user's Drive
-/// and a new way file keys are distributed, and the native clients that must seal new uploads to a
-/// link's key ship on their own schedules. Off, the guest folder API answers 404 and links stay as
-/// they were; the security fixes that shipped with it (no stale guest grants, passwords) are not
-/// gated.
-pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
-    DeclaredFlag {
-        key: "teamSpaces",
-        owner: "drive",
-        removal: "Once Team Spaces has run enabled in production for a full release cycle with no rollback.",
-    },
-    DeclaredFlag {
-        key: "teamFileTransfers",
-        owner: "drive",
-        removal: "Once moving and sharing into a team have both run enabled in production for a full release cycle with no rollback.",
-    },
-    DeclaredFlag {
-        key: "e2eeChunkedWrites",
-        owner: "crypto",
-        removal: "Once NEB1 has been the default writer in every client for a full release cycle with no rollback.",
-    },
-    DeclaredFlag {
-        key: "folderLinkEditing",
-        owner: "drive",
-        removal: "Once folder links have run enabled in production for a release cycle with every client sealing new uploads to key-recipients.",
-    },
-];
+/// **Empty, and it stays empty while Neutrino is in beta.** Feature flags are for after a stable
+/// public release: until then a feature ships unconditionally, and work that is not ready stays on
+/// a branch. The four flags this list held (`teamSpaces`, `teamFileTransfers`, `e2eeChunkedWrites`,
+/// `folderLinkEditing`) were removed together with every check that read them, and migration 156
+/// dropped their rows. The mechanism — the table, the endpoints, the admin tab, `FeatureGate` — is
+/// kept, so that after the release a flag is an entry here, a migration and a `FLAG_KEYS` key.
+pub const DECLARED_FLAGS: &[DeclaredFlag] = &[];
 
 /// Which declared keys are missing from `present`, in declaration order.
 ///
@@ -91,7 +45,13 @@ pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
 /// retired key is inert — nothing reads it — and refusing to start over one would turn removing a
 /// flag from the code into a migration that has to land in the same deploy.
 pub fn missing_keys(present: &[String]) -> Vec<&'static str> {
-    DECLARED_FLAGS
+    missing_from(DECLARED_FLAGS, present)
+}
+
+/// [`missing_keys`] against any declared list, so the rule is testable while the real list is
+/// empty.
+fn missing_from(declared: &[DeclaredFlag], present: &[String]) -> Vec<&'static str> {
+    declared
         .iter()
         .map(|f| f.key)
         .filter(|key| !present.iter().any(|p| p == key))
@@ -131,32 +91,21 @@ mod tests {
         );
     }
 
+    const SAMPLE: &[DeclaredFlag] = &[
+        DeclaredFlag { key: "alpha", owner: "test", removal: "never" },
+        DeclaredFlag { key: "beta", owner: "test", removal: "never" },
+    ];
+
     #[test]
     fn missing_keys_reports_only_what_is_absent() {
-        let all: Vec<String> = DECLARED_FLAGS.iter().map(|f| f.key.to_string()).collect();
-        assert!(missing_keys(&all).is_empty());
+        let all: Vec<String> = SAMPLE.iter().map(|f| f.key.to_string()).collect();
+        assert!(missing_from(SAMPLE, &all).is_empty());
+        assert_eq!(missing_from(SAMPLE, &["alpha".to_string()]), vec!["beta"]);
+        assert_eq!(missing_from(SAMPLE, &[]), vec!["alpha", "beta"]);
+        // A table holding only unrelated keys is missing everything declared.
         assert_eq!(
-            missing_keys(&["teamSpaces".to_string()]),
-            vec!["teamFileTransfers", "e2eeChunkedWrites", "folderLinkEditing"]
-        );
-        assert_eq!(
-            missing_keys(&[]),
-            vec![
-                "teamSpaces",
-                "teamFileTransfers",
-                "e2eeChunkedWrites",
-                "folderLinkEditing"
-            ]
-        );
-        // A table holding only unrelated keys is missing everything the server declares.
-        assert_eq!(
-            missing_keys(&["somethingElse".to_string()]),
-            vec![
-                "teamSpaces",
-                "teamFileTransfers",
-                "e2eeChunkedWrites",
-                "folderLinkEditing"
-            ]
+            missing_from(SAMPLE, &["somethingElse".to_string()]),
+            vec!["alpha", "beta"]
         );
     }
 
@@ -164,11 +113,15 @@ mod tests {
     /// should not have to land in the same deploy as the migration that drops its row.
     #[test]
     fn undeclared_rows_are_not_missing_keys() {
-        let mut present: Vec<String> = DECLARED_FLAGS
-            .iter()
-            .map(|f| f.key.to_string())
-            .collect();
+        let mut present: Vec<String> = SAMPLE.iter().map(|f| f.key.to_string()).collect();
         present.push("someRetiredFlag".to_string());
-        assert!(missing_keys(&present).is_empty());
+        assert!(missing_from(SAMPLE, &present).is_empty());
+    }
+
+    /// No flags during the beta. Adding one here is a decision to be made after the public
+    /// release, and this is where it has to be made deliberately.
+    #[test]
+    fn no_feature_is_flagged_during_the_beta() {
+        assert!(DECLARED_FLAGS.is_empty());
     }
 }

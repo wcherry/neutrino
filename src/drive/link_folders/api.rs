@@ -1,7 +1,6 @@
 //! `/api/v1/share/folder/...` — the guest side of a folder link (#321).
 //!
 //! Authenticated by a guest session from `POST /share/{token}/session`, never by an account.
-//! Gated by `folderLinkEditing`: off, every route here is a 404.
 //!
 //! Reading a file's bytes and key needs nothing new: `GET /drive/files/{id}` and
 //! `GET /drive/files/{id}/key` already answer a guest through `get_effective_role`. What a guest
@@ -66,7 +65,7 @@ pub struct LinkUpdateFolderRequest {
     responses(
         (status = 200, description = "Folder contents", body = LinkFolderContentsResponse),
         (status = 401, description = "No live guest session"),
-        (status = 404, description = "Not inside the link, or the feature is off"),
+        (status = 404, description = "Not inside the link"),
     ),
     security(("bearer_auth" = [])),
     tag = "link-folders"
@@ -97,7 +96,7 @@ pub async fn get_link_folder(
     responses(
         (status = 200, description = "Created", body = FolderResponse),
         (status = 403, description = "View-only link"),
-        (status = 404, description = "Not inside the link, or the feature is off"),
+        (status = 404, description = "Not inside the link"),
     ),
     security(("bearer_auth" = [])),
     tag = "link-folders"
@@ -129,7 +128,7 @@ pub async fn create_link_folder(
     responses(
         (status = 200, description = "Uploaded", body = FileMetadataResponse),
         (status = 403, description = "View-only link"),
-        (status = 404, description = "Folder not inside the link, or the feature is off"),
+        (status = 404, description = "Folder not inside the link"),
         (status = 413, description = "Too large, or the owner's quota is full"),
     ),
     security(("bearer_auth" = [])),
@@ -167,7 +166,7 @@ pub async fn upload_to_link_folder(
     responses(
         (status = 200, description = "Updated", body = FileResponse),
         (status = 403, description = "View-only link"),
-        (status = 404, description = "Not inside the link, or the feature is off"),
+        (status = 404, description = "Not inside the link"),
     ),
     security(("bearer_auth" = [])),
     tag = "link-folders"
@@ -196,7 +195,7 @@ pub async fn update_link_file(
     responses(
         (status = 204, description = "Trashed"),
         (status = 403, description = "View-only link"),
-        (status = 404, description = "Not inside the link, or the feature is off"),
+        (status = 404, description = "Not inside the link"),
     ),
     security(("bearer_auth" = [])),
     tag = "link-folders"
@@ -223,7 +222,7 @@ pub async fn trash_link_file(
         (status = 200, description = "Updated", body = FolderResponse),
         (status = 400, description = "Moving a folder into itself"),
         (status = 403, description = "View-only link, or the shared folder itself"),
-        (status = 404, description = "Not inside the link, or the feature is off"),
+        (status = 404, description = "Not inside the link"),
     ),
     security(("bearer_auth" = [])),
     tag = "link-folders"
@@ -252,7 +251,7 @@ pub async fn update_link_folder(
     responses(
         (status = 204, description = "Trashed"),
         (status = 403, description = "View-only link, or the shared folder itself"),
-        (status = 404, description = "Not inside the link, or the feature is off"),
+        (status = 404, description = "Not inside the link"),
     ),
     security(("bearer_auth" = [])),
     tag = "link-folders"
@@ -301,7 +300,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
     )),
     tags((
         name = "link-folders",
-        description = "What someone holding a folder link can do inside it, with a guest session from POST /share/{token}/session. Everything runs as the folder's owner and is confined to the shared folder. Gated by the folderLinkEditing flag."
+        description = "What someone holding a folder link can do inside it, with a guest session from POST /share/{token}/session. Everything runs as the folder's owner and is confined to the shared folder."
     ))
 )]
 pub struct LinkFoldersApiDoc;

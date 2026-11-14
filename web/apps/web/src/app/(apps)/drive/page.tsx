@@ -42,8 +42,6 @@ import { FileInfoPanel } from './FileInfoPanel';
 import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { LocalImportDialog } from '@/components/LocalImport';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { canTransferToTeams } from '@/lib/featureFlags';
 import { FileGrid, type GridItem, type SortField, type SortDir, type FilterType } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
 import { routeForFile, previewKindForMime } from './routeForFile';
@@ -139,10 +137,6 @@ function DriveContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [infoFile?.file.id, infoFile?.focusTags]);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
-  // Both team flags, `teamSpaces` first — see `canTransferToTeams`. With either off the Move
-  // dialog is offered no teams and lists My Drive alone, rather than showing destinations whose
-  // every action 404s.
-  const teamTransfersOn = canTransferToTeams(useFeatureFlags());
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
   const [renaming, setRenaming] = useState<FileItem | null>(null);
@@ -456,7 +450,6 @@ function DriveContent() {
   const { data: teamsData } = useQuery({
     queryKey: ['teams'],
     queryFn: () => teamsApi.list(),
-    enabled: teamTransfersOn,
   });
   const eligibleTeams = useMemo(
     () =>

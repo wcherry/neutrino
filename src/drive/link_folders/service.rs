@@ -9,7 +9,6 @@
 //! The guest's session is re-checked on every call (`SharingService::guest_link`), so disabling,
 //! deleting, expiring or re-passwording the link ends it at once.
 
-use crate::drive::feature_flags::gate::FeatureGate;
 use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, CreateFolderRequest, FileResponse, FolderContentsQuery,
@@ -20,8 +19,6 @@ use crate::drive::filesystem::{
 use crate::drive::sharing::{repository::SharingRepository, service::SharingService};
 use crate::shared::{ApiError, AuthenticatedUser};
 use std::sync::Arc;
-
-pub const FLAG_FOLDER_LINK_EDITING: &str = "folderLinkEditing";
 
 /// The part of an owner's Drive one guest session may reach.
 #[derive(Debug, Clone)]
@@ -51,7 +48,6 @@ pub struct LinkFoldersService {
     sharing: Arc<SharingService>,
     repo: Arc<SharingRepository>,
     filesystem: Arc<FilesystemService>,
-    gate: FeatureGate,
 }
 
 /// Anything outside the link reads as absent, not forbidden: a guest learns nothing about it.
@@ -64,20 +60,17 @@ impl LinkFoldersService {
         sharing: Arc<SharingService>,
         repo: Arc<SharingRepository>,
         filesystem: Arc<FilesystemService>,
-        gate: FeatureGate,
     ) -> Self {
         Self {
             sharing,
             repo,
             filesystem,
-            gate,
         }
     }
 
-    /// The caller's scope, or an error when the flag is off, the caller is not a live folder-link
-    /// guest, or the shared folder is gone.
+    /// The caller's scope, or an error when the caller is not a live folder-link guest, or the
+    /// shared folder is gone.
     pub fn scope(&self, caller_id: &str) -> Result<LinkScope, ApiError> {
-        self.gate.require(FLAG_FOLDER_LINK_EDITING)?;
         let link = self.sharing.guest_link(caller_id)?;
         if link.resource_type != "folder" {
             return Err(ApiError::bad_request("This link is not to a folder"));
