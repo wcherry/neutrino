@@ -9,6 +9,7 @@ use crate::drive::permissions::{
     model::NewPermissionRecord,
     repository::PermissionsRepository,
 };
+use crate::drive::sharing::model::GuestSubject;
 use crate::drive::teams::model::ShareRole;
 use crate::drive::teams::service::{FLAG_TEAM_FILE_TRANSFERS, FLAG_TEAM_SPACES};
 use crate::drive::workspace::service::WorkspaceService;
@@ -309,6 +310,12 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<Option<String>, ApiError> {
+        // A link guest (#321) is answered from the live link alone, before anything else: guests
+        // hold no permission rows, so revoking the link revokes them.
+        if let Some(guest) = GuestSubject::parse(user_id) {
+            return self.guest_role(&guest, resource_type, resource_id);
+        }
+
         // A team-owned file or folder is governed by the team, and nothing else (issue #185).
         //
         // Checked *first*, ahead of the explicit grants, because otherwise the grants outlive the
@@ -361,6 +368,72 @@ impl PermissionsService {
             _ => {}
         }
         Ok(None)
+    }
+
+    /// A link guest's role: the link's role over the linked resource and everything live inside
+    /// it, and nothing anywhere else.
+    ///
+    /// `None` when the link is gone, disabled or expired, or when a session subject's epoch is not
+    /// the link's current one (the password changed after the session began). A key subject
+    /// (`guest:{id}`, no epoch) is what file keys are sealed to; it is never a JWT subject, and is
+    /// answered here so `share_file_key` can check a link may receive a key.
+    ///
+    /// Never `owner`: a guest cannot manage sharing, permissions or anything else owner-only.
+    fn guest_role(
+        &self,
+        guest: &GuestSubject,
+        resource_type: &str,
+        resource_id: &str,
+    ) -> Result<Option<String>, ApiError> {
+        let Some(link) = self.repo.find_share_link(&guest.link_id)? else {
+            return Ok(None);
+        };
+        if !link.is_live(chrono::Utc::now().naive_utc()) {
+            return Ok(None);
+        }
+        if guest.epoch.is_some_and(|e| e != link.session_epoch) {
+            return Ok(None);
+        }
+        let role = match link.role.as_str() {
+            r @ ("viewer" | "commenter" | "editor") => r.to_string(),
+            _ => return Ok(None),
+        };
+        if !self.repo.is_live_personal_resource(resource_type, resource_id)?
+            || !self
+                .repo
+                .is_live_personal_resource(&link.resource_type, &link.resource_id)?
+        {
+            return Ok(None);
+        }
+
+        let covered = match (link.resource_type.as_str(), resource_type) {
+            ("file", "file") => link.resource_id == resource_id,
+            ("folder", "folder") => self.folder_within(&link.resource_id, resource_id)?,
+            ("folder", "file") => match self.repo.get_file_folder_id(resource_id)? {
+                Some(folder) => self.folder_within(&link.resource_id, &folder)?,
+                None => false,
+            },
+            _ => false,
+        };
+        Ok(covered.then_some(role))
+    }
+
+    /// Whether `folder_id` is `root` or below it, through live folders only.
+    fn folder_within(&self, root: &str, folder_id: &str) -> Result<bool, ApiError> {
+        let mut current = folder_id.to_string();
+        for _ in 0..64 {
+            if current == root {
+                return Ok(true);
+            }
+            if !self.repo.is_live_personal_resource("folder", &current)? {
+                return Ok(false);
+            }
+            match self.repo.get_folder_parent_id(&current)? {
+                Some(parent) => current = parent,
+                None => return Ok(false),
+            }
+        }
+        Ok(false)
     }
 
     /// The caller's role over a resource, *if* it belongs to a team.

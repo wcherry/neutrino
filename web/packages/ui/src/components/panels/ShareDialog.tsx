@@ -35,6 +35,8 @@ export interface ShareLinkData {
   role: string;
   visibility: 'public' | 'anyoneWithLink';
   expiresAt: string | null;
+  /** Whether opening the link needs a password. */
+  hasPassword?: boolean;
 }
 
 export interface ShareUserSuggestion {
@@ -97,6 +99,15 @@ export interface ShareDialogProps {
   onLinkVisibilityChange: (visibility: 'public' | 'anyoneWithLink') => void;
   onLinkExpiryChange: (expiresAt: string | null) => void;
   onDeleteLink: () => void;
+  /**
+   * The URL Copy link copies. Omitted: `/share?token=…`. `null`: there is no full URL to copy
+   * here (a folder link whose key this browser cannot recover), and Copy link is disabled.
+   */
+  linkUrl?: string | null;
+  /** Shown under the link controls: what the link lets people do, or why it cannot be copied. */
+  linkNotice?: React.ReactNode;
+  /** Offer a link password. Called with the new password, or `null` to remove it. */
+  onSetLinkPassword?: (password: string | null) => Promise<void>;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -434,10 +445,16 @@ function ShareLinkSection({
   onExpiryChange,
   onDelete,
   isPending,
+  copyDisabled,
+  notice,
+  onSetPassword,
 }: {
   link: ShareLinkData;
   onCopy: () => void;
   copied: boolean;
+  copyDisabled?: boolean;
+  notice?: React.ReactNode;
+  onSetPassword?: (password: string | null) => Promise<void>;
   onToggle: (active: boolean) => void;
   onRoleChange: (role: string) => void;
   onVisibilityChange: (visibility: 'public' | 'anyoneWithLink') => void;
@@ -720,12 +737,21 @@ function ShareLinkSection({
               )}
             </div>
           </div>
+          {onSetPassword && (
+            <LinkPasswordRow
+              hasPassword={!!link.hasPassword}
+              onSet={onSetPassword}
+              isPending={isPending}
+            />
+          )}
+          {notice && <div className={styles.linkNotice}>{notice}</div>}
           <div className={styles.linkActions}>
             <Button
               variant="secondary"
               size="sm"
               icon={copied ? <Check size={14} /> : <Copy size={14} />}
               onClick={onCopy}
+              disabled={copyDisabled}
             >
               {copied ? 'Copied!' : 'Copy link'}
             </Button>
@@ -740,6 +766,110 @@ function ShareLinkSection({
             </Button>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Add, change or remove a link password. The password is typed once and never shown again: the
+ * server keeps only a hash, so there is nothing to display.
+ */
+function LinkPasswordRow({
+  hasPassword,
+  onSet,
+  isPending,
+}: {
+  hasPassword: boolean;
+  onSet: (password: string | null) => Promise<void>;
+  isPending: boolean;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [value, setValue] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function run(password: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await onSet(password);
+      setEditing(false);
+      setValue('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update the password');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const disabled = isPending || busy;
+
+  return (
+    <div className={styles.linkPassword}>
+      <div className={styles.linkRoleRow}>
+        <Text size="xs" color="muted">Password:</Text>
+        {editing ? (
+          <form
+            className={styles.linkPasswordForm}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (value.length >= 4) void run(value);
+            }}
+          >
+            <input
+              type="password"
+              className={styles.expiryDisplay}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="At least 4 characters"
+              autoComplete="new-password"
+              aria-label="Link password"
+              autoFocus
+              disabled={disabled}
+            />
+            <Button type="submit" size="sm" variant="secondary" disabled={disabled || value.length < 4}>
+              Save
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setEditing(false);
+                setValue('');
+                setError(null);
+              }}
+              disabled={disabled}
+            >
+              Cancel
+            </Button>
+          </form>
+        ) : (
+          <div className={styles.linkPasswordForm}>
+            <Text size="xs">{hasPassword ? 'Required' : 'None'}</Text>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={disabled}>
+              {hasPassword ? 'Change' : 'Add password'}
+            </Button>
+            {hasPassword && (
+              <Button size="sm" variant="ghost" onClick={() => void run(null)} disabled={disabled}>
+                Remove
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+      {hasPassword && !editing && (
+        <Text size="xs" color="muted">
+          Changing or removing it signs out everyone who opened the link with the old one.
+        </Text>
+      )}
+      {error && (
+        <div role="alert">
+          <Text size="xs" color="error">
+            {error}
+          </Text>
+        </div>
       )}
     </div>
   );
@@ -843,6 +973,9 @@ export function ShareDialog({
   onRoleChange,
   onRevoke,
   onCreateLink,
+  linkUrl,
+  linkNotice,
+  onSetLinkPassword,
   onToggleLink,
   onLinkRoleChange,
   onLinkVisibilityChange,
@@ -978,6 +1111,7 @@ export function ShareDialog({
   }
 
   function getLinkUrl(link: ShareLinkData): string {
+    if (linkUrl) return linkUrl;
     if (typeof window === 'undefined') return '';
     return `${window.location.origin}/share?token=${link.token}`;
   }
@@ -1163,6 +1297,9 @@ export function ShareDialog({
               onExpiryChange={onLinkExpiryChange}
               onDelete={onDeleteLink}
               isPending={linkPending}
+              copyDisabled={linkUrl === null}
+              notice={linkNotice}
+              onSetPassword={onSetLinkPassword}
             />
           ) : (
             <div className={styles.noLink}>

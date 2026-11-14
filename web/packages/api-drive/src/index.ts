@@ -80,6 +80,9 @@ export type {
   UpdateShareLinkRequest,
   ResolvedShareLink,
   GuestSessionResponse,
+  KeyRecipient,
+  UnkeyedFilesResponse,
+  LinkFolderContents,
   UserLookup,
   AccessRequest,
   ListAccessRequestsResponse,
@@ -160,3 +163,12 @@ export type {
   FileTeamShareListResponse,
   MoveFileIntoTeamResponse,
 } from './teams';
+export {
+  linkFolderApi,
+  linkKeyMatches,
+  readLinkFile,
+  uploadToLinkFolder,
+  sealFolderLinkKeys,
+  type LinkSession,
+  type SealLinkKeysResult,
+} from './linkFolders';

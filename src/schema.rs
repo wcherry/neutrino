@@ -624,6 +624,12 @@ diesel::table! {
         created_by -> Text,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        // Added in migration 155 (#321).
+        password_hash -> Nullable<Text>,
+        session_epoch -> Integer,
+        public_key -> Nullable<Text>,
+        sealed_seed -> Nullable<Text>,
+        sealed_seed_key_version -> Nullable<Integer>,
     }
 }
 

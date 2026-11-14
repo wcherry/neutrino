@@ -153,3 +153,13 @@ export {
   type PinnedKey,
   type PinCheck,
 } from './pinning';
+export {
+  generateLinkSeed,
+  linkKeyPairFromSeed,
+  linkPublicKey,
+  openLinkFileKey,
+  linkFragment,
+  seedFromFragment,
+  LINK_SEED_BYTES,
+  LINK_FRAGMENT_PARAM,
+} from './linkKey';

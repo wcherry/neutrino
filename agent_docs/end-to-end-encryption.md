@@ -297,3 +297,42 @@ vector (`neutrino_drive_mac_desktop/tests/NeutrinoDriveTests/PlaceEnvelopeVector
 client (a copy in `tests/NeutrinoDriveTests/Fixtures/`). Changing anything above
 is a wire-format change across the web, every iOS app and the server: regenerate the vectors and
 update every reader in one coordinated change.
+
+## Folder link keys (#321)
+
+A folder shared by link is opened by people with no account and therefore no keypair, so the link
+is made a **recipient of its own**:
+
+```
+seed        = 32 random bytes, base64url without padding        (owner's browser)
+link key    = crypto_box_seed_keypair(seed)                     X25519
+URL         = /share?token=<token>#k=<seed>                     fragment: never sent to a server
+server      = share_links.public_key   = link public key
+              share_links.sealed_seed  = crypto_box_seal(seed, owner's active public key)
+                                         + sealed_seed_key_version
+file keys   = file_key_refs(user_id = "guest:<share link id>")  = crypto_box_seal(DEK, link public key)
+```
+
+Nothing here is a new primitive: a DEK is sealed to a link exactly as it is sealed to a person.
+That is what keeps it off the coordinated-change list for the clients that only **write**: a client
+uploading into a folder asks `GET /api/v1/drive/folders/{id}/key-recipients` and seals the new
+file's DEK to each entry with the `crypto_box_seal` it already has (`POST /files/{id}/key/share`,
+`recipientId` as given, `keyVersion` 1 for a link). Only the **opening** side (the seed and
+`crypto_box_seed_keypair`) is new, and in v1 only the web opens links
+(`packages/e2e-crypto/src/linkKey.ts`).
+
+- **The sealed seed** exists so the owner can copy the full URL again later. It is opened with the
+  owner's keyring like a sealed DEK and checked against `public_key` before use.
+- **A guest session** is a JWT whose subject is `guest:<link id>:<epoch>`. The server maps it to
+  the key subject `guest:<link id>` for `GET`/`PUT /files/{id}/key`, so a guest reads and writes
+  the link's key refs, never per-session ones. `epoch` bumps on any password change.
+- **A guest upload** lands in the owner's Drive, so it is sealed to the owner in the upload itself
+  (`encrypted_file_key` + the owner's `key_version`) and then to the link.
+- **Catch-up:** a client that did not seal to the link leaves a file the link cannot open.
+  `GET /folders/{id}/share-link/unkeyed-files` lists those, and the owner's web Share dialog seals
+  them whenever it opens. Native clients sealing to `key-recipients` is the follow-up that makes
+  this a fallback rather than the main path.
+- **Replacing or deleting a link** deletes its key refs; the old fragment key opens nothing.
+- **Not yet:** binding the link key to the password (wrapping the seed with an Argon2id key from
+  the password). Today the password is checked by the server only, so the URL alone is enough to
+  decrypt for anyone who also gets past the server.

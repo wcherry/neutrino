@@ -317,12 +317,28 @@ export interface ShareLink {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** Whether opening the link needs a password. The password itself is never returned. */
+  hasPassword?: boolean;
+  /** base64url X25519 public half of the link key (#321), when the link has one. */
+  publicKey?: string | null;
+  /** The recipient id file keys are sealed to for this link: `guest:{id}`. */
+  keySubject?: string;
+  /** The link key seed sealed to the owner, so the owner can rebuild the full URL. */
+  sealedSeed?: string | null;
+  sealedSeedKeyVersion?: number | null;
 }
 
 export interface UpsertShareLinkRequest {
   visibility?: 'public' | 'anyoneWithLink';
   role?: 'viewer' | 'commenter' | 'editor';
   expiresAt?: string | null;
+  /** Require this password to open the link. */
+  password?: string;
+  /** base64url link public key; its seed goes in the link's URL fragment. */
+  publicKey?: string;
+  /** The seed sealed to the owner's own public key, and which key version opens it. */
+  sealedSeed?: string;
+  sealedSeedKeyVersion?: number;
 }
 
 export interface UpdateShareLinkRequest {
@@ -330,9 +346,21 @@ export interface UpdateShareLinkRequest {
   role?: 'viewer' | 'commenter' | 'editor';
   expiresAt?: string | null;
   isActive?: boolean;
+  /** Set or change the password; `null` removes it. Any change ends open guest sessions. */
+  password?: string | null;
+  /** Replace the link public key; `null` removes it. */
+  publicKey?: string | null;
+  /** Replace the owner-sealed seed (with its key version); `null` removes it. */
+  sealedSeed?: string | null;
+  sealedSeedKeyVersion?: number;
 }
 
 export interface ResolvedShareLink {
+  /**
+   * True when the link needs a password. Until a session is opened with it, the server withholds
+   * everything but `resourceType` (empty strings and nulls).
+   */
+  passwordRequired?: boolean;
   resourceType: string;
   resourceId: string;
   role: string;
@@ -346,6 +374,35 @@ export interface GuestSessionResponse {
   accessToken: string;
   expiresIn: number;
   role: string;
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  /** The recipient id this link's file keys are sealed to (`guest:{link id}`). */
+  keySubject: string;
+  /** The link public key, to check the URL fragment's key against before using it. */
+  publicKey: string | null;
+}
+
+/** Someone a new file's key must be sealed to (`GET /drive/folders/{id}/key-recipients`). */
+export interface KeyRecipient {
+  recipientId: string;
+  kind: 'owner' | 'link';
+  publicKey: string;
+  keyVersion: number;
+}
+
+export interface UnkeyedFilesResponse {
+  keySubject: string;
+  publicKey: string | null;
+  fileIds: string[];
+  hasMore: boolean;
+}
+
+/** `GET /share/folder/{id}`: a folder as a link guest sees it. */
+export interface LinkFolderContents extends FolderContentsResponse {
+  /** The shared folder: the top of what the guest can reach. */
+  rootFolderId: string;
+  role: 'viewer' | 'commenter' | 'editor';
 }
 
 // ---------------------------------------------------------------------------
