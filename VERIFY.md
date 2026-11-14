@@ -1,3 +1,68 @@
+# Manual Verification: Folder link sharing (#321)
+
+## Prerequisites
+- Stack running locally via `docker-compose-dev.yml`
+- An admin account; in the admin console's **Feature Flags** tab, turn on `folderLinkEditing`
+- An owner account with encryption set up and unlocked in this browser
+- A second browser profile or a private window, signed out, to play the guest
+
+## Steps
+
+### Happy Path
+1. As the owner, in My Drive create a folder **Shared test** and upload two files into it, one in a
+   subfolder.
+2. Open **Share** on the folder → **Create link**. Expect the notice "Anyone with the link can open
+   and download the files…" and "Preparing files for the link…", which clears within a few seconds.
+3. Change **Anyone with link can** to **Editor**. The notice changes to "…add, rename, move and delete
+   files in this folder…".
+4. **Add password** → `hunter22` → Save. The row reads "Password: Required".
+5. **Copy link**. The URL ends in `#k=` followed by 43 characters.
+6. In the private window, open the link. Expect "This link needs a password", with no folder name.
+7. Enter `wrong` → "That password is not right." Enter `hunter22` → the folder opens with its files
+   and subfolder.
+8. Click a file → it downloads and opens correctly (decrypted).
+9. Click **Upload**, pick a file → "Uploaded …"; it appears in the list.
+10. **New folder** → `From guest` → it appears. Rename it to `From guest 2`. Delete a file → **Delete**.
+11. As the owner, reload My Drive → the guest's upload is there and opens; `From guest 2` is there;
+    the deleted file is in **Trash** and restores.
+
+### Edge Cases
+1. **Link copied without the key**: open the URL with everything after `#` removed → "This link is
+   incomplete…", no listing.
+2. **Damaged key**: change one character after `#k=` → "This link is damaged…".
+3. **Turn off**: owner clicks **Turn off** → the guest's next click says "This link is no longer
+   open…".
+4. **Password change**: owner changes the password → the guest's next action fails; reopening the
+   link asks for the new password.
+5. **Too many wrong passwords**: ten wrong attempts → "Too many wrong passwords…" for about 15
+   minutes, even with the right one.
+6. **View-only**: set the link to **Viewer** → the guest sees no Upload, New folder, rename or
+   delete controls.
+7. **Outside the folder**: the guest cannot reach the owner's other files. Try
+   `GET /api/v1/drive/files/<other file id>` with the guest token → refused.
+8. **Member upload into a link-shared folder**: upload a file as the owner into the folder from
+   My Drive; the guest can open it without the owner reopening the Share dialog.
+9. **File added by a native client**: upload into the folder from the iOS app. The guest sees the
+   file but "is not ready to open through this link yet". After the owner opens the Share dialog,
+   it opens.
+10. **Old folder link**: a folder link made before this change shows "This link was made before
+    folder links carried a key…" → **Add a key to this link**; the old token keeps working.
+11. **Signed-in visitor**: open the link in a window where another account is signed in → after
+    browsing, that account's own Drive is still signed in and unchanged.
+
+### Feature Disabled
+1. Turn `folderLinkEditing` off in the admin console.
+2. Folder Share dialog: Create link makes a plain link with no password row and no key.
+3. Opening an existing folder link as a guest says "Shared folders cannot be opened on this server
+   yet."
+4. Password protection and session revocation keep working for file links (not gated).
+
+### Cleanup
+Delete this section once the feature is proven stable, in the same PR that removes the
+`folderLinkEditing` flag.
+
+---
+
 # Manual Verification: Self-contained uploads (neutrino_drive_ios_mobile#38)
 
 Delete this section once the Drive iOS photo sync has shipped on it and proven stable. Design:

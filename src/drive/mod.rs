@@ -7,6 +7,7 @@ pub mod feature_flags;
 pub mod filesystem;
 pub mod fonts;
 pub mod key_files;
+pub mod link_folders;
 pub mod notifications;
 pub mod permissions;
 pub mod private_store;

@@ -56,6 +56,12 @@ pub struct DeclaredFlag {
 /// devices, and an installed native app cannot be recalled the way a web deploy can. The spec's
 /// rollout depends on stopping new NEB1 writes without a release. Nothing on the server reads it;
 /// clients do, and a client honours it only in a build that can also read NEB1.
+///
+/// `folderLinkEditing` is the fourth (#321): it opens an anonymous write path into a user's Drive
+/// and a new way file keys are distributed, and the native clients that must seal new uploads to a
+/// link's key ship on their own schedules. Off, the guest folder API answers 404 and links stay as
+/// they were; the security fixes that shipped with it (no stale guest grants, passwords) are not
+/// gated.
 pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
     DeclaredFlag {
         key: "teamSpaces",
@@ -71,6 +77,11 @@ pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
         key: "e2eeChunkedWrites",
         owner: "crypto",
         removal: "Once NEB1 has been the default writer in every client for a full release cycle with no rollback.",
+    },
+    DeclaredFlag {
+        key: "folderLinkEditing",
+        owner: "drive",
+        removal: "Once folder links have run enabled in production for a release cycle with every client sealing new uploads to key-recipients.",
     },
 ];
 
@@ -126,16 +137,26 @@ mod tests {
         assert!(missing_keys(&all).is_empty());
         assert_eq!(
             missing_keys(&["teamSpaces".to_string()]),
-            vec!["teamFileTransfers", "e2eeChunkedWrites"]
+            vec!["teamFileTransfers", "e2eeChunkedWrites", "folderLinkEditing"]
         );
         assert_eq!(
             missing_keys(&[]),
-            vec!["teamSpaces", "teamFileTransfers", "e2eeChunkedWrites"]
+            vec![
+                "teamSpaces",
+                "teamFileTransfers",
+                "e2eeChunkedWrites",
+                "folderLinkEditing"
+            ]
         );
         // A table holding only unrelated keys is missing everything the server declares.
         assert_eq!(
             missing_keys(&["somethingElse".to_string()]),
-            vec!["teamSpaces", "teamFileTransfers", "e2eeChunkedWrites"]
+            vec![
+                "teamSpaces",
+                "teamFileTransfers",
+                "e2eeChunkedWrites",
+                "folderLinkEditing"
+            ]
         );
     }
 

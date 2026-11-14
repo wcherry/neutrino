@@ -10,6 +10,7 @@ import {
   encryptionApi,
   openFileKey,
   teamsApi,
+  sealFolderLinkKeys,
   type FileItem,
   type Folder as FolderItem,
   type PermissionRole,
@@ -37,6 +38,7 @@ import { KeyChangeDialog } from '@/components/KeyChangeDialog';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { canTransferToTeams } from '@/lib/featureFlags';
 import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
+import { folderLinkUrl, makeLinkKey, recoverLinkSeed } from '@/lib/folderLinkKeys';
 
 /**
  * Team roles that may add content to a team.
@@ -66,7 +68,13 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
   // the one place that answers "who can open this?"). Both flags, `teamSpaces` first — see
   // `canTransferToTeams` — and files only: a *folder* cannot be lent to a team, the server has no
   // route for it, so for one the dialog is exactly what it always was.
-  const teamsOn = canTransferToTeams(useFeatureFlags()) && resourceType === 'file';
+  const flags = useFeatureFlags();
+  const teamsOn = canTransferToTeams(flags) && resourceType === 'file';
+  /**
+   * A folder link anyone can write through, end-to-end encrypted with a key in the URL (#321).
+   * Off, a folder link is exactly what it was.
+   */
+  const keyedFolderLinks = flags.folderLinkEditing && resourceType === 'folder';
   const teamSharesKey = ['file-team-shares', resource.id];
 
   const { data: myTeams } = useQuery({
@@ -124,14 +132,154 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
   });
 
   const createLinkMutation = useMutation({
-    mutationFn: () =>
-      sharingApi.upsertShareLink(resourceType, resource.id, {
+    mutationFn: async () => {
+      if (!keyedFolderLinks) {
+        return sharingApi.upsertShareLink(resourceType, resource.id, {
+          visibility: 'anyoneWithLink',
+          role: 'viewer',
+        });
+      }
+      // The key is minted here, before the link exists, so there is never a keyless folder link
+      // somebody could copy in the meantime.
+      const key = await makeLinkKey(currentUser?.id);
+      if (!key) {
+        throw new Error('Unlock encryption on this device to create a folder link.');
+      }
+      return sharingApi.upsertShareLink(resourceType, resource.id, {
         visibility: 'anyoneWithLink',
         role: 'viewer',
-      }),
+        publicKey: key.publicKey,
+        sealedSeed: key.sealedSeed,
+        sealedSeedKeyVersion: key.sealedSeedKeyVersion,
+      });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: linkKey }),
     onError: (e: Error) => toast.error(e.message),
   });
+
+  /** Give a folder link made before #321 a key, keeping its token so the old URL still resolves. */
+  const addLinkKeyMutation = useMutation({
+    mutationFn: async () => {
+      const key = await makeLinkKey(currentUser?.id);
+      if (!key) throw new Error('Unlock encryption on this device first.');
+      return sharingApi.updateShareLink(resourceType, resource.id, {
+        publicKey: key.publicKey,
+        sealedSeed: key.sealedSeed,
+        sealedSeedKeyVersion: key.sealedSeedKeyVersion,
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: linkKey }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  async function setLinkPassword(password: string | null): Promise<void> {
+    await sharingApi.updateShareLink(resourceType, resource.id, { password });
+    await queryClient.invalidateQueries({ queryKey: linkKey });
+    toast.success(password ? 'Link password saved' : 'Link password removed');
+  }
+
+  // ── Folder link key ────────────────────────────────────────────────────────
+  //
+  // The seed is recovered from the copy sealed to the owner, so Copy link can include it. Then
+  // every encrypted file in the folder the link cannot open yet is sealed to it — on creation,
+  // and on every open, which also catches files a client added without sealing to the link.
+  const [linkSeed, setLinkSeed] = React.useState<string | null | undefined>(undefined);
+  const [sealing, setSealing] = React.useState<{ busy: boolean; skipped: number }>({
+    busy: false,
+    skipped: 0,
+  });
+  const linkPublicKey = shareLink?.publicKey ?? null;
+  const linkActive = !!shareLink?.isActive;
+
+  React.useEffect(() => {
+    if (!keyedFolderLinks || !shareLink || !linkPublicKey) {
+      setLinkSeed(undefined);
+      return;
+    }
+    let cancelled = false;
+    void recoverLinkSeed(currentUser?.id, shareLink).then((seed) => {
+      if (!cancelled) setLinkSeed(seed);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // The seed depends only on which key the link has.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyedFolderLinks, linkPublicKey, currentUser?.id]);
+
+  React.useEffect(() => {
+    const userId = currentUser?.id;
+    if (!keyedFolderLinks || !linkPublicKey || !linkActive || !userId) return;
+    let cancelled = false;
+    setSealing({ busy: true, skipped: 0 });
+    sealFolderLinkKeys(userId, resource.id)
+      .then((r) => {
+        if (!cancelled) setSealing({ busy: false, skipped: r.skipped });
+      })
+      .catch((e) => {
+        console.warn('[ShareDialog] sealing folder link keys failed', e);
+        if (!cancelled) setSealing({ busy: false, skipped: 0 });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [keyedFolderLinks, linkPublicKey, linkActive, currentUser?.id, resource.id]);
+
+  const folderLink = React.useMemo(() => {
+    if (!keyedFolderLinks || !shareLink) return { url: undefined, notice: undefined };
+    if (!linkPublicKey) {
+      return {
+        url: undefined,
+        notice: (
+          <>
+            This link was made before folder links carried a key, so people who open it cannot
+            read encrypted files.{' '}
+            <button
+              type="button"
+              onClick={() => addLinkKeyMutation.mutate()}
+              disabled={addLinkKeyMutation.isPending}
+            >
+              {addLinkKeyMutation.isPending ? 'Adding a key…' : 'Add a key to this link'}
+            </button>
+          </>
+        ),
+      };
+    }
+    const url =
+      linkSeed && typeof window !== 'undefined'
+        ? folderLinkUrl(window.location.origin, shareLink.token, linkSeed)
+        : linkSeed === undefined
+          ? undefined
+          : null;
+    const lines: React.ReactNode[] = [];
+    lines.push(
+      shareLink.role === 'editor'
+        ? 'Anyone with the link can add, rename, move and delete files in this folder (deleted files go to your trash).'
+        : 'Anyone with the link can open and download the files in this folder.',
+    );
+    lines.push(
+      'The link itself carries the key that unlocks these files, so share it only with people you trust.',
+    );
+    if (url === null) {
+      lines.push('This device cannot recover the link key. Copy the link from a device where your encryption key is unlocked.');
+    }
+    if (sealing.busy) lines.push('Preparing files for the link…');
+    else if (sealing.skipped > 0) {
+      lines.push(
+        `${sealing.skipped} file${sealing.skipped === 1 ? '' : 's'} could not be prepared for the link and will not open through it.`,
+      );
+    }
+    return {
+      url,
+      notice: (
+        <>
+          {lines.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
+        </>
+      ),
+    };
+  }, [keyedFolderLinks, shareLink, linkPublicKey, linkSeed, sealing, addLinkKeyMutation]);
 
   const toggleLinkMutation = useMutation({
     mutationFn: (isActive: boolean) =>
@@ -432,6 +580,9 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
         onLinkVisibilityChange={(visibility) => updateLinkVisibilityMutation.mutate(visibility)}
         onLinkExpiryChange={(expiresAt) => updateLinkExpiryMutation.mutate(expiresAt)}
         onDeleteLink={() => deleteLinkMutation.mutate()}
+        linkUrl={folderLink.url}
+        linkNotice={folderLink.notice}
+        onSetLinkPassword={keyedFolderLinks ? setLinkPassword : undefined}
       />
     </>
   );

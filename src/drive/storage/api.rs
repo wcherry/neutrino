@@ -142,8 +142,24 @@ async fn stream_field_to_file(
 pub async fn upload_file(
     state: web::Data<StorageApiState>,
     user: AuthenticatedUser,
-    mut payload: Multipart,
+    payload: Multipart,
 ) -> Result<web::Json<FileMetadataResponse>, ApiError> {
+    receive_upload(&state, &user, payload, |_| Ok(()))
+        .await
+        .map(web::Json)
+}
+
+/// The multipart upload itself, stored in `user`'s Drive and charged to `user`'s quota.
+///
+/// `authorize_folder` sees the `folder_id` field (None for the root) before a byte of the file
+/// part is read, and can refuse it. The account route allows anything, as it always has; the link
+/// guest route (#321) passes the folder owner as `user` and checks the folder is inside the link.
+pub async fn receive_upload(
+    state: &StorageApiState,
+    user: &AuthenticatedUser,
+    mut payload: Multipart,
+    authorize_folder: impl Fn(Option<&str>) -> Result<(), ApiError>,
+) -> Result<FileMetadataResponse, ApiError> {
     let mut folder_id: Option<String> = None;
     let mut encrypted_metadata: Option<String> = None;
     let mut explicit_mime_type: Option<String> = None;
@@ -221,6 +237,8 @@ pub async fn upload_file(
             continue;
         }
 
+        authorize_folder(folder_id.as_deref())?;
+
         let file_name = field
             .content_disposition()
             .and_then(|cd| cd.get_filename())
@@ -278,7 +296,7 @@ pub async fn upload_file(
         let mut response = state
             .storage_service
             .finalize_upload(
-                &user,
+                user,
                 temp.path(),
                 &file_name,
                 &mime_type,
@@ -327,7 +345,7 @@ pub async fn upload_file(
             }
         }
 
-        return Ok(web::Json(response));
+        return Ok(response);
     }
 
     Err(ApiError::bad_request("No file provided in multipart body"))

@@ -1,5 +1,6 @@
 use crate::drive::permissions::model::{NewPermissionRecord, PermissionRecord};
-use crate::schema::{files, folders, permissions, team_file_shares, team_members};
+use crate::drive::sharing::model::ShareLinkRecord;
+use crate::schema::{files, folders, permissions, share_links, team_file_shares, team_members};
 use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -267,6 +268,50 @@ impl PermissionsRepository {
                 tracing::error!("DB get folder parent_id error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+
+    /// A share link by id, for answering a guest session's role (#321).
+    pub fn find_share_link(&self, link_id: &str) -> Result<Option<ShareLinkRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        share_links::table
+            .filter(share_links::id.eq(link_id))
+            .select(ShareLinkRecord::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB find share link error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Whether a file or folder exists, is not in the trash and is not a team's.
+    pub fn is_live_personal_resource(
+        &self,
+        resource_type: &str,
+        resource_id: &str,
+    ) -> Result<bool, ApiError> {
+        let mut conn = self.get_conn()?;
+        let found = match resource_type {
+            "file" => files::table
+                .filter(files::id.eq(resource_id))
+                .filter(files::deleted_at.is_null())
+                .filter(files::team_id.is_null())
+                .select(files::id)
+                .first::<String>(&mut conn)
+                .optional(),
+            "folder" => folders::table
+                .filter(folders::id.eq(resource_id))
+                .filter(folders::deleted_at.is_null())
+                .filter(folders::team_id.is_null())
+                .select(folders::id)
+                .first::<String>(&mut conn)
+                .optional(),
+            _ => return Ok(false),
+        };
+        found.map(|r| r.is_some()).map_err(|e| {
+            tracing::error!("DB live resource check error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
     /// Returns all resource IDs of the given type where the user has owner role.

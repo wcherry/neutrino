@@ -36,6 +36,8 @@ import type {
   UpdateShareLinkRequest,
   ResolvedShareLink,
   GuestSessionResponse,
+  KeyRecipient,
+  UnkeyedFilesResponse,
   UserLookup,
   AccessRequest,
   ListAccessRequestsResponse,
@@ -105,7 +107,7 @@ export function setBytesSealer(sealer: BytesSealer | null): void {
   bytesSealer = sealer;
 }
 
-async function sealBytes(bytes: Uint8Array, dek: Uint8Array): Promise<Uint8Array> {
+export async function sealBytes(bytes: Uint8Array, dek: Uint8Array): Promise<Uint8Array> {
   if (bytesSealer) {
     try {
       return await bytesSealer(bytes, dek);
@@ -481,8 +483,28 @@ export const sharingApi = {
     return normalizeResolvedShareLink(link);
   },
 
-  async createGuestSession(token: string): Promise<GuestSessionResponse> {
-    return request<GuestSessionResponse>(`/api/v1/share/${token}/session`, { method: 'POST' }, { auth: 'none' });
+  /** `password` only for a link that has one; a wrong one rejects 401 `SHARE_PASSWORD_INVALID`. */
+  async createGuestSession(token: string, password?: string): Promise<GuestSessionResponse> {
+    return request<GuestSessionResponse>(
+      `/api/v1/share/${token}/session`,
+      { method: 'POST', body: JSON.stringify(password ? { password } : {}) },
+      { auth: 'none' },
+    );
+  },
+
+  /** Who a new file in `folderId` must also be sealed to: its owner and any folder link's key. */
+  async getKeyRecipients(folderId: string): Promise<KeyRecipient[]> {
+    const res = await request<{ recipients: KeyRecipient[] }>(
+      `/api/v1/drive/folders/${folderId}/key-recipients`,
+    );
+    return res.recipients;
+  },
+
+  /** Encrypted files under a folder's link not yet sealed to the link key. Owners only. */
+  async getUnkeyedFiles(folderId: string): Promise<UnkeyedFilesResponse> {
+    return request<UnkeyedFilesResponse>(
+      `/api/v1/drive/folders/${folderId}/share-link/unkeyed-files`,
+    );
   },
 };
 
@@ -774,7 +796,57 @@ export async function uploadEncryptedFile(
     body: JSON.stringify({ encryptedFileKey, keyVersion }),
   });
 
+  if (folderId) await sealToFolderRecipients(item.id, dek, folderId);
+
   return item;
+}
+
+/** Recipients per folder, briefly: a folder upload of a thousand files asks once, not a thousand times. */
+const recipientCache = new Map<string, { at: number; recipients: Promise<KeyRecipient[]> }>();
+const RECIPIENT_TTL_MS = 30_000;
+
+function folderRecipients(folderId: string): Promise<KeyRecipient[]> {
+  const hit = recipientCache.get(folderId);
+  if (hit && Date.now() - hit.at < RECIPIENT_TTL_MS) return hit.recipients;
+  const recipients = sharingApi.getKeyRecipients(folderId).catch((e) => {
+    recipientCache.delete(folderId);
+    throw e;
+  });
+  recipientCache.set(folderId, { at: Date.now(), recipients });
+  return recipients;
+}
+
+/**
+ * Seal a new file's DEK to everyone else who must open it from its folder (#321): the key of
+ * any folder link covering it, and the folder's owner when that is not the uploader.
+ *
+ * Best effort. The file is already stored and the uploader can open it; a key that did not reach
+ * a link is picked up the next time the owner opens the folder's Share dialog (`unkeyed-files`).
+ * Failing the upload over it would lose the file to save a convenience.
+ */
+async function sealToFolderRecipients(
+  fileId: string,
+  dek: Uint8Array,
+  folderId: string,
+): Promise<void> {
+  try {
+    const recipients = await folderRecipients(folderId);
+    if (recipients.length === 0) return;
+    const { initSodium, encryptFileKey, fromBase64url } = await import('@neutrino/e2e-crypto');
+    await initSodium();
+    for (const r of recipients) {
+      await request<FileKeyResponse>(`/api/v1/drive/files/${fileId}/key/share`, {
+        method: 'POST',
+        body: JSON.stringify({
+          recipientId: r.recipientId,
+          encryptedFileKey: encryptFileKey(dek, fromBase64url(r.publicKey)),
+          keyVersion: r.keyVersion,
+        }),
+      });
+    }
+  } catch (e) {
+    console.warn('[uploadEncryptedFile] could not seal to folder recipients (non-fatal):', e);
+  }
 }
 
 /**

@@ -375,3 +375,32 @@
 .calendarDayPlaceholder {
   height: 28px;
 }
+
+/* Link password (#321) */
+.linkPassword {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.linkPasswordForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.linkPasswordForm input {
+  min-width: 0;
+  flex: 1 1 140px;
+}
+
+.linkNotice {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-secondary, var(--color-bg-secondary));
+  border-radius: var(--radius-sm, 6px);
+  padding: var(--space-2) var(--space-3);
+}

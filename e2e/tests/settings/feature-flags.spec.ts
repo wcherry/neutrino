@@ -34,7 +34,12 @@ const BASE_URL = 'http://localhost:9880';
  * web monorepo — and a copy that has to be updated by hand is exactly what this test catches when
  * it is not.
  */
-const DECLARED_BY_CLIENT = ['teamSpaces', 'teamFileTransfers', 'e2eeChunkedWrites'];
+const DECLARED_BY_CLIENT = [
+  'teamSpaces',
+  'teamFileTransfers',
+  'e2eeChunkedWrites',
+  'folderLinkEditing',
+];
 
 function uniqueEmail(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
