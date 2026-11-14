@@ -31,8 +31,16 @@
  * already installed cannot be recalled the way this deploy can. The rollout depends on stopping new
  * NEB1 writes without a release. The web does not write NEB1 yet; native writers read it from
  * `GET /api/v1/feature-flags`.
+ *
+ * `folderLinkEditing` (#321) gates folder links that anyone can write through: the link-key UI in
+ * the Share dialog and the guest folder browser on `/share`.
  */
-export const FLAG_KEYS = ['teamSpaces', 'teamFileTransfers', 'e2eeChunkedWrites'] as const;
+export const FLAG_KEYS = [
+  'teamSpaces',
+  'teamFileTransfers',
+  'e2eeChunkedWrites',
+  'folderLinkEditing',
+] as const;
 
 export type FeatureFlagKey = (typeof FLAG_KEYS)[number];
 

@@ -2,8 +2,9 @@
 
 use crate::drive::sharing::{
     dto::{
-        GuestSessionResponse, LinkRole, LinkVisibility, ResolvedShareLinkResponse,
-        ShareLinkResponse, UpdateShareLinkRequest, UpsertShareLinkRequest,
+        CreateGuestSessionRequest, GuestSessionResponse, KeyRecipient, KeyRecipientsResponse,
+        LinkRole, LinkVisibility, ResolvedShareLinkResponse, ShareLinkResponse,
+        UnkeyedFilesResponse, UpdateShareLinkRequest, UpsertShareLinkRequest,
     },
     service::SharingService,
 };
@@ -74,6 +75,10 @@ pub async fn get_file_share_link(
                     visibility: LinkVisibility::AnyoneWithLink,
                     role: LinkRole::Viewer,
                     expires_at: None,
+                    password: None,
+                    public_key: None,
+                    sealed_seed: None,
+                    sealed_seed_key_version: None,
                 },
             )?
             }
@@ -355,6 +360,7 @@ pub async fn resolve_share_link(
     responses(
         (status = 200, description = "File download"),
         (status = 400, description = "Share link does not point to a file"),
+        (status = 401, description = "The link has a password and no guest session for it was presented"),
         (status = 404, description = "Share link not found or disabled"),
         (status = 410, description = "Share link has expired"),
     ),
@@ -365,10 +371,13 @@ pub async fn download_shared_file(
     state: web::Data<SharingApiState>,
     storage_state: web::Data<StorageApiState>,
     path: web::Path<String>,
+    guest: Option<AuthenticatedUser>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let token = path.into_inner();
-    let resolved = state.sharing_service.resolve_token(&token)?;
+    let resolved = state
+        .sharing_service
+        .resolve_for_download(&token, guest.as_ref().map(|g| g.user_id.as_str()))?;
 
     if resolved.resource_type != "file" {
         return Err(ApiError::bad_request(
@@ -411,6 +420,7 @@ pub async fn download_shared_file(
     responses(
         (status = 200, description = "File preview served inline"),
         (status = 400, description = "Share link does not point to a file"),
+        (status = 401, description = "The link has a password and no guest session for it was presented"),
         (status = 404, description = "Share link not found or disabled"),
         (status = 410, description = "Share link has expired"),
     ),
@@ -421,10 +431,13 @@ pub async fn preview_shared_file(
     state: web::Data<SharingApiState>,
     storage_state: web::Data<StorageApiState>,
     path: web::Path<String>,
+    guest: Option<AuthenticatedUser>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let token = path.into_inner();
-    let resolved = state.sharing_service.resolve_token(&token)?;
+    let resolved = state
+        .sharing_service
+        .resolve_for_download(&token, guest.as_ref().map(|g| g.user_id.as_str()))?;
 
     if resolved.resource_type != "file" {
         return Err(ApiError::bad_request(
@@ -462,7 +475,9 @@ pub fn configure_drive(conf: &mut web::ServiceConfig) {
         .service(get_folder_share_link)
         .service(upsert_folder_share_link)
         .service(update_folder_share_link)
-        .service(delete_folder_share_link);
+        .service(delete_folder_share_link)
+        .service(get_folder_key_recipients)
+        .service(get_folder_link_unkeyed_files);
 }
 
 /// Trade a share token for a short-lived guest access token. Public.
@@ -474,8 +489,11 @@ pub fn configure_drive(conf: &mut web::ServiceConfig) {
     post,
     path = "/api/v1/share/{token}/session",
     params(("token" = String, Path, description = "Share link token")),
+    request_body(content = CreateGuestSessionRequest, description = "Only for a link with a password"),
     responses(
         (status = 200, description = "Guest session token", body = GuestSessionResponse),
+        (status = 401, description = "Password required (SHARE_PASSWORD_REQUIRED) or wrong (SHARE_PASSWORD_INVALID)"),
+        (status = 429, description = "Too many wrong passwords for this link"),
         (status = 404, description = "Share link not found or disabled"),
         (status = 410, description = "Share link has expired"),
     ),
@@ -485,10 +503,77 @@ pub fn configure_drive(conf: &mut web::ServiceConfig) {
 pub async fn create_guest_session(
     state: web::Data<SharingApiState>,
     path: web::Path<String>,
+    body: Option<web::Json<CreateGuestSessionRequest>>,
 ) -> Result<web::Json<GuestSessionResponse>, ApiError> {
     let token = path.into_inner();
-    let session = state.sharing_service.create_guest_session(&token)?;
+    let password = body.as_ref().and_then(|b| b.password.as_deref());
+    let session = state
+        .sharing_service
+        .create_guest_session(&token, password)?;
     Ok(web::Json(session))
+}
+
+/// Who a new file in a folder must have its key sealed to.
+///
+/// Every client that writes an encrypted file into a folder seals its DEK to each recipient here
+/// with `POST /files/{id}/key/share`: the folder's owner, and the key of every live folder link
+/// covering the folder. Without that, a file a collaborator or guest adds is one the owner, or
+/// people opening the link, cannot open. Needs edit access to the folder; link guests included.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/folders/{folder_id}/key-recipients",
+    params(("folder_id" = String, Path, description = "Folder ID")),
+    responses(
+        (status = 200, description = "Key recipients, excluding the caller", body = KeyRecipientsResponse),
+        (status = 403, description = "No edit access to the folder"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "sharing"
+)]
+#[get("/folders/{folder_id}/key-recipients")]
+pub async fn get_folder_key_recipients(
+    state: web::Data<SharingApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<web::Json<KeyRecipientsResponse>, ApiError> {
+    let folder_id = path.into_inner();
+    Ok(web::Json(
+        state
+            .sharing_service
+            .key_recipients(&user.user_id, &folder_id)?,
+    ))
+}
+
+/// Encrypted files under a folder's link not yet sealed to the link key. Owners only.
+///
+/// The owner's client seals each listed file's DEK to `publicKey` and stores it with
+/// `POST /files/{id}/key/share` (`recipientId` = `keySubject`), then asks again while `hasMore`.
+/// The web Share dialog does this whenever it opens a folder that has a keyed link, which also
+/// picks up files added by a client that did not seal to the link itself.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/folders/{folder_id}/share-link/unkeyed-files",
+    params(("folder_id" = String, Path, description = "Folder ID")),
+    responses(
+        (status = 200, description = "Files still to seal", body = UnkeyedFilesResponse),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "No share link exists"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "sharing"
+)]
+#[get("/folders/{folder_id}/share-link/unkeyed-files")]
+pub async fn get_folder_link_unkeyed_files(
+    state: web::Data<SharingApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<web::Json<UnkeyedFilesResponse>, ApiError> {
+    let folder_id = path.into_inner();
+    Ok(web::Json(
+        state
+            .sharing_service
+            .unkeyed_files(&user.user_id, &folder_id)?,
+    ))
 }
 
 pub fn configure_public(conf: &mut web::ServiceConfig) {
@@ -513,6 +598,8 @@ pub fn configure_public(conf: &mut web::ServiceConfig) {
         download_shared_file,
         preview_shared_file,
         create_guest_session,
+        get_folder_key_recipients,
+        get_folder_link_unkeyed_files,
     ),
     components(schemas(
         ShareLinkResponse,
@@ -520,6 +607,10 @@ pub fn configure_public(conf: &mut web::ServiceConfig) {
         UpdateShareLinkRequest,
         ResolvedShareLinkResponse,
         GuestSessionResponse,
+        CreateGuestSessionRequest,
+        KeyRecipient,
+        KeyRecipientsResponse,
+        UnkeyedFilesResponse,
         crate::drive::sharing::dto::LinkVisibility,
         crate::drive::sharing::dto::LinkRole,
     )),

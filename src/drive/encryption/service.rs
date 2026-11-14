@@ -3,6 +3,7 @@ use crate::drive::encryption::{
     repository::EncryptionRepository,
 };
 use crate::drive::permissions::service::PermissionsService;
+use crate::drive::sharing::model::file_key_subject;
 use crate::shared::ApiError;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -31,11 +32,13 @@ impl EncryptionService {
             .get_effective_role(caller_id, "file", file_id)?
             .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
 
+        // A link guest's session stores and reads its link's key, never one of its own (#321).
+        let subject = file_key_subject(caller_id);
         let id = Uuid::new_v4().to_string();
         self.repo.upsert_file_key(NewFileKeyRef {
             id: &id,
             file_id,
-            user_id: caller_id,
+            user_id: &subject,
             encrypted_file_key,
             key_version,
         })
@@ -52,7 +55,7 @@ impl EncryptionService {
             .get_effective_role(caller_id, "file", file_id)?
             .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
 
-        self.repo.get_file_key(file_id, caller_id)
+        self.repo.get_file_key(file_id, &file_key_subject(caller_id))
     }
 
     /// Share a file key with another user.

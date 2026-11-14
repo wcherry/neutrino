@@ -802,19 +802,27 @@ async fn main() -> std::io::Result<()> {
 
     let auth_state = web::Data::new(auth::api::AuthApiState {
         auth_service: auth_service.clone(),
-        filesystem_service: drive_fs_service,
+        filesystem_service: drive_fs_service.clone(),
         signup: signup_service,
     });
 
     let drive_sharing_repo = Arc::new(SharingRepository::new(pool.clone()));
     let drive_sharing_service = Arc::new(SharingService::new(
-        drive_sharing_repo,
+        drive_sharing_repo.clone(),
         drive_permissions_service.clone(),
         drive_workspace_service,
         guest_token_service.clone(),
     ));
+    let drive_link_folders_state = web::Data::new(drive::link_folders::api::LinkFoldersApiState {
+        service: Arc::new(drive::link_folders::service::LinkFoldersService::new(
+            drive_sharing_service.clone(),
+            drive_sharing_repo.clone(),
+            drive_fs_service.clone(),
+            feature_gate.clone(),
+        )),
+    });
     let drive_sharing_state = web::Data::new(drive::sharing::api::SharingApiState {
-        sharing_service: drive_sharing_service,
+        sharing_service: drive_sharing_service.clone(),
         token_service: guest_token_service.clone(),
         email_verification: email_verification_service.clone(),
     });
@@ -1396,6 +1404,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::teams::admin_api::TeamsAdminApiDoc::openapi());
         doc.merge(drive::sharing::api::SharingApiDoc::openapi());
+        doc.merge(drive::link_folders::api::LinkFoldersApiDoc::openapi());
         doc.merge(drive::storage::api::StorageApiDoc::openapi());
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
         doc.merge(shared::file_events::api::FileEventsApiDoc::openapi());
@@ -1473,6 +1482,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_fs_state.clone())
             .app_data(drive_permissions_state.clone())
             .app_data(drive_sharing_state.clone())
+            .app_data(drive_link_folders_state.clone())
             .app_data(drive_access_requests_state.clone())
             .app_data(drive_jobs_state.clone())
             .app_data(drive_worker_secret_data.clone())
@@ -1566,7 +1576,9 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)
-                    // Drive public sharing
+                    // Drive public sharing. The folder-link guest routes go first: their literal
+                    // `/share/folder/...` segments must win over `/share/{token}/...`.
+                    .configure(drive::link_folders::api::configure)
                     .configure(drive::sharing::api::configure_public)
                     // Feature flags. Unauthenticated: the web client has to know what to render
                     // before anyone has signed in.
