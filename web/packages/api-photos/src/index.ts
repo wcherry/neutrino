@@ -31,6 +31,24 @@ export interface PhotoMetadata {
    * tell why an asset is a photo rather than a video.
    */
   motionPhoto?: MotionPhotoInfo;
+  /**
+   * What the device that imported the item knew and the file does not say, written by the iOS
+   * apps (Neutrino Photos' `MediaDeviceFacts`, Drive's photo sync). `liveVideoFileID` is how a
+   * Live Photo's still names its clip — see `agent_docs/live-photos.md`.
+   */
+  device?: PhotoDeviceFacts;
+}
+
+/** Neutrino Photos iOS's `MediaDeviceFacts`, key for key. Every field is optional. */
+export interface PhotoDeviceFacts {
+  /** The `PHAsset.localIdentifier` on the device that imported it. */
+  localIdentifier?: string;
+  isLivePhoto?: boolean;
+  isRAW?: boolean;
+  /** `PHAssetMediaSubtype` names: "live", "hdr", "panorama", "portrait", … */
+  subtypes?: string[];
+  /** The Drive file holding a Live Photo's paired video. */
+  liveVideoFileID?: string;
 }
 
 export interface PhotoResponse {
@@ -319,6 +337,7 @@ export {
   motionPhotoStem,
   motionPhotoLabel,
   pairMotionPhotos,
+  missingMotionLinks,
   type MotionPhotoInfo,
   type MotionPhotoSubtype,
   type EmbeddedVideo,
@@ -486,6 +505,20 @@ export const photosApi = {
   async ensureRegistered(photo: PhotoResponse): Promise<PhotoResponse> {
     if (!photo.isDriveOnly) return photo;
     return photosApi.registerPhoto({ fileId: photo.fileId });
+  },
+
+  /**
+   * Merges `patch` into a photo's metadata document (RFC 7396 JSON Merge Patch) and returns the
+   * merged document. Objects merge recursively and `null` removes a key, so
+   * `{ device: { liveVideoFileID } }` adds the link and keeps every other device fact — and every
+   * key another client wrote. Never write metadata with a whole-document `PUT` from here: it would
+   * erase what this client doesn't know about.
+   */
+  async mergePhotoMetadata(photoId: string, patch: Record<string, unknown>): Promise<PhotoMetadata> {
+    return request<PhotoMetadata>(`/api/v1/photos/${photoId}/metadata`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
   },
 
   async getPhoto(photoId: string): Promise<PhotoResponse> {
