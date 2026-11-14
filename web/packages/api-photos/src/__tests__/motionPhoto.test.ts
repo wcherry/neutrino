@@ -6,6 +6,7 @@ import {
   motionPhotoLabel,
   motionPhotoStem,
   pairMotionPhotos,
+  missingMotionLinks,
   readMotionPhotoInfo,
   stillFrameSeconds,
 } from '../motionPhoto';
@@ -544,5 +545,61 @@ describe('motionPhotoLabel', () => {
   it('names each platform the way that platform does', () => {
     expect(motionPhotoLabel('live_photo_apple')).toBe('LIVE');
     expect(motionPhotoLabel('motion_photo_google')).toBe('MOTION');
+  });
+});
+
+describe('pairMotionPhotos: the still names its clip (agent_docs/live-photos.md)', () => {
+  it('pairs by device.liveVideoFileID when neither stem nor identifier would', () => {
+    // How Neutrino Photos iOS stores a clip: another folder, named after the still's file id.
+    const clip = photo('p-still.live.mov', 'video/quicktime');
+    const still = photo('IMG_0100.HEIC', 'image/heic', { device: { liveVideoFileID: clip.fileId } });
+    const [item] = pairMotionPhotos([still], [clip]);
+    expect(item.motion?.id).toBe(clip.id);
+    expect(item.isMotionPhoto).toBe(true);
+  });
+
+  it('prefers the named clip over a stem look-alike', () => {
+    const named = photo('other-name.mov', 'video/quicktime');
+    const lookalike = photo('IMG_0101.MOV', 'video/quicktime', appleClipMeta);
+    const still = photo('IMG_0101.HEIC', 'image/heic', { device: { liveVideoFileID: named.fileId } });
+    const [item] = pairMotionPhotos([still], [lookalike, named]);
+    expect(item.motion?.id).toBe(named.id);
+  });
+
+  it('falls back to identifier and stem when the named clip is not among the candidates', () => {
+    const clip = photo('IMG_0102.MOV', 'video/quicktime');
+    const still = photo('IMG_0102.HEIC', 'image/heic', { device: { liveVideoFileID: 'not-fetched' } });
+    expect(pairMotionPhotos([still], [clip])[0].motion?.id).toBe(clip.id);
+  });
+
+  it('never lets one clip be claimed twice', () => {
+    const clip = photo('IMG_0103.MOV', 'video/quicktime');
+    const a = photo('IMG_0103.HEIC', 'image/heic', { device: { liveVideoFileID: clip.fileId } });
+    const b = photo('IMG_0103.JPG', 'image/jpeg');
+    const items = pairMotionPhotos([a, b], [clip]);
+    expect(items.filter((i) => i.motion?.id === clip.id)).toHaveLength(1);
+  });
+});
+
+describe('missingMotionLinks', () => {
+  it('lists a registered still paired by stem that does not yet store the link', () => {
+    const clip = photo('IMG_0200.MOV', 'video/quicktime');
+    const still = photo('IMG_0200.HEIC', 'image/heic');
+    expect(missingMotionLinks(pairMotionPhotos([still], [clip]))).toEqual([
+      { photoId: still.id, liveVideoFileID: clip.fileId },
+    ]);
+  });
+
+  it('leaves alone a still that already names a clip, even a different one', () => {
+    const clip = photo('IMG_0201.MOV', 'video/quicktime');
+    const still = photo('IMG_0201.HEIC', 'image/heic', { device: { liveVideoFileID: 'elsewhere' } });
+    expect(missingMotionLinks(pairMotionPhotos([still], [clip]))).toEqual([]);
+  });
+
+  it('skips Drive-only pictures, which have no record to write to, and unpaired stills', () => {
+    const clip = photo('IMG_0202.MOV', 'video/quicktime');
+    const driveOnly = { ...photo('IMG_0202.HEIC', 'image/heic'), isDriveOnly: true };
+    const lonely = photo('IMG_0203.HEIC', 'image/heic');
+    expect(missingMotionLinks(pairMotionPhotos([driveOnly, lonely], [clip]))).toEqual([]);
   });
 });

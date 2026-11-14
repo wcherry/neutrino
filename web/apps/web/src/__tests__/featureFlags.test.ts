@@ -51,9 +51,9 @@ describe('featureFlags', () => {
    * space" in the Drive menu on a deployment with no teams.
    */
   it('offers transfers only when both flags are on', () => {
-    expect(canTransferToTeams({ teamSpaces: true, teamFileTransfers: true })).toBe(true);
-    expect(canTransferToTeams({ teamSpaces: true, teamFileTransfers: false })).toBe(false);
-    expect(canTransferToTeams({ teamSpaces: false, teamFileTransfers: true })).toBe(false);
+    expect(canTransferToTeams({ teamSpaces: true, teamFileTransfers: true, e2eeChunkedWrites: false })).toBe(true);
+    expect(canTransferToTeams({ teamSpaces: true, teamFileTransfers: false, e2eeChunkedWrites: false })).toBe(false);
+    expect(canTransferToTeams({ teamSpaces: false, teamFileTransfers: true, e2eeChunkedWrites: false })).toBe(false);
     expect(canTransferToTeams(allFlagsOff())).toBe(false);
   });
 

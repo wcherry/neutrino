@@ -19,7 +19,12 @@
  * since they share one connection to one server.
  */
 
-import { readMotionPhotoInfo as readMotionPhotoInfoImpl, type PhotoMetadata } from '@neutrino/api-photos';
+import {
+  readMotionPhotoInfo as readMotionPhotoInfoImpl,
+  type PhotoMetadata,
+  type PhotoResponse,
+} from '@neutrino/api-photos';
+import { linkMotionPairs } from '@/lib/motionLinks';
 import { isMissingEncryptionKey } from '@neutrino/api-drive';
 import { canEncryptFor, photosApi, uploadDriveFile } from '@/lib/api';
 import type { ImportStep } from '@/components/ImportRun';
@@ -61,6 +66,11 @@ export interface LocalImportDeps {
     dates: { createdAt?: string; updatedAt?: string };
   }): Promise<void>;
   indexNote(userId: string, note: { id: string; title: string; text: string }): void;
+  /**
+   * Links the Live Photo pairs among the photos a run registered (`lib/motionLinks.ts`). Optional,
+   * so a test that doesn't care about pairing needn't supply it; called once, after the run.
+   */
+  linkMotionPairs?(registered: PhotoResponse[]): Promise<number>;
   canEncrypt(userId: string | null | undefined): Promise<boolean>;
   folderResolver: { folderFor(path: string[]): Promise<string | null> };
 }
@@ -79,6 +89,7 @@ function defaultDeps(baseFolderId: string | null): LocalImportDeps {
       }),
     readMotionPhotoInfo: (file) => readMotionPhotoInfoImpl(file, { fileName: file.name, mimeType: file.type }),
     applyImportMetadata: (args) => applyImportMetadataImpl(args),
+    linkMotionPairs: (registered) => linkMotionPairs(registered),
     indexNote: (userId, note) => {
       void Promise.all([import('@/lib/searchIndexUpdate'), import('@/lib/noteFiles')])
         .then(([{ indexOnSave }, { extractNoteText }]) =>
@@ -162,6 +173,8 @@ export async function runLocalImportStep({
   // whatever order the pool finished them in.
   const slots: (ImportItem | undefined)[] = new Array(total);
   let done = 0;
+  /** Photo records this run registered, for linking Live Photo pairs once it ends. */
+  const registered: PhotoResponse[] = [];
 
   logStep(SCOPE, `importing ${total} into ${product}`, { baseFolderId });
 
@@ -188,11 +201,12 @@ export async function runLocalImportStep({
         if (product === 'Photos') {
           step = 'adding it to Photos';
           const motionPhoto = await deps.readMotionPhotoInfo(upload);
-          await deps.registerPhoto({
+          const record = await deps.registerPhoto({
             fileId: id,
             captureDate: captureDateFromIso(iso) ?? null,
             metadata: motionPhoto ? { motionPhoto } : null,
           });
+          if (isPhotoRecord(record)) registered.push(record);
         } else if (product === 'Notes') {
           // Search is best-effort: an unindexed note is still a note.
           try {
@@ -226,6 +240,12 @@ export async function runLocalImportStep({
     },
     signal,
   );
+
+  // A still and its clip are uploaded independently, in no particular order, so the link between
+  // them can only be written once both are in (`agent_docs/live-photos.md`).
+  if (product === 'Photos' && registered.length > 1 && !signal.aborted) {
+    await deps.linkMotionPairs?.(registered);
+  }
 
   const items = slots.filter((item): item is ImportItem => item !== undefined);
   return {
@@ -273,4 +293,10 @@ export function buildLocalImportSteps({
       },
     ];
   });
+}
+
+/** What `registerPhoto` returns, when it returns a real record (test fakes often don't). */
+function isPhotoRecord(value: unknown): value is PhotoResponse {
+  const r = value as Partial<PhotoResponse> | null;
+  return !!r && typeof r.id === 'string' && typeof r.fileId === 'string' && typeof r.mimeType === 'string';
 }

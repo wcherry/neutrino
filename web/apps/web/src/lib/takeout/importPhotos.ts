@@ -51,6 +51,8 @@ import {
   getCurrentUserId,
 } from '@/lib/api';
 import { createFolderResolver } from './folders';
+import { linkMotionPairs } from '@/lib/motionLinks';
+import type { PhotoResponse } from '@neutrino/api-photos';
 import {
   applyImportMetadata,
   captureDateFromIso,
@@ -262,6 +264,8 @@ export async function runPhotosImport({
     logStep('photos', `${existing.size} existing file${existing.size === 1 ? '' : 's'} to skip against`);
   }
 
+  /** Photo records this run registered, for linking Live Photo pairs once it ends. */
+  const registeredRecords: PhotoResponse[] = [];
   for (const photo of photos) {
     if (signal?.aborted) {
       logStep('photos', 'stopped by the user', { done: items.length, remaining: photos.length - items.length });
@@ -355,6 +359,7 @@ export async function runPhotosImport({
         captureDate: captureDate ?? null,
         metadata: motionPhoto ? { motionPhoto } : null,
       });
+      registeredRecords.push(registered);
 
       // Registering always starts a photo unstarred and unarchived, so both
       // flags are a second call — made only when there is something to say.
@@ -399,6 +404,9 @@ export async function runPhotosImport({
 
     onProgress?.({ done: items.length, total: photos.length, current: title });
   }
+
+  // Link the Live Photo pairs this run brought in, now that both halves of each are registered.
+  await linkMotionPairs(registeredRecords);
 
   const result = summary();
   logStep('photos', 'finished', {

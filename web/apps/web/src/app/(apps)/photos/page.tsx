@@ -48,6 +48,7 @@ import {
 import { useUser } from '@neutrino/auth';
 import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair, activeKeyVersion } from '@neutrino/e2e-crypto';
 import { MotionPhotoMedia } from './MotionPhotoMedia';
+import { useMotionLinkBackfill } from './useMotionLinkBackfill';
 import { PhotoInfoPanel } from './PhotoInfoPanel';
 import { PersonPhotosPanel } from './PersonPhotosPanel';
 import { SuggestionsPanel, SuggestionsBadge } from './SuggestionsPanel';
@@ -453,6 +454,9 @@ export default function PhotosPage() {
     () => pairMotionPhotos(photoList ?? [], motionFiles ?? []),
     [photoList, motionFiles],
   );
+  // Write `device.liveVideoFileID` for pairs found by identifier or stem, so the iOS apps can play
+  // and save back what the web pairs on its own (agent_docs/live-photos.md).
+  useMotionLinkBackfill(items);
   const albums = albumsQuery.data?.albums ?? [];
   const persons = personsQuery.data?.persons ?? [];
   const memories = memoriesQuery.data?.memories ?? [];

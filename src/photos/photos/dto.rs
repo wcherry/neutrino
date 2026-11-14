@@ -20,6 +20,11 @@ pub struct RegisterPhotoRequest {
     /// extract anything itself. Anything the library needs to know about the bytes — whether this
     /// is an Apple Live Photo or a Google Motion Photo, and which metadata field said so — has to
     /// arrive here, from the browser that still held the plaintext.
+    ///
+    /// Live Photos follow one convention across clients (`agent_docs/live-photos.md`): `motionPhoto`
+    /// on both halves, `device.liveVideoFileID` on the still. A file already registered answers with
+    /// its existing record and this is *not* applied — merge into it with
+    /// `PATCH /photos/{id}/metadata` instead.
     #[schema(value_type = Option<Object>)]
     pub metadata: Option<Value>,
 }

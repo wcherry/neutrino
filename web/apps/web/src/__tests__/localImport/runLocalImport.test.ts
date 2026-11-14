@@ -195,6 +195,38 @@ describe('runLocalImportStep — per product', () => {
     expect(h.registerPhoto.mock.calls[0][0]).toMatchObject({ metadata: { motionPhoto: info } });
   });
 
+  it('links the Live Photo pairs it registered once the run ends', async () => {
+    const h = harness();
+    // Real-looking records, so the runner keeps them for linking.
+    h.registerPhoto.mockImplementation(async ({ fileId }: { fileId: string }) => ({
+      id: `photo-${fileId}`,
+      fileId,
+      mimeType: fileId === 'file-1' ? 'image/heic' : 'video/quicktime',
+    }));
+    const linkMotionPairs = vi.fn(async () => 1);
+    (h.deps as { linkMotionPairs?: unknown }).linkMotionPairs = linkMotionPairs;
+
+    await run(h, 'Photos', [
+      planned('Trip/IMG_1.HEIC', 'image/heic', 'media'),
+      planned('Trip/IMG_1.MOV', 'video/quicktime', 'media'),
+    ]);
+
+    expect(linkMotionPairs).toHaveBeenCalledTimes(1);
+    const records = (linkMotionPairs.mock.calls[0] as unknown as [{ fileId: string }[]])[0];
+    expect(records.map((r) => r.fileId).sort()).toEqual(['file-1', 'file-2']);
+  });
+
+  it('does not try to link when the registrations returned no records', async () => {
+    const h = harness();
+    const linkMotionPairs = vi.fn(async () => 0);
+    (h.deps as { linkMotionPairs?: unknown }).linkMotionPairs = linkMotionPairs;
+    await run(h, 'Photos', [
+      planned('IMG_1.HEIC', 'image/heic', 'media'),
+      planned('IMG_1.MOV', 'video/quicktime', 'media'),
+    ]);
+    expect(linkMotionPairs).not.toHaveBeenCalled();
+  });
+
   it('neither registers photos nor indexes notes for Drive files', async () => {
     await run(h, 'Drive', [
       planned('a/IMG.jpg', 'Drive', { mimeType: 'image/jpeg' }),

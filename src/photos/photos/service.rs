@@ -457,6 +457,26 @@ impl PhotosService {
         self.repo.set_metadata(photo_id, metadata)
     }
 
+    /// Merges `patch` into a photo's metadata document (RFC 7396) and returns the result. The
+    /// caller's own photos only, as for [`save_metadata`](Self::save_metadata). Prefer this to the
+    /// whole-document `PUT`: it keeps every key the caller didn't send, including ones another
+    /// client wrote (`agent_docs/live-photos.md`).
+    pub fn merge_metadata(
+        &self,
+        user: &AuthenticatedUser,
+        photo_id: &str,
+        patch: serde_json::Value,
+    ) -> Result<serde_json::Value, ApiError> {
+        if !patch.is_object() {
+            return Err(ApiError::bad_request(
+                "Metadata patch must be a JSON object",
+            ));
+        }
+        let photo = self.repo.get_photo_including_deleted(photo_id)?;
+        ensure_owner(&photo, user)?;
+        self.repo.merge_metadata(photo_id, &patch)
+    }
+
     pub async fn list_photos_by_ids(
         &self,
         user: &AuthenticatedUser,
