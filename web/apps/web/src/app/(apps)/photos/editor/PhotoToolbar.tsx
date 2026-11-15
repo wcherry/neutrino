@@ -15,6 +15,7 @@ import {
   Grid3x3,
   RectangleHorizontal,
   Stamp,
+  Film,
 } from 'lucide-react';
 import { ToolbarItems, type ToolDef as ToolbarToolDef } from '@/components/editorChrome/ToolbarItems';
 import type { Tool } from './types';
@@ -23,6 +24,8 @@ import styles from './page.module.css';
 interface PhotoToolbarProps {
   activeTool: Tool;
   onToolChange: (tool: Tool) => void;
+  /** Opens the key-photo scrubber; absent unless this is an Apple Live Photo the user may edit. */
+  onKeyPhoto?: () => void;
 }
 
 interface PhotoTool {
@@ -71,8 +74,8 @@ const TOOL_GROUPS: { id: string; tools: PhotoTool[] }[] = [
  * they can be reordered, tucked into "More tools" and captioned, and a right-click (Ctrl-click on a
  * Mac) anywhere on the rail opens "Customize toolbar…".
  */
-export function PhotoToolbar({ activeTool, onToolChange }: PhotoToolbarProps) {
-  const tools: ToolbarToolDef[] = TOOL_GROUPS.map(group => ({
+export function PhotoToolbar({ activeTool, onToolChange, onKeyPhoto }: PhotoToolbarProps) {
+  const groups: ToolbarToolDef[] = TOOL_GROUPS.map(group => ({
     id: group.id,
     render: () => group.tools.map(item => {
       const isActive = activeTool === item.tool;
@@ -90,6 +93,21 @@ export function PhotoToolbar({ activeTool, onToolChange }: PhotoToolbarProps) {
       );
     }),
   }));
+  // Key Photo (issue #317) is an action, not a canvas tool: it opens the
+  // scrubber, and the frame picked there becomes the picture under any edits.
+  // Only an Apple Live Photo the user may edit has one to offer.
+  const tools: ToolbarToolDef[] = [
+    ...groups,
+    {
+      id: 'keyPhoto',
+      render: () =>
+        onKeyPhoto ? (
+          <button key="keyPhoto" className={styles.toolBtn} title="Key Photo" aria-label="Key Photo" onClick={onKeyPhoto}>
+            <Film size={18} />
+          </button>
+        ) : null,
+    },
+  ];
 
   return (
     <div className={styles.toolbar} role="toolbar" aria-label="Photo editing tools">

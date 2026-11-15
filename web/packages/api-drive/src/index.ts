@@ -16,6 +16,8 @@ export {
   driveAutosaveEncryptedBytes,
   driveSetThumbnail,
   driveCreateEncryptedVersionBytes,
+  driveReplaceEncryptedBytes,
+  driveDownloadVersionBytes,
   driveWriteEncryptedContent,
   commentsApi,
   encryptionApi,
@@ -30,7 +32,7 @@ export {
   setMovedIntoFolderHook,
 } from './client';
 
-export type { AutosaveTransport, BytesSealer, MovedIntoFolderHook } from './client';
+export type { AutosaveTransport, BytesSealer, MovedIntoFolderHook, ReplaceFileExtras } from './client';
 
 // The only way to write user content into Drive. See the module header for why
 // the plaintext helpers this replaced no longer exist.

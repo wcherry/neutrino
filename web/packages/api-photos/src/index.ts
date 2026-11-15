@@ -37,6 +37,12 @@ export interface PhotoMetadata {
    * Live Photo's still names its clip — see `agent_docs/live-photos.md`.
    */
   device?: PhotoDeviceFacts;
+  /**
+   * Set while a Live Photo's key photo has been changed from the one it was
+   * taken with (issue #317): where the originals are in version history, so
+   * Revert can put them back. See `keyPhoto.ts`.
+   */
+  keyPhoto?: import('./keyPhoto').KeyPhotoRecord;
 }
 
 /** Neutrino Photos iOS's `MediaDeviceFacts`, key for key. Every field is optional. */
@@ -345,6 +351,7 @@ export {
 } from './motionPhoto';
 export { readQuickTimeMetadata, readQuickTimeBoxes } from './quicktime';
 export { findXmpInJpeg, readJpegXmp, readGCameraMotion, xmpValue } from './xmp';
+// Key photo (issue #317) lives at `@neutrino/api-photos/key-photo` — see `keyPhotoEntry.ts`.
 
 // ---------------------------------------------------------------------------
 // Photos API

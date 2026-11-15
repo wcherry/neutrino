@@ -186,6 +186,14 @@ describe('Google Motion Photos', () => {
     expect(embeddedClipFrom(null)).toBeNull();
   });
 
+  it("keys a file clip by its content version, so a clip rewritten by a key-photo change is fetched again", () => {
+    const still = file('s', 'IMG_1.HEIC', 'image/heic');
+    const v3 = findLiveClip(still, { siblings: [{ ...file('m', 'IMG_1.MOV', 'video/quicktime'), contentVersion: 3 }] })!;
+    const v4 = findLiveClip(still, { siblings: [{ ...file('m', 'IMG_1.MOV', 'video/quicktime'), contentVersion: 4 }] })!;
+    expect(clipKey('s', v3)).toBe('m@3');
+    expect(clipKey('s', v4)).not.toBe(clipKey('s', v3));
+  });
+
   it('keys an embedded clip by its still, since it has no file of its own', () => {
     const clip = embeddedClipFrom({ subtype: 'motion_photo_google', signal: 'x', embedded: { offset: 5, length: 7 } })!;
     expect(clipKey('g', clip)).toBe('embedded:g');

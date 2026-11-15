@@ -1,0 +1,138 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--palette-gray-10, #111);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-height: 55vh;
+}
+
+.video {
+  max-width: 100%;
+  max-height: 55vh;
+  display: block;
+}
+
+/* The filmstrip is the scrubber: press anywhere on it, or drag along it. */
+.strip {
+  position: relative;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  overflow: visible;
+  background: var(--color-surface-sunken, var(--palette-gray-90));
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.strip:focus-visible {
+  outline: 2px solid var(--color-focus-ring, var(--color-primary));
+  outline-offset: 2px;
+}
+
+.frames {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.frames img {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.playhead {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--palette-gray-100, #fff);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.originalMarker {
+  position: absolute;
+  top: 100%;
+  width: 0;
+  pointer-events: none;
+}
+
+.originalMarker::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  left: -1px;
+  width: 2px;
+  height: 60px;
+  background: var(--color-warning, #f5a524);
+}
+
+.originalMarker span {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-size: var(--font-size-11, 11px);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.time {
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-13, 13px);
+  color: var(--color-text-secondary);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.warning {
+  font-size: var(--font-size-12, 12px);
+  color: var(--color-text-secondary);
+  max-width: 320px;
+}
+
+.error {
+  margin: 0;
+  font-size: var(--font-size-13, 13px);
+  color: var(--color-danger, #d93025);
+}

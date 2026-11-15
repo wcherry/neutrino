@@ -98,7 +98,10 @@ export function isLikelyLivePhotoMov(metadata: Record<string, unknown>): boolean
   );
 }
 
-function appleInfoFrom(metadata: Record<string, string | number>): MotionPhotoInfo | null {
+function appleInfoFrom(
+  metadata: Record<string, string | number>,
+  trackStillTime: number | null = null,
+): MotionPhotoInfo | null {
   if (!isLikelyLivePhotoMov(metadata)) return null;
   const raw =
     metadata[CONTENT_IDENTIFIER_KEY] ??
@@ -108,16 +111,19 @@ function appleInfoFrom(metadata: Record<string, string | number>): MotionPhotoIn
   const contentIdentifier = String(raw).trim();
   if (!contentIdentifier) return null;
 
-  const stillTime = metadata[STILL_IMAGE_TIME_KEY];
+  // The timed metadata track is where an iPhone actually marks the key frame
+  // (`quicktime.ts`), so it wins. An `ilst` value is the fallback; Apple writes
+  // -1 there when the track carries the time instead, so only a usable offset
+  // is kept.
+  const ilstTime = metadata[STILL_IMAGE_TIME_KEY];
+  const stillImageTime =
+    trackStillTime ??
+    (typeof ilstTime === 'number' && Number.isFinite(ilstTime) && ilstTime >= 0 ? ilstTime : undefined);
   return {
     subtype: 'live_photo_apple',
     signal: CONTENT_IDENTIFIER_KEY,
     contentIdentifier,
-    // Apple writes -1 here when the still frame is marked by a timed-metadata
-    // track instead, which we do not read; only keep a usable offset.
-    ...(typeof stillTime === 'number' && Number.isFinite(stillTime) && stillTime >= 0
-      ? { stillImageTime: stillTime }
-      : {}),
+    ...(stillImageTime !== undefined ? { stillImageTime } : {}),
   };
 }
 
@@ -208,9 +214,9 @@ export async function readMotionPhotoInfo(
   const mimeType = file.mimeType ?? source.type ?? '';
 
   if (looksLikeMovie(fileName, mimeType)) {
-    const { metadata, xmp } = await readQuickTimeBoxes(source);
+    const { metadata, xmp, stillImageTime } = await readQuickTimeBoxes(source);
     // Apple's own metadata is the stronger signal, so it is asked for first.
-    const apple = appleInfoFrom(metadata);
+    const apple = appleInfoFrom(metadata, stillImageTime);
     if (apple) return apple;
 
     const google = xmp ? readGCameraMotion(xmp) : null;

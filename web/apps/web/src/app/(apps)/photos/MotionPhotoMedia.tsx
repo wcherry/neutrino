@@ -62,6 +62,18 @@ function useMotionUrl(item: LibraryItem, wanted: boolean): string | null {
   const startedRef = useRef(false);
   const mountedRef = useRef(true);
   const playable = item.motion !== null || item.embedded !== null;
+  // Which bytes this is: a key-photo change (#317) rewrites the clip under the
+  // same id, and the decrypted copy held below must not outlive that.
+  const source = item.motion
+    ? `${item.motion.fileId}:${item.motion.updatedAt}`
+    : `${item.photo.fileId}:${item.photo.updatedAt}`;
+
+  useEffect(() => {
+    startedRef.current = false;
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = null;
+    setUrl(null);
+  }, [source]);
 
   useEffect(() => {
     if (!wanted || !playable || !user?.id || startedRef.current) return;

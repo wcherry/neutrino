@@ -16,6 +16,7 @@
       "@neutrino/api-core": ["../../packages/api-core/src/index.ts"],
       "@neutrino/api-drawing": ["../../packages/api-drawing/src/index.ts"],
       "@neutrino/api-drive": ["../../packages/api-drive/src/index.ts"],
+      "@neutrino/api-photos/key-photo": ["../../packages/api-photos/src/keyPhotoEntry.ts"],
       "@neutrino/api-docs": ["../../packages/api-docs/src/index.ts"],
       "@neutrino/api-sheets": ["../../packages/api-sheets/src/index.ts"],
       "@neutrino/api-slides": ["../../packages/api-slides/src/index.ts"],

@@ -21,9 +21,11 @@ interface PhotoTopBarProps {
   onPaste: () => void;
   onDelete: () => void;
   onRename: (name: string) => void;
+  /** Present only for an Apple Live Photo the user may edit (issue #317). */
+  onChooseKeyPhoto?: () => void;
 }
 
-export function PhotoTopBar({ fileName, isDirty, isSaving, hasSelection, hasClipboard, onBack, onSave, onDuplicate, onExport, onCut, onCopy, onPaste, onDelete, onRename }: PhotoTopBarProps) {
+export function PhotoTopBar({ fileName, isDirty, isSaving, hasSelection, hasClipboard, onBack, onSave, onDuplicate, onExport, onCut, onCopy, onPaste, onDelete, onRename, onChooseKeyPhoto }: PhotoTopBarProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,6 +58,9 @@ export function PhotoTopBar({ fileName, isDirty, isSaving, hasSelection, hasClip
         { kind: 'action', label: isSaving ? 'Saving…' : 'Save', disabled: !isDirty || isSaving, action: onSave },
         { kind: 'action', label: 'Duplicate', action: onDuplicate },
         { kind: 'action', label: 'Export', action: onExport },
+        ...(onChooseKeyPhoto
+          ? [{ kind: 'separator' } as HamburgerMenuItem, { kind: 'action', label: 'Choose Key Photo…', action: onChooseKeyPhoto } as HamburgerMenuItem]
+          : []),
       ],
     },
     {

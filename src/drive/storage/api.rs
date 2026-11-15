@@ -980,6 +980,12 @@ pub async fn get_quota(
 /// Optimistic concurrency: pass `expectedContentVersion` and the write is rejected with 409 if
 /// the file moved on server-side, so a stale tab cannot clobber a newer save. A rename sent
 /// alongside the body is applied only once the content lands.
+///
+/// Two optional text parts ride along for a write that changes what the file *is* (issue #317,
+/// a Live Photo's HEIC still replaced by a JPEG frame): `mime_type`, the file's new type, and
+/// `thumbnail_b64`, its new cover thumbnail in the same base64 form an upload sends. Both are
+/// applied only once the content lands, like the rename. Callers that send neither are
+/// unaffected.
 #[utoipa::path(
     put,
     path = "/api/v1/drive/files/{id}/autosave",
@@ -1023,6 +1029,8 @@ pub async fn autosave_file(
     // content lands, so a rejected save (stale version, quota) can't leave the
     // file renamed to match a body that was never written.
     let mut new_title: Option<String> = None;
+    let mut new_mime_type: Option<String> = None;
+    let mut new_thumbnail_b64: Option<String> = None;
     let mut staged: Option<(TempUpload, i64)> = None;
 
     while let Some(field) = payload.next().await {
@@ -1036,23 +1044,43 @@ pub async fn autosave_file(
             .and_then(|cd| cd.get_filename())
             .is_none()
         {
-            let is_metadata = field
+            let part = field
                 .content_disposition()
                 .and_then(|cd| cd.get_name())
-                .is_some_and(|n| n == "metadata");
-            if !is_metadata {
+                .map(str::to_string)
+                .unwrap_or_default();
+            if !matches!(part.as_str(), "metadata" | "mime_type" | "thumbnail_b64") {
                 continue;
             }
             let mut bytes = Vec::new();
             while let Some(chunk) = field.next().await {
                 let data = chunk.map_err(|_| ApiError::bad_request("Upload interrupted"))?;
                 bytes.extend_from_slice(&data);
+                if bytes.len() > MAX_AUTOSAVE_TEXT_PART_BYTES {
+                    return Err(ApiError::bad_request("Autosave text part is too large"));
+                }
             }
-            if let Ok(parsed) = serde_json::from_slice::<AutosaveMetadata>(&bytes) {
-                new_title = parsed
-                    .title
-                    .map(|t| t.trim().to_string())
-                    .filter(|t| !t.is_empty());
+            match part.as_str() {
+                "metadata" => {
+                    if let Ok(parsed) = serde_json::from_slice::<AutosaveMetadata>(&bytes) {
+                        new_title = parsed
+                            .title
+                            .map(|t| t.trim().to_string())
+                            .filter(|t| !t.is_empty());
+                    }
+                }
+                "mime_type" => {
+                    let value = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !value.is_empty() {
+                        new_mime_type = Some(validate_mime_type(&value)?);
+                    }
+                }
+                _ => {
+                    let value = String::from_utf8_lossy(&bytes).trim().to_string();
+                    if !value.is_empty() {
+                        new_thumbnail_b64 = Some(value);
+                    }
+                }
             }
             continue;
         }
@@ -1112,7 +1140,51 @@ pub async fn autosave_file(
         response.name = title;
     }
 
+    if let Some(mime_type) = new_mime_type.filter(|m| *m != response.mime_type) {
+        // Unlike the rename, a failure here is reported: a file whose bytes are
+        // a JPEG but whose row still says HEIC opens wrong everywhere, and the
+        // caller is about to tell the user the change worked.
+        state.storage_service.set_mime_type(&file_id, &mime_type)?;
+        response.mime_type = mime_type;
+    }
+
+    if let Some(b64) = new_thumbnail_b64 {
+        // A thumbnail is a nicety, as on upload: the content has landed, so a
+        // bad one is logged and dropped rather than failing the save.
+        match BASE64.decode(b64.as_bytes()) {
+            Ok(bytes) => match sniff_thumbnail(&bytes) {
+                Some(mime) if bytes.len() <= MAX_THUMBNAIL_BYTES => {
+                    match state.storage_service.set_cover_thumbnail(&file_id, &bytes, mime) {
+                        Ok(url) => response.cover_thumbnail_url = Some(url),
+                        Err(e) => tracing::warn!("autosave thumbnail for {} not stored: {:?}", file_id, e),
+                    }
+                }
+                _ => tracing::warn!("discarding an autosave thumbnail for {} that is not a small image", file_id),
+            },
+            Err(e) => tracing::warn!("discarding malformed autosave thumbnail for {}: {:?}", file_id, e),
+        }
+    }
+
     Ok(web::Json(response))
+}
+
+/// The largest text part (`metadata`, `mime_type`, `thumbnail_b64`) an autosave accepts. A
+/// base64 thumbnail of the 512 KB ceiling is about 700 KB.
+const MAX_AUTOSAVE_TEXT_PART_BYTES: usize = 1024 * 1024;
+
+/// A MIME type an autosave may set: `type/subtype`, short, printable, no parameters.
+fn validate_mime_type(value: &str) -> Result<String, ApiError> {
+    let ok = value.len() <= 127
+        && value.split('/').count() == 2
+        && value.split('/').all(|p| !p.is_empty())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '+' | '.'));
+    if ok {
+        Ok(value.to_ascii_lowercase())
+    } else {
+        Err(ApiError::bad_request("mime_type must be a plain type/subtype"))
+    }
 }
 
 /// Save the uploaded bytes as a named version in the file's history.
@@ -1517,7 +1589,17 @@ impl utoipa::Modify for SecurityAddon {
 
 #[cfg(test)]
 mod tests {
-    use super::sniff_thumbnail;
+    use super::{sniff_thumbnail, validate_mime_type};
+
+    #[test]
+    fn an_autosave_mime_type_must_be_a_plain_type_and_subtype() {
+        assert_eq!(validate_mime_type("image/jpeg").unwrap(), "image/jpeg");
+        assert_eq!(validate_mime_type("Image/JPEG").unwrap(), "image/jpeg");
+        assert_eq!(validate_mime_type("application/vnd.apple+xml").unwrap(), "application/vnd.apple+xml");
+        for bad in ["jpeg", "image/", "/jpeg", "image/jpeg; charset=x", "a/b/c", "image/<script>"] {
+            assert!(validate_mime_type(bad).is_err(), "{bad} must be refused");
+        }
+    }
 
     #[test]
     fn sniffs_the_image_types_a_thumbnail_may_be() {
@@ -1531,5 +1613,202 @@ mod tests {
         assert_eq!(sniff_thumbnail(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>"), None);
         assert_eq!(sniff_thumbnail(b"GIF89a"), None);
         assert_eq!(sniff_thumbnail(b""), None);
+    }
+}
+
+/// The autosave route's optional `mime_type` and `thumbnail_b64` parts (issue #317), end to end
+/// through the real multipart handler.
+#[cfg(test)]
+mod autosave_route_tests {
+    use super::*;
+    use crate::auth::{repository::AuthRepository, service::AuthService};
+    use crate::drive::encryption::repository::EncryptionRepository;
+    use crate::drive::feature_flags::gate::FeatureGate;
+    use crate::drive::feature_flags::repository::FeatureFlagsRepository;
+    use crate::drive::permissions::repository::PermissionsRepository;
+    use crate::drive::storage::repository::{DbPool, StorageRepository};
+    use crate::drive::storage::store::LocalFileStore;
+    use crate::drive::storage::model::UploadExtras;
+    use crate::drive::tags::{repository::TagsRepository, service::TagsService};
+    use crate::drive::workspace::{repository::WorkspaceRepository, service::WorkspaceService};
+    use crate::shared::TokenService;
+    use actix_web::{test, App};
+    use diesel::r2d2::{ConnectionManager, Pool};
+    use diesel::SqliteConnection;
+    use diesel_migrations::MigrationHarness;
+
+    const BOUNDARY: &str = "X-AUTOSAVE-BOUNDARY";
+    /// The smallest thing `sniff_thumbnail` accepts as a JPEG.
+    const JPEG_THUMB: &[u8] = &[0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, b'J', b'F', b'I', b'F', 0, 1];
+
+    fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder().max_size(1).build(manager).expect("test pool");
+        pool.get().expect("conn").run_pending_migrations(MIGRATIONS).expect("migrations");
+        pool
+    }
+
+    struct Fixture {
+        state: web::Data<StorageApiState>,
+        tokens: Arc<TokenService>,
+        repo: StorageRepository,
+        base: std::path::PathBuf,
+    }
+
+    fn fixture() -> Fixture {
+        let pool = test_pool();
+        let base = std::env::temp_dir().join(format!("neutrino_autosave_route_{}", Uuid::new_v4()));
+        let store = Arc::new(LocalFileStore::new(&base).expect("store"));
+        let tokens = Arc::new(TokenService::new("test-secret".to_string()));
+        let auth_service = Arc::new(AuthService::new(
+            Arc::new(AuthRepository::new(pool.clone())),
+            tokens.clone(),
+            Arc::new(crate::auth::password_policy::PasswordPolicyRepository::new(pool.clone())),
+        ));
+        let permissions_service = Arc::new(PermissionsService::new(
+            Arc::new(PermissionsRepository::new(pool.clone())),
+            Arc::new(WorkspaceService::new(Arc::new(WorkspaceRepository::new(pool.clone())))),
+            Arc::new(EncryptionRepository::new(pool.clone())),
+            auth_service,
+            FeatureGate::new(Arc::new(FeatureFlagsRepository::new(pool.clone()))),
+        ));
+        let storage_service = Arc::new(StorageService::new(
+            Arc::new(StorageRepository::new(pool.clone())),
+            store,
+            permissions_service.clone(),
+        ));
+        let state = web::Data::new(StorageApiState {
+            storage_service,
+            permissions_service: permissions_service.clone(),
+            tags_service: Arc::new(TagsService::new(
+                Arc::new(TagsRepository::new(pool.clone())),
+                permissions_service,
+            )),
+            filesystem_repo: Arc::new(FilesystemRepository::new(pool.clone())),
+            max_upload_bytes: 10 * 1024 * 1024,
+        });
+        Fixture { state, tokens, repo: StorageRepository::new(pool), base }
+    }
+
+    async fn upload_heic(f: &Fixture) -> FileMetadataResponse {
+        let user = AuthenticatedUser {
+            user_id: "user-1".into(),
+            email: "user-1@example.com".into(),
+            token: String::new(),
+            is_admin: false,
+        };
+        let service = &f.state.storage_service;
+        service.store().ensure_user_dir("user-1").expect("mkdir");
+        let temp = service.store().temp_upload("user-1", &Uuid::new_v4().to_string());
+        std::fs::write(temp.path(), b"heic bytes").expect("stage");
+        let saved = service
+            .finalize_upload(&user, temp.path(), "IMG_1234.HEIC", "image/heic", 10, None, None, UploadExtras::default())
+            .await
+            .expect("upload");
+        temp.commit();
+        saved
+    }
+
+    fn body(parts: &[(&str, &str)], file: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(format!("--{BOUNDARY}\r\n").as_bytes());
+        out.extend_from_slice(b"Content-Disposition: form-data; name=\"file\"; filename=\"blob\"\r\n");
+        out.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+        out.extend_from_slice(file);
+        out.extend_from_slice(b"\r\n");
+        for (name, value) in parts {
+            out.extend_from_slice(format!("--{BOUNDARY}\r\n").as_bytes());
+            out.extend_from_slice(format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes());
+            out.extend_from_slice(value.as_bytes());
+            out.extend_from_slice(b"\r\n");
+        }
+        out.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+        out
+    }
+
+    async fn autosave(f: &Fixture, file_id: &str, parts: &[(&str, &str)]) -> actix_web::dev::ServiceResponse {
+        let app = test::init_service(
+            App::new()
+                .app_data(f.state.clone())
+                .app_data(web::Data::new(f.tokens.clone()))
+                .configure(configure),
+        )
+        .await;
+        let token = f.tokens.generate_access_token("user-1", "user-1@example.com").expect("token");
+        let req = test::TestRequest::put()
+            .uri(&format!("/files/{file_id}/autosave"))
+            .insert_header(("Authorization", format!("Bearer {token}")))
+            .insert_header(("Content-Type", format!("multipart/form-data; boundary={BOUNDARY}")))
+            .set_payload(body(parts, b"jpeg bytes"))
+            .to_request();
+        test::call_service(&app, req).await
+    }
+
+    #[actix_web::test]
+    async fn the_new_type_name_and_thumbnail_land_with_the_content() {
+        let f = fixture();
+        let file = upload_heic(&f).await;
+        let thumb = BASE64.encode(JPEG_THUMB);
+
+        let resp = autosave(
+            &f,
+            &file.id,
+            &[("metadata", r#"{"title":"IMG_1234.JPG"}"#), ("mime_type", "image/jpeg"), ("thumbnail_b64", &thumb)],
+        )
+        .await;
+
+        assert_eq!(resp.status(), 200);
+        let saved: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(saved["name"], "IMG_1234.JPG");
+        assert_eq!(saved["mimeType"], "image/jpeg");
+        assert!(saved["coverThumbnailUrl"].as_str().is_some(), "the new thumbnail is reported");
+        let row = f.repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(row.mime_type, "image/jpeg");
+        assert_eq!(row.cover_thumbnail_mime_type.as_deref(), Some("image/jpeg"));
+        let _ = std::fs::remove_dir_all(&f.base);
+    }
+
+    #[actix_web::test]
+    async fn an_autosave_without_the_new_parts_leaves_the_type_alone() {
+        let f = fixture();
+        let file = upload_heic(&f).await;
+
+        let resp = autosave(&f, &file.id, &[]).await;
+
+        assert_eq!(resp.status(), 200);
+        let row = f.repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(row.mime_type, "image/heic");
+        let _ = std::fs::remove_dir_all(&f.base);
+    }
+
+    #[actix_web::test]
+    async fn a_malformed_mime_type_is_refused_before_anything_is_written() {
+        let f = fixture();
+        let file = upload_heic(&f).await;
+        let before = f.repo.find_file_by_id(&file.id).unwrap().unwrap();
+
+        let resp = autosave(&f, &file.id, &[("mime_type", "not a type")]).await;
+
+        assert_eq!(resp.status(), 400);
+        let after = f.repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(after.content_version, before.content_version, "no content was written");
+        assert_eq!(after.mime_type, "image/heic");
+        let _ = std::fs::remove_dir_all(&f.base);
+    }
+
+    #[actix_web::test]
+    async fn a_thumbnail_that_is_not_an_image_is_dropped_but_the_save_lands() {
+        let f = fixture();
+        let file = upload_heic(&f).await;
+        let not_an_image = BASE64.encode(b"<svg/>");
+
+        let resp = autosave(&f, &file.id, &[("mime_type", "image/jpeg"), ("thumbnail_b64", &not_an_image)]).await;
+
+        assert_eq!(resp.status(), 200);
+        let row = f.repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(row.mime_type, "image/jpeg");
+        assert_eq!(row.cover_thumbnail_mime_type, None);
+        let _ = std::fs::remove_dir_all(&f.base);
     }
 }
