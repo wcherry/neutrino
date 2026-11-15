@@ -31,6 +31,11 @@ services:
       # for an unverified address: every spec registers a fresh account and shares straight away.
       # `enforce` is covered by the Rust tests in `src/auth/email_verification/tests.rs`.
       EMAIL_VERIFICATION: soft
+      # Every spec registers a fresh account from the same address, so the sign-up rate limits
+      # are lifted here; they are covered by the Rust tests in `src/auth/signup_guard/tests.rs`.
+      SIGNUP_IP_HOURLY_LIMIT: 0
+      SIGNUP_IP_DAILY_LIMIT: 0
+      SIGNUP_GLOBAL_HOURLY_LIMIT: 0
     ports:
       - "9880:8080"
     volumes:

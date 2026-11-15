@@ -1237,6 +1237,7 @@ mod tests {
             password: password.to_string(),
             name: name.to_string(),
             invite_token: None,
+            turnstile_token: None,
         }
     }
 

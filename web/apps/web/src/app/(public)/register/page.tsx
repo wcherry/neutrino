@@ -3,9 +3,10 @@
 import { Eye, EyeOff, Info, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { authApi, invitesApi, type InviteValidation } from '@neutrino/auth';
 import { EncryptionSetupDialog } from '@/components/EncryptionSetupDialog';
+import { TurnstileWidget, type TurnstileHandle } from '@/components/TurnstileWidget';
 import styles from '../sign-in/page.module.css';
 
 /**
@@ -40,13 +41,22 @@ export default function RegisterPage() {
   // null until the server answers; the form shows meanwhile and is hidden only
   // once sign-up is known to be closed.
   const [publicSignup, setPublicSignup] = useState<boolean | null>(null);
+  // The CAPTCHA, when the server checks one. Without a token the server still
+  // takes the sign-up but under tight limits, so a widget that fails to load
+  // does not block the form.
+  const [captchaSiteKey, setCaptchaSiteKey] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaUnavailable, setCaptchaUnavailable] = useState(false);
+  const captcha = useRef<TurnstileHandle>(null);
 
   useEffect(() => {
     let cancelled = false;
     authApi
       .signupPolicy()
       .then((policy) => {
-        if (!cancelled) setPublicSignup(policy.publicSignup);
+        if (cancelled) return;
+        setPublicSignup(policy.publicSignup);
+        setCaptchaSiteKey(policy.turnstileSiteKey ?? null);
       })
       .catch(() => {
         // Unknown: leave the form up and let the register call be the judge.
@@ -83,6 +93,9 @@ export default function RegisterPage() {
 
   const inviteToken = invite.kind === 'valid' ? invite.token : undefined;
   const inviteOnly = publicSignup === false && invite.kind !== 'valid' && invite.kind !== 'checking';
+  // An invite is proof enough for the server, so the CAPTCHA is skipped then.
+  const needsCaptcha = Boolean(captchaSiteKey) && !inviteToken;
+  const waitingForCaptcha = needsCaptcha && !captchaToken && !captchaUnavailable;
 
   // Only flagged once the user has typed something to compare against, so the field
   // is not red the moment it gains focus.
@@ -103,13 +116,19 @@ export default function RegisterPage() {
     const name = (form.elements.namedItem('name') as HTMLInputElement).value;
 
     try {
-      const profile = await authApi.register(
-        inviteToken ? { name, email, password, inviteToken } : { name, email, password },
-      );
+      const profile = await authApi.register({
+        name,
+        email,
+        password,
+        ...(inviteToken ? { inviteToken } : {}),
+        ...(needsCaptcha && captchaToken ? { turnstileToken: captchaToken } : {}),
+      });
       await authApi.login({ email, password });
       setNewUser({ id: profile.id, email: profile.email });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');
+      // The server spent the token on this attempt; a retry needs a fresh one.
+      if (needsCaptcha) captcha.current?.reset();
     } finally {
       setLoading(false);
     }
@@ -230,8 +249,20 @@ export default function RegisterPage() {
                 </p>
               )}
             </div>
+            {needsCaptcha && captchaSiteKey && (
+              <TurnstileWidget
+                ref={captcha}
+                siteKey={captchaSiteKey}
+                onToken={setCaptchaToken}
+                onLoadError={() => setCaptchaUnavailable(true)}
+              />
+            )}
             {error && <p className={styles.error}>{error}</p>}
-            <button type="submit" className={styles.submit} disabled={loading || mismatch}>
+            <button
+              type="submit"
+              className={styles.submit}
+              disabled={loading || mismatch || waitingForCaptcha}
+            >
               {loading ? 'Creating account…' : 'Create free account'}
             </button>
           </form>

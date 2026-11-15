@@ -8,6 +8,7 @@ pub mod password_reset;
 pub mod repository;
 pub mod service;
 pub mod signup;
+pub mod signup_guard;
 pub mod tokens;
 pub mod totp;
 pub mod welcome;

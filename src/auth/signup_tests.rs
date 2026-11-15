@@ -90,6 +90,7 @@ fn req(email: &str, password: &str, name: &str, invite_token: Option<&str>) -> R
         password: password.to_string(),
         name: name.to_string(),
         invite_token: invite_token.map(str::to_string),
+        turnstile_token: None,
     }
 }
 

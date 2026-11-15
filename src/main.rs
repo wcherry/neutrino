@@ -772,6 +772,25 @@ async fn main() -> std::io::Result<()> {
         mailer.clone(),
         config.drive_base_url.clone(),
     ));
+    // Defences against scripted mass sign-up: address checks, CAPTCHA, rate limits.
+    let signup_guard_config = auth::signup_guard::config::SignupGuardConfig::from_env()
+        .unwrap_or_else(|e| {
+            eprintln!("Configuration error: {}", e);
+            std::process::exit(1);
+        });
+    info!("Sign-up guard: {}", signup_guard_config.summary());
+    let signup_client_ip = signup_guard_config.client_ip.clone();
+    let signup_guard = Arc::new(auth::signup_guard::service::SignupGuard::new(
+        Arc::new(auth::signup_guard::repository::SignupGuardRepository::new(pool.clone())),
+        signup_guard_config.clone(),
+        signup_guard_config.turnstile_secret.clone().map(|secret| {
+            Arc::new(auth::signup_guard::turnstile::TurnstileVerifier::new(secret))
+                as Arc<dyn auth::signup_guard::turnstile::CaptchaVerifier>
+        }),
+    ));
+    let signup_guard_state = web::Data::new(auth::signup_guard::api::SignupGuardApiState {
+        guard: signup_guard.clone(),
+    });
     let signup_service = Arc::new(
         auth::signup::SignupService::new(
             auth_service.clone(),
@@ -780,7 +799,8 @@ async fn main() -> std::io::Result<()> {
             Arc::new(preferences::repository::PreferencesRepository::new(pool.clone())),
             config.public_signup_open,
         )
-        .with_email_verification(email_verification_service.clone()),
+        .with_email_verification(email_verification_service.clone())
+        .with_guard(signup_guard.clone()),
     );
     info!(
         "Public sign-up: {}",
@@ -803,6 +823,7 @@ async fn main() -> std::io::Result<()> {
         auth_service: auth_service.clone(),
         filesystem_service: drive_fs_service.clone(),
         signup: signup_service,
+        client_ip: signup_client_ip,
     });
 
     let drive_sharing_repo = Arc::new(SharingRepository::new(pool.clone()));
@@ -1366,6 +1387,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
     let openapi = {
         let mut doc = NeutrinoApiDoc::openapi();
         doc.merge(auth::api::AuthApiDoc::openapi());
+        doc.merge(auth::signup_guard::api::SignupGuardApiDoc::openapi());
         doc.merge(auth::invites::api::InvitesApiDoc::openapi());
         doc.merge(auth::password_reset::api::PasswordResetApiDoc::openapi());
         doc.merge(auth::email_verification::api::EmailVerificationApiDoc::openapi());
@@ -1454,6 +1476,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_event_broadcaster_data.clone())
             // Auth
             .app_data(auth_state.clone())
+            .app_data(signup_guard_state.clone())
             .app_data(invites_state.clone())
             .app_data(password_reset_state.clone())
             .app_data(email_verification_state.clone())
@@ -1561,6 +1584,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     // See `shared::drive_events`.
                     .wrap(from_fn(shared::drive_events::broadcast_drive_changes))
                     .configure(auth::api::configure)
+                    .configure(auth::signup_guard::api::configure)
                     .configure(auth::invites::api::configure)
                     .configure(oauth::api::configure)
                     .configure(drive::fonts::api::configure_public)

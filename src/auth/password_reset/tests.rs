@@ -58,6 +58,7 @@ fn fx() -> Fx {
         password: OLD.into(),
         name: "Ada Lovelace".into(),
         invite_token: None,
+        turnstile_token: None,
     })
     .expect("register");
 
