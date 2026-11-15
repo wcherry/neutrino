@@ -155,6 +155,8 @@ vi.mock('../../app/(apps)/drive/ShareDialog', () => ({
 vi.mock('../../app/(apps)/drive/MoveFolderDialog', () => ({
   MoveFolderDialog: () => null,
 }));
+// Live Photo pairing (issue #316) has its own suites; these listings hold none.
+vi.mock('../../app/(apps)/drive/useDriveLivePhotos', () => ({ useDriveLivePhotos: () => new Map() }));
 vi.mock('@/components/DocumentPreviewModal', () => ({
   DocumentPreviewModal: () => null,
 }));

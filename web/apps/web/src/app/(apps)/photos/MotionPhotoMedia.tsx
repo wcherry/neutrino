@@ -26,27 +26,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
-import { storageApi, encryptionApi, openFileKey } from '@neutrino/api-drive';
-import { initSodium, decryptFile } from '@neutrino/e2e-crypto';
 import { motionPhotoLabel, type LibraryItem, type PhotoResponse } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
+import { loadPlainBlob } from '@/lib/plainFileBlob';
 import styles from './page.module.css';
-
-/** Download one Drive file and decrypt it, when the session can. */
-async function loadPlainBlob(fileId: string, userId: string, unlocked: boolean): Promise<Blob> {
-  const downloaded = await storageApi.downloadFile(fileId);
-  if (!unlocked) return downloaded;
-
-  await initSodium();
-  const keyRef = await encryptionApi.getFileKey(fileId);
-  // No key on the server means the file was stored in the clear.
-  if (!keyRef) return downloaded;
-
-  const dek = await openFileKey(userId, fileId, keyRef);
-  const plain = decryptFile(new Uint8Array(await downloaded.arrayBuffer()), dek);
-  return new Blob([plain.buffer as ArrayBuffer]);
-}
 
 /** The playable clip for a tile, from whichever file is carrying it. */
 async function loadMotionBlob(item: LibraryItem, userId: string, unlocked: boolean): Promise<Blob> {

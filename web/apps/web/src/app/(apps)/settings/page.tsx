@@ -516,6 +516,9 @@ const qc = useQueryClient();
       setShowDeleteDialog(false);
       clearSession();
       clearDriveImageCache();
+      // Decrypted Live Photo clips (issue #316). Imported here rather than at the top so the
+      // shell does not carry Drive's Live Photo code into every route.
+      void import('@/lib/livePhotos/clipLoader').then((m) => m.resetLiveClipCache());
       await clearSearchIndex().catch(() => {});
       // The React Query cache is deliberately left alone, as sign-out leaves
       // it: clearing it makes every mounted query on the shell refetch, and

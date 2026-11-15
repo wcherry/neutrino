@@ -88,6 +88,14 @@ export interface GridItem {
    * keep the icon, since they are too small to read a preview in.
    */
   preview?: React.ReactNode;
+  /**
+   * Drawn in a grid card's picture box in place of the thumbnail `<img>`, for
+   * a picture that does more than sit there — Drive's Live Photo tiles, which
+   * loop their clip while held (issue #316). It fills the box and owns its
+   * pointer handling; a click it does not swallow still reaches the card.
+   * List rows keep the plain thumbnail.
+   */
+  media?: React.ReactNode;
 }
 
 const FILTER_CHIPS: { key: FilterType; label: string }[] = [
@@ -276,12 +284,15 @@ const LargeCard = React.memo(function LargeCard(props: ItemProps) {
       onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
     >
       <div className={styles['preview-large']} style={{ color: item.iconColor }}>
-        {item.preview
-          ? <ZoomablePreview label={item.name}>{item.preview}</ZoomablePreview>
-          : thumbSrc
-            ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
-            : <item.icon size={48} strokeWidth={1} />
-        }
+        {item.preview ? (
+          <ZoomablePreview label={item.name}>{item.preview}</ZoomablePreview>
+        ) : item.media ? (
+          item.media
+        ) : thumbSrc ? (
+          <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
+        ) : (
+          <item.icon size={48} strokeWidth={1} />
+        )}
         <StarBadge item={item} onToggleStar={onToggleStar} size={14} />
       </div>
       <div className={styles['card-large-body']}>
@@ -311,10 +322,13 @@ const SmallCard = React.memo(function SmallCard(props: ItemProps) {
       onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
     >
       <div className={styles['preview-small']} style={{ color: item.iconColor }}>
-        {thumbSrc
-          ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
-          : <item.icon size={28} strokeWidth={1.25} />
-        }
+        {item.media ? (
+          item.media
+        ) : thumbSrc ? (
+          <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
+        ) : (
+          <item.icon size={28} strokeWidth={1.25} />
+        )}
         <StarBadge item={item} onToggleStar={onToggleStar} size={12} />
       </div>
       <div className={styles['card-small-body']}>

@@ -487,6 +487,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     // Decrypted image bytes and this account's Attachments folder id are held
     // in module state, which outlives the route change.
     clearDriveImageCache();
+    // Decrypted Live Photo clips (issue #316). Imported here rather than at the top so the
+    // shell does not carry Drive's Live Photo code into every route.
+    void import('@/lib/livePhotos/clipLoader').then((m) => m.resetLiveClipCache());
     // The user's synced preferences and decrypted vault are module state too.
     preferences.detach();
     router.replace('/sign-in');

@@ -68,6 +68,8 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 
 vi.mock('../../app/(apps)/drive/UploadZone', () => ({ UploadZone: () => null }));
 vi.mock('../../app/(apps)/drive/PreviewModal', () => ({ PreviewModal: () => null }));
+// Live Photo pairing (issue #316) has its own suites; these listings hold none.
+vi.mock('../../app/(apps)/drive/useDriveLivePhotos', () => ({ useDriveLivePhotos: () => new Map() }));
 vi.mock('../../app/(apps)/drive/FileContextMenu', () => ({ FileContextMenu: () => null }));
 vi.mock('../../app/(apps)/drive/FolderContextMenu', () => ({ FolderContextMenu: () => null }));
 vi.mock('../../app/(apps)/drive/FileInfoPanel', () => ({ FileInfoPanel: () => null }));

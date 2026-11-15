@@ -83,6 +83,14 @@ PATCH /api/v1/photos/{stillPhotoId}/metadata
   libraries imported before this). Always through the merging `PATCH`.
 - Registers both halves at import, each with its `motionPhoto` (unchanged).
 
+**Drive web** (#316; `web/apps/web/src/lib/livePhotos/`, `drive/LivePhotoMedia.tsx`) — reads the
+convention and writes nothing. Drive lists a Live Photo as the two files it is, and a still whose clip
+it finds gets a LIVE badge and loops the clip while held. It looks in the convention's order: the
+still record's `liveVideoFileID`, then a same-folder video with the same stem, then a Google
+still's embedded MP4. A stem match counts only when the clip's own record carries `motionPhoto` or,
+failing that, the decrypted movie carries Apple's content identifier — so registering the clip (rule 2)
+is also what lets Drive badge a pair without downloading it.
+
 **Neutrino Photos iOS** (wcherry/neutrino_photos_ios_mobile#27) — registers the clip with
 `motionPhoto`, puts `motionPhoto` on the still beside `liveVideoFileID`, writes metadata by merging,
 hides claimed clips, and backfills its existing Live Photos.

@@ -41,6 +41,9 @@ vi.mock('@neutrino/ui', () => ({
   Spinner: () => <div data-testid="spinner" />,
 }));
 
+// Live Photo lookup (issue #316) is its own suite; here every picture is a plain one.
+vi.mock('@/lib/livePhotos/resolvePreviewClip', () => ({ resolvePreviewClip: vi.fn(async () => null) }));
+
 vi.mock('../../app/(apps)/drive/PreviewModal.module.css', () => ({
   default: new Proxy({}, { get: (_t, k) => String(k) }),
 }));
