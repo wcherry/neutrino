@@ -921,6 +921,17 @@ diesel::table! {
 
 // ── Added in migration 152 ────────────────────────────────────────────────────
 diesel::table! {
+    signup_events (id) {
+        id -> Text,
+        user_id -> Nullable<Text>,
+        ip -> Text,
+        email_domain -> Text,
+        human_verified -> Integer,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     email_verifications (id) {
         id -> Text,
         user_id -> Text,
@@ -1304,6 +1315,7 @@ diesel::joinable!(user_key_unlocks -> users (user_id));
 diesel::joinable!(invites -> users (inviter_id));
 diesel::joinable!(password_resets -> users (user_id));
 diesel::joinable!(email_verifications -> users (user_id));
+diesel::joinable!(signup_events -> users (user_id));
 diesel::joinable!(weekly_emails -> users (user_id));
 
 // Themes
@@ -1364,6 +1376,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_profiles,
     password_policies,
     password_history,
+    signup_events,
     // Calendar
     calendars,
     events,

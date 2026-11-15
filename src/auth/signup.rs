@@ -5,9 +5,12 @@
 //!    sign-ups cannot both spend a single-use invite. While closed a bad token
 //!    is the error; while open it is logged and ignored, since sign-up needs no
 //!    invite.
-//! 3. `AuthService::register` runs every existing check unchanged. If it fails
-//!    the claim is released, so a typo does not burn the invite.
-//! 4. On success the invite records who signed up, the account is marked as
+//! 3. The sign-up guard (`signup_guard`) checks the address, the CAPTCHA and
+//!    the rate limits, and reserves this sign-up's place in them. A valid
+//!    invite counts as proof of a person, as a CAPTCHA does.
+//! 4. `AuthService::register` runs every existing check unchanged. If it fails
+//!    the claim and the reservation are released, so a typo burns neither.
+//! 5. On success the invite records who signed up, the account is marked as
 //!    owed the welcome wizard (`onboarding.welcome` = `pending`), and the
 //!    welcome email and the email verification link go out on spawned tasks.
 //!
@@ -21,6 +24,7 @@ use std::sync::Arc;
 use super::dto::{RegisterRequest, RegisterResponse};
 use super::email_verification::service::EmailVerificationService;
 use super::invites::service::InviteService;
+use super::signup_guard::service::{SignupAttempt, SignupGuard};
 use super::service::AuthService;
 use super::welcome::WelcomeMailer;
 use crate::preferences::catalog::WELCOME_PENDING;
@@ -36,6 +40,8 @@ pub struct SignupService {
     public_signup_open: bool,
     /// Mails each new account its verification link. `None` sends none.
     verification: Option<Arc<EmailVerificationService>>,
+    /// Address, CAPTCHA and rate-limit checks. `None` checks nothing.
+    guard: Option<Arc<SignupGuard>>,
 }
 
 impl SignupService {
@@ -53,7 +59,22 @@ impl SignupService {
             preferences,
             public_signup_open,
             verification: None,
+            guard: None,
         }
+    }
+
+    /// Put every public sign-up through the abuse guard.
+    pub fn with_guard(mut self, guard: Arc<SignupGuard>) -> Self {
+        self.guard = Some(guard);
+        self
+    }
+
+    /// The CAPTCHA site key the sign-up form should render, if any.
+    pub fn captcha_site_key(&self) -> Option<String> {
+        self.guard
+            .as_ref()
+            .and_then(|g| g.captcha_site_key())
+            .map(str::to_string)
     }
 
     /// Mail every new account a verification link.
@@ -90,9 +111,25 @@ impl SignupService {
         self.public_signup_open
     }
 
-    /// The sign-up gate described in the module docs; on success sends the
-    /// welcome email.
+    /// [`Self::register_from`] for a caller with no address.
+    #[cfg(test)]
     pub async fn register(&self, req: RegisterRequest) -> Result<RegisterResponse, ApiError> {
+        self.register_from(req, "unknown").await
+    }
+
+    /// The sign-up gate described in the module docs, for a request from
+    /// `client_ip`; on success sends the welcome email.
+    pub async fn register_from(
+        &self,
+        req: RegisterRequest,
+        client_ip: &str,
+    ) -> Result<RegisterResponse, ApiError> {
+        // Address checks first: they need no state, and a refused address
+        // must not spend an invite.
+        if let Some(guard) = &self.guard {
+            guard.check_email(&req.email)?;
+        }
+
         let token = req
             .invite_token
             .as_deref()
@@ -119,22 +156,51 @@ impl SignupService {
             },
         };
 
+        let release_claim = |claim: &Option<_>| {
+            if let Some(claim) = claim {
+                if let Err(re) = self.invites.release(claim) {
+                    tracing::error!(
+                        invite_id = %claim.invite_id,
+                        "could not release an invite after a failed sign-up: {}",
+                        re
+                    );
+                }
+            }
+        };
+
+        let reservation = match &self.guard {
+            None => None,
+            Some(guard) => {
+                let attempt = SignupAttempt {
+                    email: &req.email,
+                    ip: client_ip,
+                    captcha_token: req.turnstile_token.as_deref(),
+                    invited: claim.is_some(),
+                };
+                match guard.admit(attempt).await {
+                    Ok(r) => Some(r),
+                    Err(e) => {
+                        release_claim(&claim);
+                        return Err(e);
+                    }
+                }
+            }
+        };
+
         let user = match self.auth.register(req) {
             Ok(user) => user,
             Err(e) => {
-                if let Some(claim) = &claim {
-                    if let Err(re) = self.invites.release(claim) {
-                        tracing::error!(
-                            invite_id = %claim.invite_id,
-                            "could not release an invite after a failed sign-up: {}",
-                            re
-                        );
-                    }
+                if let (Some(guard), Some(r)) = (&self.guard, reservation) {
+                    guard.release(r);
                 }
+                release_claim(&claim);
                 return Err(e);
             }
         };
 
+        if let (Some(guard), Some(r)) = (&self.guard, reservation) {
+            guard.confirm(r, &user.id);
+        }
         if let Some(claim) = &claim {
             if let Err(e) = self.invites.confirm(claim, &user.id) {
                 tracing::error!(

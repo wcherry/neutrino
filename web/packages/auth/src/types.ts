@@ -8,11 +8,15 @@ export interface RegisterRequest {
   password: string;
   /** A validated invite token from `/register?invite=…`; needed when public sign-up is closed. */
   inviteToken?: string;
+  /** A Cloudflare Turnstile token, when the server publishes a site key. */
+  turnstileToken?: string;
 }
 
 /** `GET /api/v1/auth/signup-policy`: whether anyone may sign up without an invite. */
 export interface SignupPolicy {
   publicSignup: boolean;
+  /** Cloudflare Turnstile site key; present when the server checks a CAPTCHA at sign-up. */
+  turnstileSiteKey?: string;
 }
 
 export interface LoginRequest {

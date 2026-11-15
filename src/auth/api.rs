@@ -24,6 +24,8 @@ pub struct AuthApiState {
     pub filesystem_service: Arc<crate::drive::filesystem::service::FilesystemService>,
     /// The sign-up gate (closed sign-up, invite tokens) and the welcome email.
     pub signup: Arc<crate::auth::signup::SignupService>,
+    /// Where a sign-up's client address is read from (`CLIENT_IP_HEADER`).
+    pub client_ip: crate::auth::signup_guard::client_ip::ClientIpSource,
 }
 
 /// Folder that editors upload pasted, linked and locally-chosen images into, so
@@ -40,6 +42,11 @@ const ATTACHMENTS_FOLDER_NAME: &str = "Attachments";
 /// the row — the client still calls `POST /auth/login` to get tokens. When the server's public
 /// sign-up is closed (`PUBLIC_SIGNUP=closed`) an `inviteToken` is required; while it is open an
 /// unusable token is ignored. A new account is sent one welcome email.
+///
+/// Sign-up is guarded against scripted mass registration: throwaway-mail domains are refused,
+/// sign-ups are rate-limited per client IP and server-wide, and when the server has Cloudflare
+/// Turnstile configured a request without a valid `turnstileToken` (or invite) falls under much
+/// tighter limits.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/register",
@@ -51,22 +58,25 @@ const ATTACHMENTS_FOLDER_NAME: &str = "Attachments";
         (status = 404, description = "INVITE_NOT_FOUND (sign-up closed)"),
         (status = 409, description = "Email already in use"),
         (status = 410, description = "INVITE_USED, INVITE_EXPIRED or INVITE_REVOKED (sign-up closed)"),
+        (status = 429, description = "SIGNUP_RATE_LIMITED, or SIGNUP_CAPTCHA_REQUIRED for a sign-up without a CAPTCHA token while those are limited"),
     ),
     tag = "auth"
 )]
 #[post("/register")]
 pub async fn register(
     state: web::Data<AuthApiState>,
+    req: actix_web::HttpRequest,
     body: web::Json<RegisterRequest>,
 ) -> Result<web::Json<RegisterResponse>, ApiError> {
-    let result = state.signup.register(body.into_inner()).await;
+    let client_ip = state.client_ip.client_ip(&req);
+    let result = state.signup.register_from(body.into_inner(), &client_ip).await;
     match result {
         Ok(response) => {
             create_default_folders(&state, &response).await;
             Ok(web::Json(response))
         }
         Err(e) => {
-            error!("Error {}", e);
+            error!(%client_ip, "Error {}", e);
             Err(e)
         }
     }
@@ -83,6 +93,7 @@ pub async fn register(
 pub async fn signup_policy(state: web::Data<AuthApiState>) -> web::Json<SignupPolicyResponse> {
     web::Json(SignupPolicyResponse {
         public_signup: state.signup.public_signup_open(),
+        turnstile_site_key: state.signup.captcha_site_key(),
     })
 }
 

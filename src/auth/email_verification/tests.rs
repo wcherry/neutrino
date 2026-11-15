@@ -56,6 +56,7 @@ fn fx(mode: VerificationMode) -> Fx {
             password: PASSWORD.into(),
             name: "Ada Lovelace".into(),
             invite_token: None,
+            turnstile_token: None,
         })
         .expect("register")
         .id;

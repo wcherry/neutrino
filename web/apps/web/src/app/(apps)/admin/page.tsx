@@ -30,6 +30,7 @@ import { FontsTab } from './FontsTab';
 import { ProductUpdatesTab } from './ProductUpdatesTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
 import { TeamsTab } from './TeamsTab';
+import { SignupsTab } from './SignupsTab';
 import { useFeatureFlags, type FeatureFlagKey } from '@/providers/FeatureFlagsProvider';
 import styles from './page.module.css';
 
@@ -1135,6 +1136,7 @@ type Tab =
   | 'disk'
   | 'services'
   | 'users'
+  | 'signups'
   | 'teams'
   | 'queue'
   | 'flags'
@@ -1161,6 +1163,8 @@ const TABS: { id: Tab; label: string; flag?: FeatureFlagKey }[] = [
   // own: they are the rules the accounts in that table are held to, and an
   // admin tightening one usually wants to see who it lands on.
   { id: 'users', label: 'Users' },
+  // Beside Users: where new accounts came from, and bulk removal of a scripted sign-up wave.
+  { id: 'signups', label: 'Sign-ups' },
   // Next to Users, because it is the queue of things users have asked for and
   // acting on one lands back in that tab's data.
   { id: 'queue', label: 'Work Queue' },
@@ -1237,6 +1241,7 @@ export default function AdminPage() {
           {activeTab === 'disk' && <DiskTab />}
           {activeTab === 'services' && <ServicesTab />}
           {activeTab === 'users' && <UsersTab />}
+          {activeTab === 'signups' && <SignupsTab />}
           {activeTab === 'queue' && <WorkQueueTab />}
           {activeTab === 'teams' && <TeamsTab />}
           {activeTab === 'flags' && <FeatureFlagsTab />}

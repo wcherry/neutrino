@@ -12,6 +12,11 @@ pub struct RegisterRequest {
     /// public sign-up is closed; ignored if unusable while it is open.
     #[serde(default, rename = "inviteToken")]
     pub invite_token: Option<String>,
+    /// A Cloudflare Turnstile token from the sign-up form's CAPTCHA, when the
+    /// server has one configured (`GET /auth/signup-policy` gives its site
+    /// key). Optional: without one the sign-up falls under much tighter limits.
+    #[serde(default, rename = "turnstileToken")]
+    pub turnstile_token: Option<String>,
 }
 
 /// Whether anyone may create an account without an invite.
@@ -19,6 +24,10 @@ pub struct RegisterRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SignupPolicyResponse {
     pub public_signup: bool,
+    /// The Cloudflare Turnstile site key the sign-up form renders its CAPTCHA
+    /// with, or absent when the server checks no CAPTCHA.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turnstile_site_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
