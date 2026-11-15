@@ -59,13 +59,29 @@ export function NoteBlocks({ content, className }: { content: string; className?
                 </span>
               </div>
             );
-          default:
+          default: {
+            // A heading is a paragraph whose content starts with `#`s (the editor's own format,
+            // see `markdownToBlocks`): drawn as a heading without its markers, not as `# Title`.
+            const heading = /^\s*(#{1,6})\s+(.*)$/.exec(block.content ?? '');
+            if (heading) {
+              const level = heading[1].length;
+              const Tag = `h${Math.min(level + 1, 6)}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+              return (
+                <Tag
+                  key={block.id ?? idx}
+                  className={[styles.noteBlock, styles.noteHeading, styles[`noteHeading${Math.min(level, 3)}`]].join(' ')}
+                >
+                  {inline(heading[2])}
+                </Tag>
+              );
+            }
             // paragraph (and any unrecognised type)
             return (
               <div key={block.id ?? idx} className={styles.noteBlock}>
                 {inline(block.content)}
               </div>
             );
+          }
         }
       })}
     </div>

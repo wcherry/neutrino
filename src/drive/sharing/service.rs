@@ -386,6 +386,7 @@ impl SharingService {
                         kind: "owner".into(),
                         public_key,
                         key_version,
+                        folder_id: None,
                     });
                 }
             }
@@ -403,6 +404,7 @@ impl SharingService {
                     public_key,
                     // A link key is never rotated in place: a new key is a new link.
                     key_version: 1,
+                    folder_id: Some(link.resource_id.clone()),
                 });
             }
         }

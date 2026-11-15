@@ -107,6 +107,32 @@ export function setBytesSealer(sealer: BytesSealer | null): void {
   bytesSealer = sealer;
 }
 
+/**
+ * Called after anything is moved into a folder, with that folder's id.
+ *
+ * A file moved into a folder that has a link keeps only the keys it had, so the link cannot open it
+ * until its key is sealed to the link (#321). Sealing needs the signed-in user's keyring, which this
+ * package does not know about, so the app registers the work here once (`useSealMovesIntoLinks`)
+ * and every move — Move to, drag and drop, bulk move — goes through it without the call sites
+ * having to remember. It runs after the move has succeeded and is never awaited by it: a key that
+ * did not reach the link is caught up the next time the owner opens the folder's Share dialog.
+ */
+export type MovedIntoFolderHook = (folderId: string) => void;
+
+let movedIntoFolder: MovedIntoFolderHook | null = null;
+
+export function setMovedIntoFolderHook(hook: MovedIntoFolderHook | null): void {
+  movedIntoFolder = hook;
+}
+
+function notifyMovedInto(folderId: string): void {
+  try {
+    movedIntoFolder?.(folderId);
+  } catch (e) {
+    console.warn('[api-drive] moved-into-folder hook failed (non-fatal):', e);
+  }
+}
+
 export async function sealBytes(bytes: Uint8Array, dek: Uint8Array): Promise<Uint8Array> {
   if (bytesSealer) {
     try {
@@ -324,10 +350,12 @@ export const filesystemApi = {
   },
 
   async updateFolder(folderId: string, body: FolderUpdateRequest): Promise<Folder> {
-    return request<Folder>(`/api/v1/drive/folders/${folderId}`, {
+    const folder = await request<Folder>(`/api/v1/drive/folders/${folderId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+    if (body.parentId) notifyMovedInto(body.parentId);
+    return folder;
   },
 
   async deleteFolder(folderId: string): Promise<void> {
@@ -335,17 +363,20 @@ export const filesystemApi = {
   },
 
   async updateFile(fileId: string, body: FileUpdateRequest): Promise<FileItem> {
-    return request<FileItem>(`/api/v1/drive/files/${fileId}`, {
+    const file = await request<FileItem>(`/api/v1/drive/files/${fileId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+    if (body.folderId) notifyMovedInto(body.folderId);
+    return file;
   },
 
   async bulkMove(body: BulkMoveRequest): Promise<void> {
-    return request<void>('/api/v1/drive/bulk/move', {
+    await request<void>('/api/v1/drive/bulk/move', {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    if (body.targetFolderId) notifyMovedInto(body.targetFolderId);
   },
 
   async bulkDelete(body: BulkDeleteRequest): Promise<void> {

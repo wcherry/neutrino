@@ -255,6 +255,11 @@ pub struct KeyRecipient {
     /// base64url X25519 public key.
     pub public_key: String,
     pub key_version: i32,
+    /// For a link: the folder the link is on, which may be an ancestor of the one asked about.
+    /// Its owner seals everything under it with `GET /folders/{folderId}/share-link/unkeyed-files`
+    /// — how files *moved* into a link-shared folder become readable through the link.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

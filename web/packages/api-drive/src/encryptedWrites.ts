@@ -193,10 +193,11 @@ export async function uploadDriveFile(
  * failure here is swallowed. It must never be the reason an upload does not
  * happen.
  */
-async function generateThumbnailIfImage(file: File): Promise<string | null> {
-  const isVideo = videoMimeType(file.type, file.name) !== null;
-  if (!isVideo && !file.type.startsWith('image/')) return null;
+export async function generateThumbnailIfImage(file: File): Promise<string | null> {
+  // Everything inside the try, the type check included: nothing here may fail an upload.
   try {
+    const isVideo = videoMimeType(file.type, file.name) !== null;
+    if (!isVideo && !file.type.startsWith('image/')) return null;
     return isVideo ? await generateVideoThumbnail(file) : await generateThumbnail(file);
   } catch {
     return null;

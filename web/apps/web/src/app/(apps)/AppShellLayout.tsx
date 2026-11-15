@@ -56,6 +56,7 @@ import type { InviteFriendsDialogProps } from '@/components/InviteFriends/Invite
 import { useNotifications } from '@/hooks/useNotifications';
 import { EmailVerificationBanner } from '@/components/EmailVerificationBanner';
 import { useDriveLiveUpdates } from '@/hooks/useDriveLiveUpdates';
+import { useSealMovesIntoLinks } from '@/hooks/useSealMovesIntoLinks';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
 import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
@@ -359,6 +360,9 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   // here, above every route, because no listing page owns its own refresh — see
   // `lib/driveLiveUpdates.ts`.
   useDriveLiveUpdates({ connected });
+
+  // A file moved into a link-shared folder is sealed to the link, so it opens for people with it.
+  useSealMovesIntoLinks();
 
   // The anti-FOUC script set `data-app` for the page that loaded; a client-side
   // navigation into another app changes it here (lib/appForPath.ts).

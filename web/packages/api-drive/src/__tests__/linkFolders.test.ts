@@ -32,12 +32,22 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 }));
 
 vi.mock('@neutrino/utils', () => ({
+  videoMimeType: () => null,
+  generateThumbnail: () => Promise.resolve('thumb-b64'),
+  generateVideoThumbnail: () => Promise.resolve(null),
   measurePhase: <T,>(_n: string, fn: () => Promise<T>) => fn(),
   measurePhaseSync: <T,>(_n: string, fn: () => T) => fn(),
 }));
 
 import { request } from '@neutrino/api-core';
-import { linkFolderApi, linkKeyMatches, sealFolderLinkKeys, uploadToLinkFolder } from '../linkFolders';
+import {
+  linkFolderApi,
+  linkKeyMatches,
+  sealFolderLinkKeys,
+  sealLinksCoveringFolder,
+  uploadToLinkFolder,
+} from '../linkFolders';
+import { filesystemApi, setMovedIntoFolderHook } from '../client';
 import type { LinkSession } from '../linkFolders';
 
 const mockRequest = vi.mocked(request);
@@ -111,6 +121,19 @@ describe('uploadToLinkFolder', () => {
     ]);
   });
 
+  it('sends a thumbnail made in the browser for an image, so it is not a blank tile', async () => {
+    mockRequest.mockImplementation(async (path: string) => {
+      if (path.endsWith('/key-recipients')) {
+        return { recipients: [{ recipientId: 'owner-1', kind: 'owner', publicKey: 'OWNERPK', keyVersion: 3 }] };
+      }
+      if (path === '/api/v1/share/folder/upload') return { id: 'pic' };
+      return {};
+    });
+    await uploadToLinkFolder(session, 'sub', new File(['png'], 'photo.png', { type: 'image/png' }));
+    const upload = calls().find((c) => c[0] === '/api/v1/share/folder/upload')!;
+    expect((upload[1]!.body as FormData).get('thumbnail_b64')).toBe('thumb-b64');
+  });
+
   it('refuses before uploading when the owner has no key to seal to', async () => {
     mockRequest.mockResolvedValueOnce({ recipients: [] });
     await expect(uploadToLinkFolder(session, 'sub', new File(['x'], 'x.txt'))).rejects.toThrow(
@@ -153,5 +176,64 @@ describe('sealFolderLinkKeys', () => {
     });
     const result = await sealFolderLinkKeys('u', 'root');
     expect(result.skipped).toBe(1);
+  });
+});
+
+describe('moving into a link-shared folder', () => {
+  it('reports the destination of every kind of move, and nothing for a rename', async () => {
+    mockRequest.mockResolvedValue({});
+    const moved: string[] = [];
+    setMovedIntoFolderHook((id) => moved.push(id));
+    try {
+      await filesystemApi.updateFile('f1', { folderId: 'dest-a' });
+      await filesystemApi.updateFolder('d1', { parentId: 'dest-b' });
+      await filesystemApi.bulkMove({ fileIds: ['f2'], folderIds: [], targetFolderId: 'dest-c' });
+      await filesystemApi.updateFile('f3', { name: 'renamed' });
+      await filesystemApi.bulkMove({ fileIds: ['f4'], folderIds: [], targetFolderId: null });
+    } finally {
+      setMovedIntoFolderHook(null);
+    }
+    expect(moved).toEqual(['dest-a', 'dest-b', 'dest-c']);
+  });
+
+  it('a failing hook does not fail the move', async () => {
+    mockRequest.mockResolvedValue({ id: 'f1' });
+    setMovedIntoFolderHook(() => {
+      throw new Error('boom');
+    });
+    try {
+      await expect(filesystemApi.updateFile('f1', { folderId: 'dest' })).resolves.toEqual({ id: 'f1' });
+    } finally {
+      setMovedIntoFolderHook(null);
+    }
+  });
+
+  it('seals under each link covering the destination, once per link', async () => {
+    mockRequest.mockImplementation(async (path: string) => {
+      if (path.endsWith('/key-recipients')) {
+        return {
+          recipients: [
+            { recipientId: 'owner-1', kind: 'owner', publicKey: 'OWNERPK', keyVersion: 2 },
+            { recipientId: 'guest:l1', kind: 'link', publicKey: 'PK1', keyVersion: 1, folderId: 'root' },
+          ],
+        };
+      }
+      if (path === '/api/v1/drive/folders/root/share-link/unkeyed-files') {
+        return { keySubject: 'guest:l1', publicKey: 'PK1', fileIds: ['moved'], hasMore: false };
+      }
+      if (path === '/api/v1/drive/files/moved/key') {
+        return { fileId: 'moved', userId: 'u', encryptedFileKey: 'x', keyVersion: 1 };
+      }
+      return {};
+    });
+
+    const result = await sealLinksCoveringFolder('u', 'sub');
+    expect(result).toEqual({ sealed: 1, skipped: 0 });
+    const share = calls().find((c) => c[0] === '/api/v1/drive/files/moved/key/share')!;
+    expect(bodyOf(share)).toEqual({
+      recipientId: 'guest:l1',
+      encryptedFileKey: 'sealed-to:PK1',
+      keyVersion: 1,
+    });
   });
 });

@@ -586,6 +586,8 @@ fn key_recipients_name_the_owner_and_the_link_but_never_the_caller() {
     assert_eq!(for_owner.len(), 1);
     assert_eq!(for_owner[0].kind, "link");
     assert_eq!(for_owner[0].public_key, LINK_PUBLIC_KEY);
+    // Asked about a subfolder, the link still names the folder it is on.
+    assert_eq!(for_owner[0].folder_id.as_deref(), Some("shared"));
 
     let for_guest = f.sharing.key_recipients(&guest, "sub").unwrap().recipients;
     assert_eq!(for_guest.len(), 1);

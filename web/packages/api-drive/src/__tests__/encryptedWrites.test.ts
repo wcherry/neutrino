@@ -48,6 +48,10 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 const generateThumbnail = vi.fn();
 vi.mock('@neutrino/utils', () => ({
   generateThumbnail: (...a: unknown[]) => generateThumbnail(...a),
+  // The real rule, so an image is an image and a .mov is a video, as the module expects.
+  videoMimeType: (type: string, name: string) =>
+    type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(name) ? type || 'video/mp4' : null,
+  generateVideoThumbnail: () => Promise.resolve(null),
   // The phase marks are instrumentation, not behaviour: the stand-in runs the
   // work and reports nothing, so these tests keep asserting on what the code
   // does rather than on how it is measured.

@@ -389,6 +389,8 @@ export interface KeyRecipient {
   kind: 'owner' | 'link';
   publicKey: string;
   keyVersion: number;
+  /** For a link: the folder the link is on (the folder asked about, or an ancestor of it). */
+  folderId?: string;
 }
 
 export interface UnkeyedFilesResponse {
