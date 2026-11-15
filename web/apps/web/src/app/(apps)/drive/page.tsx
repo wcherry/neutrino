@@ -3,6 +3,7 @@
 // folderPath) is shared by the breadcrumbs, heading, FileGrid, and every modal/overlay.
 // There is no static server shell of non-trivial size to extract.
 
+import dynamic from 'next/dynamic';
 import React, { Suspense, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -36,6 +37,11 @@ import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { DRIVE_SEARCH_PARAM, DRIVE_PREVIEW_PARAM } from './searchParams';
 import { UploadZone } from './UploadZone';
 import { PreviewModal } from './PreviewModal';
+import { useDriveLivePhotos } from './useDriveLivePhotos';
+
+// Only a folder with a Live Photo in it needs the hold gesture; it stays out of
+// the route's first load (see `route-budgets.json`).
+const LivePhotoMedia = dynamic(() => import('./LivePhotoMedia').then((m) => m.LivePhotoMedia), { ssr: false });
 import { FileContextMenu } from './FileContextMenu';
 import { FolderContextMenu } from './FolderContextMenu';
 import { FileInfoPanel } from './FileInfoPanel';
@@ -377,12 +383,34 @@ function DriveContent() {
   const fileMap = useMemo(() => new Map(files.map((f) => [f.id, f])), [files]);
   const folderMap = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
 
+  // Live Photos (issue #316): a still whose clip is found gets a tile that
+  // loops the clip while held. The video file stays in the listing as itself.
+  const liveClips = useDriveLivePhotos(files);
+
   const gridItems: GridItem[] = useMemo(
     () => [
       ...folders.map(folderToGridItem),
-      ...files.map(fileToGridItem),
+      ...files.map((file) => {
+        const item = fileToGridItem(file);
+        const clip = liveClips.get(file.id);
+        if (!clip) return item;
+        const Icon = item.icon;
+        return {
+          ...item,
+          media: (
+            <LivePhotoMedia
+              variant="tile"
+              stillId={file.id}
+              clip={clip}
+              src={item.thumbnailUrl ?? null}
+              alt={file.name}
+              fallback={<Icon size={40} strokeWidth={1} />}
+            />
+          ),
+        };
+      }),
     ],
-    [folders, files]
+    [folders, files, liveClips]
   );
 
   const openFolder = useCallback((folder: FolderItem) => {
@@ -943,7 +971,7 @@ function DriveContent() {
           }
         />
       )}
-      {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
+      {previewFile && <PreviewModal file={previewFile} siblings={files} onClose={() => setPreviewFile(null)} />}
       {docPreview && (
         <DocumentPreviewModal id={docPreview.id} kind={docPreview.kind} onClose={() => setDocPreview(null)} />
       )}

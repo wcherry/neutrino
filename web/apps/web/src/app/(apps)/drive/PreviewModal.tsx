@@ -11,20 +11,38 @@ import { initSodium, loadKeyPair } from '@neutrino/e2e-crypto';
 import { toRenderableImageBlob } from '@/lib/heic';
 import { highlightText } from './previewText';
 import { useDismiss } from '@neutrino/commands';
+import type { ResolvePreviewDeps } from '@/lib/livePhotos/resolvePreviewClip';
+import type { LiveClip } from '@/lib/livePhotos/pairing';
 import styles from './PreviewModal.module.css';
 
 // zip.js is ≈ 116 KB parsed and only an archive preview needs it.
 const ZipViewer = dynamic(() => import('./ZipViewer').then((m) => m.ZipViewer), { ssr: false });
+// Live Photos (issue #316): only a picture that turns out to move needs these.
+const LivePhotoMedia = dynamic(() => import('./LivePhotoMedia').then((m) => m.LivePhotoMedia), { ssr: false });
 
 interface PreviewModalProps {
   file: FileItem;
   onClose: () => void;
+  /**
+   * The listing the preview was opened from. A Live Photo's clip is usually
+   * the same-named video beside the still (issue #316), and when it is already
+   * loaded there it costs no lookup to find.
+   */
+  siblings?: readonly FileItem[];
 }
+
+const livePhotoDeps: ResolvePreviewDeps = {
+  listPhotosByFiles: async (ids) => (await import('@neutrino/api-photos')).photosApi.listPhotosByFiles(ids),
+  getFolderContents: async (folderId, query) =>
+    (await import('@neutrino/api-drive')).filesystemApi.getFolderContents(folderId, query),
+  readMotionPhotoInfo: async (blob, file) => (await import('@neutrino/api-photos')).readMotionPhotoInfo(blob, file),
+};
 
 type PreviewState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'image'; url: string }
+  /** `raw` is the still's decrypted bytes before any transcode: where a Google Motion Photo keeps its clip. */
+  | { kind: 'image'; url: string; raw: Blob }
   | { kind: 'pdf'; url: string }
   | { kind: 'video'; url: string }
   | { kind: 'text'; content: string; language: string }
@@ -89,10 +107,15 @@ function loadFailureMessage(err: unknown): string {
   return detail ? `Failed to load preview. (${detail})` : 'Failed to load preview.';
 }
 
-export function PreviewModal({ file, onClose }: PreviewModalProps) {
+export function PreviewModal({ file, onClose, siblings }: PreviewModalProps) {
   const [state, setState] = useState<PreviewState>({ kind: 'loading' });
+  const [liveClip, setLiveClip] = useState<LiveClip | null>(null);
   const blobUrlRef = useRef<string | null>(null);
   const currentUser = useUser();
+  // Read when the picture has loaded, not a dependency: a listing refetch
+  // (another device uploading) must not re-run the lookup under an open preview.
+  const siblingsRef = useRef(siblings);
+  siblingsRef.current = siblings;
 
   useEffect(() => {
     let cancelled = false;
@@ -129,10 +152,11 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
      * unchanged and un-typed, which is the `.heic` name that was a label on
      * something else — reported as "no preview" rather than shown broken.
      */
-    async function fetchImageUrl(): Promise<string | null> {
-      const renderable = await toRenderableImageBlob(await fetchBlob(file.mimeType));
+    async function fetchImage(): Promise<{ url: string; raw: Blob } | null> {
+      const raw = await fetchBlob(file.mimeType);
+      const renderable = await toRenderableImageBlob(raw);
       if (!renderable.type.startsWith('image/')) return null;
-      return URL.createObjectURL(renderable);
+      return { url: URL.createObjectURL(renderable), raw };
     }
 
     async function fetchText(): Promise<string> {
@@ -169,13 +193,13 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
     async function load() {
       try {
         if (isPreviewableImage(file.mimeType, file.name)) {
-          const url = await fetchImageUrl();
-          if (!url) {
+          const image = await fetchImage();
+          if (!image) {
             if (!cancelled)
               setState({ kind: 'error', message: 'Preview not available for this file type.' });
             return;
           }
-          if (adopt(url)) setState({ kind: 'image', url });
+          if (adopt(image.url)) setState({ kind: 'image', url: image.url, raw: image.raw });
         } else if (file.mimeType === 'application/pdf') {
           const url = await fetchBlobUrl(file.mimeType);
           if (adopt(url)) setState({ kind: 'pdf', url });
@@ -215,6 +239,30 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
       }
     };
   }, [file, currentUser?.id]);
+
+  // A Live Photo's clip, looked for once the still is on screen: the picture
+  // never waits on the lookup, and the clip starts downloading as soon as it is
+  // found so a hold rarely has to wait for it.
+  const stillBlob = state.kind === 'image' ? state.raw : null;
+  useEffect(() => {
+    setLiveClip(null);
+    if (!stillBlob) return;
+    let cancelled = false;
+    import('@/lib/livePhotos/resolvePreviewClip')
+      .then(({ resolvePreviewClip }) =>
+        resolvePreviewClip(
+          { still: file, stillBlob, siblings: siblingsRef.current, rootFolderId: currentUser?.id ?? null },
+          livePhotoDeps,
+        ),
+      )
+      .then((clip) => {
+        if (!cancelled) setLiveClip(clip);
+      })
+      .catch((err) => console.warn('[drive] Live Photo lookup failed', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [file, stillBlob, currentUser?.id]);
 
   // Close on backdrop click
   function handleBackdrop(e: React.MouseEvent<HTMLDivElement>) {
@@ -281,20 +329,36 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
 
           {state.kind === 'image' && (
             <div className={styles['image-container']}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={state.url}
-                alt={file.name}
-                className={styles.image}
-                /*
-                 * A format the browser cannot decode fails here with no error
-                 * anywhere — the broken-image glyph beside the alt text, which
-                 * is all issue #210 gave the person looking at it. Say so.
-                 */
-                onError={() =>
-                  setState({ kind: 'error', message: 'This browser could not display this image.' })
-                }
-              />
+              {liveClip ? (
+                <LivePhotoMedia
+                  variant="preview"
+                  stillId={file.id}
+                  clip={liveClip}
+                  src={state.url}
+                  alt={file.name}
+                  stillBlob={state.raw}
+                  preload
+                  imgClassName={styles.image}
+                  onImgError={() =>
+                    setState({ kind: 'error', message: 'This browser could not display this image.' })
+                  }
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={state.url}
+                  alt={file.name}
+                  className={styles.image}
+                  /*
+                   * A format the browser cannot decode fails here with no error
+                   * anywhere — the broken-image glyph beside the alt text, which
+                   * is all issue #210 gave the person looking at it. Say so.
+                   */
+                  onError={() =>
+                    setState({ kind: 'error', message: 'This browser could not display this image.' })
+                  }
+                />
+              )}
             </div>
           )}
 
