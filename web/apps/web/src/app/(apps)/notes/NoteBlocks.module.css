@@ -64,3 +64,23 @@
   text-decoration: line-through;
   color: var(--color-text-muted);
 }
+
+/* A heading paragraph (`# …`), drawn without its markers. */
+.noteHeading {
+  margin: 0.6em 0 0.2em;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.noteHeading1 {
+  font-size: var(--font-size-22);
+}
+
+.noteHeading2 {
+  font-size: var(--font-size-19);
+}
+
+.noteHeading3 {
+  font-size: var(--font-size-15);
+}

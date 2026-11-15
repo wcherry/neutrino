@@ -14,8 +14,9 @@
  * opens, which also picks up files a client added without sealing to the link itself.
  */
 
-import { request } from '@neutrino/api-core';
+import { BASE_URL, request } from '@neutrino/api-core';
 import { encryptionApi, openFileKey, sealBytes, sharingApi } from './client';
+import { generateThumbnailIfImage } from './encryptedWrites';
 import type {
   FileItem,
   FileKeyResponse,
@@ -89,6 +90,20 @@ export const linkFolderApi = {
   },
 };
 
+/**
+ * An `<img src>` for a file's cover thumbnail, as a guest.
+ *
+ * The thumbnail is the small unencrypted preview a file is uploaded with (the server cannot make one
+ * from ciphertext); `GET /drive/files/{id}/thumbnail` lets a guest read it through the link like any
+ * other file in the folder. An `<img>` cannot send a header, so the session goes in `?token=`, which
+ * the server's auth extractor accepts for exactly this.
+ */
+export function linkThumbnailUrl(s: LinkSession, coverThumbnailUrl: string | null | undefined): string | null {
+  if (!coverThumbnailUrl) return null;
+  const sep = coverThumbnailUrl.includes('?') ? '&' : '?';
+  return `${BASE_URL}${coverThumbnailUrl}${sep}token=${encodeURIComponent(s.session.accessToken)}`;
+}
+
 /** Whether the URL's key is the one this link was made with. A mismatch opens nothing. */
 export async function linkKeyMatches(s: LinkSession): Promise<boolean> {
   if (!s.session.publicKey) return false;
@@ -117,10 +132,21 @@ export async function readLinkFile(
     () => null,
   );
   if (!keyRef) return null;
-  const { initSodium, openLinkFileKey, decryptFile } = await import('@neutrino/e2e-crypto');
+  const { initSodium, openLinkFileKey, decryptFile, fromBase64url } = await import('@neutrino/e2e-crypto');
   await initSodium();
   const dek = await openLinkFileKey(s.seed, keyRef.encryptedFileKey);
-  return decryptFile(bytes, dek);
+  try {
+    return decryptFile(bytes, dek);
+  } catch (e) {
+    // Notes store their ciphertext as base64url text rather than raw bytes (the Notes editor's
+    // format; Drive's note preview unwraps it the same way). Anything else that fails both is a
+    // real failure, reported as the first error.
+    try {
+      return decryptFile(fromBase64url(new TextDecoder().decode(bytes).trim()), dek);
+    } catch {
+      throw e;
+    }
+  }
 }
 
 /**
@@ -150,6 +176,9 @@ export async function uploadToLinkFolder(
   const dek = generateFileKey();
   const mimeType = file.type || 'application/octet-stream';
   const cipher = await sealBytes(new Uint8Array(await file.arrayBuffer()), dek);
+  // Made here, from the plaintext, like every Drive upload: the server only ever sees ciphertext and
+  // could not make one itself. Without it a photo a guest adds is a blank tile everywhere.
+  const thumbnailB64 = await generateThumbnailIfImage(file);
 
   const form = new FormData();
   form.append('folder_id', folderId);
@@ -157,6 +186,7 @@ export async function uploadToLinkFolder(
   form.append('mime_type', mimeType);
   form.append('encrypted_file_key', encryptFileKey(dek, fromBase64url(owner.publicKey)));
   form.append('key_version', String(owner.keyVersion));
+  if (thumbnailB64) form.append('thumbnail_b64', thumbnailB64);
   form.append(
     'file',
     new File([new Blob([cipher.buffer as ArrayBuffer])], file.name, {
@@ -228,4 +258,33 @@ export async function sealFolderLinkKeys(
     }
     if (!page.hasMore) return result;
   }
+}
+
+/**
+ * After something was moved into `folderId`: seal everything under each link covering it that the
+ * link cannot open yet. Moving keeps a file's keys as they were, so without this a file moved into a
+ * shared folder is listed to people with the link but will not open for them.
+ *
+ * Owner only, like `sealFolderLinkKeys`; a link on someone else's folder answers 403 and is
+ * skipped.
+ */
+export async function sealLinksCoveringFolder(
+  userId: string,
+  folderId: string,
+): Promise<SealLinkKeysResult> {
+  const total: SealLinkKeysResult = { sealed: 0, skipped: 0 };
+  const recipients = await sharingApi.getKeyRecipients(folderId);
+  const roots = new Set(
+    recipients.filter((r) => r.kind === 'link' && r.folderId).map((r) => r.folderId as string),
+  );
+  for (const root of roots) {
+    try {
+      const r = await sealFolderLinkKeys(userId, root);
+      total.sealed += r.sealed;
+      total.skipped += r.skipped;
+    } catch (e) {
+      console.warn('[sealLinksCoveringFolder] skipped link on', root, e);
+    }
+  }
+  return total;
 }

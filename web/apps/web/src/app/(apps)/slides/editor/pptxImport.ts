@@ -98,6 +98,28 @@ const PRST_COLORS: Record<string, string> = {
   darkGray: 'a9a9a9', lightGray: 'd3d3d3', brown: 'a52a2a',
 };
 
+/**
+ * The colour roles a slide refers to, and the theme slots they stand for when the master says
+ * nothing else — PowerPoint's own default mapping.
+ *
+ * A slide asks for `bg1` (background) or `tx1` (text), never for `lt1`/`dk1` directly, and the
+ * master's `<p:clrMap>` says which theme slot each role is. Without these the roles had no entry
+ * in the theme colours and fell back to black — so every deck whose background is the usual
+ * `<a:schemeClr val="bg1"/>` opened as black slides.
+ */
+const DEFAULT_COLOR_MAP: Record<string, string> = { bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2' };
+
+/** Theme colours with the roles (`bg1`, `tx1`, …) added, mapped through the master's `clrMap`. */
+function withColorRoles(colors: ThemeColors, masterDoc: Document | null): ThemeColors {
+  const out: ThemeColors = { ...colors };
+  const clrMap = masterDoc?.getElementsByTagNameNS(NS_P, 'clrMap')[0];
+  for (const [role, fallbackSlot] of Object.entries(DEFAULT_COLOR_MAP)) {
+    const slot = clrMap?.getAttribute(role) || fallbackSlot;
+    if (out[role] === undefined && out[slot] !== undefined) out[role] = out[slot];
+  }
+  return out;
+}
+
 function resolveColor(container: Element, themeColors: ThemeColors): string | null {
   const srgb = container.getElementsByTagNameNS(NS_A, 'srgbClr')[0];
   if (srgb) { const v = srgb.getAttribute('val'); if (v) return `#${applyColorMods(v, srgb)}`; }
@@ -672,6 +694,7 @@ export async function importFromPptx(file: File): Promise<SlidePresentation> {
 
   // Follow first slide → layout → master → theme to load the correct theme file.
   let masterThemeFile: string | undefined;
+  let firstMasterDoc: Document | null = null;
   const firstSlideRels = await loadRels(zip, slideFiles[0], parser, relsCache);
   const firstLayoutTarget = Object.values(firstSlideRels).find((v: string) => v.includes('slideLayouts/'));
   if (firstLayoutTarget) {
@@ -681,15 +704,17 @@ export async function importFromPptx(file: File): Promise<SlidePresentation> {
     if (firstMasterTarget) {
       const firstMasterPath = resolveRelPath(firstLayoutPath, firstMasterTarget);
       const firstMasterRels = await loadRels(zip, firstMasterPath, parser, relsCache);
+      firstMasterDoc = (await loadDoc(zip, firstMasterPath, parser, docCache)) ?? null;
       const themeTarget = Object.values(firstMasterRels).find((v: string) => v.includes('theme/'));
       if (themeTarget) masterThemeFile = resolveRelPath(firstMasterPath, themeTarget);
     }
   }
 
-  const [{ colors: themeColors, minorFont }, slideDims] = await Promise.all([
+  const [{ colors: themeSlots, minorFont }, slideDims] = await Promise.all([
     parseTheme(zip, parser, masterThemeFile),
     parseSlideDims(zip, parser),
   ]);
+  const themeColors = withColorRoles(themeSlots, firstMasterDoc);
 
   const slides: Slide[] = [];
 

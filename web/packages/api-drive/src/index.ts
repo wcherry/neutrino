@@ -27,9 +27,10 @@ export {
   getNotificationsWsUrl,
   tagsApi,
   setBytesSealer,
+  setMovedIntoFolderHook,
 } from './client';
 
-export type { AutosaveTransport, BytesSealer } from './client';
+export type { AutosaveTransport, BytesSealer, MovedIntoFolderHook } from './client';
 
 // The only way to write user content into Drive. See the module header for why
 // the plaintext helpers this replaced no longer exist.
@@ -167,6 +168,8 @@ export {
   readLinkFile,
   uploadToLinkFolder,
   sealFolderLinkKeys,
+  sealLinksCoveringFolder,
+  linkThumbnailUrl,
   type LinkSession,
   type SealLinkKeysResult,
 } from './linkFolders';

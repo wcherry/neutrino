@@ -5,6 +5,8 @@
  * browser half (link key in the fragment, decryption) is covered by the web unit tests. Files here
  * are plaintext uploads, which is enough to exercise who may reach what.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext } from '@playwright/test';
 import { setUpEncryption } from '../../fixtures/e2ee';
@@ -337,5 +339,196 @@ test.describe('Folder link with a password', () => {
     const body = (await link.json()) as { publicKey: string | null; sealedSeed: string | null };
     expect(body.publicKey, 'a folder link made in the dialog carries a link key').toBeTruthy();
     expect(body.sealedSeed, 'and the owner keeps a sealed copy of its seed').toBeTruthy();
+  });
+
+  /**
+   * The guest's folder page as a visitor sees it: readable in the dark theme, with Drive's three
+   * views and a search box. A link with no key and plaintext files is enough here — the page lists
+   * and filters the same way whatever the files hold.
+   */
+  test('the guest folder page has views and search, and is readable in the dark theme', async ({
+    page,
+    request,
+  }, testInfo) => {
+    const owner = await registerAndLogin(request);
+    const folder = await request.post(`${BASE_URL}/api/v1/drive/folders`, {
+      headers: bearer(owner),
+      data: { name: 'Las Vegas' },
+    });
+    const folderId = ((await folder.json()) as { id: string }).id;
+    for (const name of ['IMG_2738.JPG', 'IMG_2739.JPG', 'notes.txt']) {
+      await request.post(`${BASE_URL}/api/v1/drive/files/upload`, {
+        headers: bearer(owner),
+        multipart: { folder_id: folderId, file: { name, mimeType: 'text/plain', buffer: Buffer.from(name) } },
+      });
+    }
+    const link = await request.put(`${BASE_URL}/api/v1/drive/folders/${folderId}/share-link`, {
+      headers: bearer(owner),
+      data: { visibility: 'anyoneWithLink', role: 'editor' },
+    });
+    const token = ((await link.json()) as { token: string }).token;
+
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto(`/share?token=${token}`);
+    const title = page.getByRole('heading', { name: 'Las Vegas' });
+    await expect(title).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('IMG_2738.JPG')).toBeVisible();
+
+    // Readable: the heading's colour is not the card's colour.
+    const [fg, bg] = await title.evaluate((el) => {
+      const card = el.closest('[class*="browserCard"]') as HTMLElement;
+      return [getComputedStyle(el).color, getComputedStyle(card).backgroundColor];
+    });
+    expect(fg).not.toBe(bg);
+    await page.screenshot({ path: testInfo.outputPath('share-dark-list.png') });
+
+    // Search narrows the listing to matching names.
+    await page.getByRole('searchbox', { name: 'Search this folder' }).fill('2739');
+    await expect(page.getByText('IMG_2739.JPG')).toBeVisible();
+    await expect(page.getByText('IMG_2738.JPG')).toHaveCount(0);
+    await page.getByRole('searchbox', { name: 'Search this folder' }).fill('');
+
+    // The three views, as in Drive.
+    const views = page.getByRole('group', { name: 'View mode' });
+    await views.getByRole('button', { name: 'Large grid' }).click();
+    await expect(views.getByRole('button', { name: 'Large grid' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('notes.txt')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('share-dark-large.png') });
+    await views.getByRole('button', { name: 'Small grid' }).click();
+    await expect(views.getByRole('button', { name: 'Small grid' })).toHaveAttribute('aria-pressed', 'true');
+
+    // Click previews a file; ←/→ step through; Esc closes.
+    await views.getByRole('button', { name: 'Detailed list' }).click();
+    await page.getByRole('button', { name: 'notes.txt', exact: true }).click();
+    const preview = page.getByRole('dialog', { name: 'Preview of notes.txt' });
+    await expect(preview).toBeVisible();
+    await expect(preview.getByText('notes.txt', { exact: true }).last()).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('share-dark-preview.png') });
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.getByRole('dialog', { name: 'Preview of IMG_2739.JPG' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    // ⌘/Ctrl-click selects without opening; Download zips the selection.
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.getByRole('button', { name: 'IMG_2738.JPG', exact: true }).click({ modifiers: [modifier] });
+    await page.getByRole('button', { name: 'notes.txt', exact: true }).click({ modifiers: [modifier] });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const bar = page.getByRole('toolbar', { name: 'Selected items' });
+    await expect(bar.getByText('2 selected')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('share-dark-selected.png') });
+    const [zip] = await Promise.all([
+      page.waitForEvent('download'),
+      bar.getByRole('button', { name: 'Download' }).click(),
+    ]);
+    expect(zip.suggestedFilename()).toBe('Las Vegas.zip');
+
+    // Delete the selection (to the owner's trash).
+    await bar.getByRole('button', { name: 'Delete' }).click();
+    await bar.getByRole('button', { name: 'Delete' }).click();
+    await expect(page.getByRole('button', { name: 'notes.txt', exact: true })).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'IMG_2739.JPG', exact: true })).toBeVisible();
+
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.reload();
+    await expect(page.getByText('IMG_2739.JPG')).toBeVisible({ timeout: 15_000 });
+    await page.screenshot({ path: testInfo.outputPath('share-light-small.png') });
+  });
+
+  /**
+   * Every file type the app itself opens previews on a folder link, drawn by the same views as
+   * Drive's preview. Plaintext uploads (a link without a key) are enough: the readers and views are
+   * what is under test, and a keyed link only changes how the bytes are decrypted.
+   */
+  test('every app file type previews on the guest page', async ({ page, request }, testInfo) => {
+    const owner = await registerAndLogin(request);
+    const folder = await request.post(`${BASE_URL}/api/v1/drive/folders`, {
+      headers: bearer(owner),
+      data: { name: `App types ${Date.now()}` },
+    });
+    const folderId = ((await folder.json()) as { id: string }).id;
+    const fixture = (f: string) => fs.readFileSync(path.join(__dirname, '../../fixtures', f));
+    const diagram = JSON.stringify({
+      version: 1,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      pages: [
+        {
+          id: 'p1',
+          name: 'Page 1',
+          connectors: [],
+          shapes: [
+            {
+              id: 'sh1',
+              type: 'rectangle',
+              x: 10, y: 20, width: 160, height: 60,
+              label: 'Start here',
+              style: { fill: '#ffffff', stroke: '#000000', strokeWidth: 1, opacity: 1, fontSize: 14, fontFamily: 'Inter', textColor: '#111111' },
+            },
+          ],
+        },
+      ],
+    });
+    const files: [string, string, Buffer][] = [
+      ['Report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', fixture('sample.docx')],
+      ['Budget.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', fixture('sample.xlsx')],
+      ['Deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', fixture('sample.pptx')],
+      ['Packing.md', 'text/markdown', Buffer.from('# Packing list\n\n- Passport\n- Charger\n')],
+      ['Flow', 'application/x-neutrino-diagram', Buffer.from(diagram)],
+      ['Sketch', 'application/x-neutrino-drawing', fixture('sample.drawing.json')],
+    ];
+    for (const [name, mimeType, buffer] of files) {
+      const up = await request.post(`${BASE_URL}/api/v1/drive/files/upload`, {
+        headers: bearer(owner),
+        multipart: { folder_id: folderId, mime_type: mimeType, file: { name, mimeType, buffer } },
+      });
+      expect(up.ok(), `upload ${name}: ${up.status()}`).toBeTruthy();
+    }
+    const link = await request.put(`${BASE_URL}/api/v1/drive/folders/${folderId}/share-link`, {
+      headers: bearer(owner),
+      data: { visibility: 'anyoneWithLink', role: 'viewer' },
+    });
+    const token = ((await link.json()) as { token: string }).token;
+    await page.goto(`/share?token=${token}`);
+
+    const open = async (name: string) => {
+      await page.getByRole('button', { name, exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: `Preview of ${name}` });
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
+      return dialog;
+    };
+    const close = async (dialog: ReturnType<typeof page.getByRole>, shot: string) => {
+      await expect(dialog.getByText('There is no preview for this kind of file.')).toHaveCount(0);
+      await expect(dialog.getByText(/Could not|Failed to/)).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath(`preview-${shot}.png`) });
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    };
+
+    let d = await open('Report.docx');
+    await expect(d.locator('[class*="docContent"]')).toBeVisible({ timeout: 15_000 });
+    await close(d, 'docx');
+
+    d = await open('Budget.xlsx');
+    await expect(d.getByRole('table', { name: 'Spreadsheet preview' })).toBeVisible({ timeout: 15_000 });
+    await close(d, 'xlsx');
+
+    d = await open('Deck.pptx');
+    await expect(d.locator('[class*="slidePreviewItem"]').first()).toBeVisible({ timeout: 15_000 });
+    // The deck's text, on its white background (theme colour roles mapped, not defaulted to black).
+    await expect(d.getByText('Neutrino office round-trip fixture')).toBeVisible();
+    await close(d, 'pptx');
+
+    d = await open('Packing.md');
+    await expect(d.getByRole('heading', { name: 'Packing list' })).toBeVisible({ timeout: 15_000 });
+    await expect(d.getByText('Passport')).toBeVisible();
+    await close(d, 'md');
+
+    d = await open('Flow');
+    await expect(d.getByText('Start here')).toBeVisible({ timeout: 15_000 });
+    await close(d, 'diagram');
+
+    d = await open('Sketch');
+    await expect(d.getByText('This drawing is empty.')).toBeVisible({ timeout: 15_000 });
+    await close(d, 'drawing');
   });
 });
