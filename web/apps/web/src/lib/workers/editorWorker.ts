@@ -4,7 +4,7 @@
  * and needs nothing from the page.
  *
  * - Sealing and opening file bytes. The cipher is the one `@neutrino/e2e-crypto` uses on the main
- *   thread, unchanged — this moves where it runs, not what it writes.
+ *   thread (`encryptFileBody`, NEB1) — this moves where it runs, not what it writes.
  * - Spell-checking. Building the dictionary took ~250 ms at 4× CPU the moment an editor opened, and
  *   every check after that ran inside a keystroke. Here the dictionary is built once per tab, off
  *   the page, and words are checked in batches.
@@ -12,7 +12,7 @@
  * Messages are `{ id, op, args }`; every reply is `{ id, ok, value | error }`.
  */
 
-import { decryptFile, encryptFile, initSodium } from '@neutrino/e2e-crypto';
+import { decryptFile, encryptFileBody, initSodium } from '@neutrino/e2e-crypto';
 import type { EditorWorkerRequest } from './editorWorkerProtocol';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -45,7 +45,7 @@ async function handle(req: EditorWorkerRequest): Promise<{ value: unknown; trans
   switch (req.op) {
     case 'encrypt': {
       await initSodium();
-      const out = encryptFile(req.args.bytes, req.args.key);
+      const out = encryptFileBody(req.args.bytes, req.args.key);
       return { value: out, transfer: [out.buffer] };
     }
     case 'decrypt': {

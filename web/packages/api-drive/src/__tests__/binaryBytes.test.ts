@@ -9,7 +9,7 @@
  *  - Accept raw bytes (Uint8Array | ArrayBuffer) directly, never a string.
  *  - Preserve the exact byte content (no TextEncoder/TextDecoder round-trip,
  *    which would corrupt non-UTF8 binary data such as a zip-based OOXML file).
- *  - Pass the raw bytes straight into encryptFile() — not a TextEncoder-derived
+ *  - Pass the raw bytes straight into encryptFileBody() — not a TextEncoder-derived
  *    reinterpretation of them.
  *
  * Only the encrypted variants remain. The plaintext `driveAutosaveBytes` and
@@ -62,7 +62,8 @@ const mockEncryptFile = vi.fn((plaintext: Uint8Array) => {
 
 vi.mock('@neutrino/e2e-crypto', () => ({
   initSodium: vi.fn(() => Promise.resolve()),
-  encryptFile: mockEncryptFile,
+  // File bodies are written as NEB1 (#318) through `encryptFileBody`.
+  encryptFileBody: mockEncryptFile,
 }));
 
 import {
@@ -114,7 +115,7 @@ describe('driveAutosaveEncryptedBytes', () => {
 
     expect(mockEncryptFile).toHaveBeenCalledTimes(1);
     const [plaintextArg, dekArg] = mockEncryptFile.mock.calls[0];
-    // The exact original bytes must be handed to encryptFile — no TextEncoder
+    // The exact original bytes must be handed to encryptFileBody — no TextEncoder
     // re-encoding, which would corrupt bytes like 0xff/0xfe that aren't valid UTF-8.
     expect(Array.from(plaintextArg as Uint8Array)).toEqual(Array.from(bytes));
     expect(dekArg).toBe(dek);
@@ -126,7 +127,7 @@ describe('driveAutosaveEncryptedBytes', () => {
     expect(blob.type).toBe('application/octet-stream');
   });
 
-  it('uploads the encrypted (not plaintext) bytes returned by encryptFile', async () => {
+  it('uploads the encrypted (not plaintext) bytes returned by encryptFileBody', async () => {
     mockRequest.mockResolvedValueOnce(undefined);
     const bytes = fakeOoxmlBytes();
     const dek = new Uint8Array(32).fill(7);

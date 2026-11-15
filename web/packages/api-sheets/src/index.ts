@@ -293,10 +293,10 @@ export const sheetsApi = {
     metadata?: { title?: string },
     versionCheck?: ContentVersionCheck,
   ): Promise<SheetMetaResponse> {
-    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+    const { initSodium, encryptFileBody } = await import('@neutrino/e2e-crypto');
     await initSodium();
     const plainBytes = new TextEncoder().encode(content);
-    const cipherBytes = encryptFile(plainBytes, dek);
+    const cipherBytes = encryptFileBody(plainBytes, dek);
     const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
     const formData = new FormData();
     formData.append('file', blob, filename);

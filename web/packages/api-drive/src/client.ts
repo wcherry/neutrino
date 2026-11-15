@@ -93,7 +93,7 @@ function normalizeResolvedShareLink(link: ResolvedShareLink): ResolvedShareLink 
 
 // ── Sealing file bytes ───────────────────────────────────────────────────────
 
-/** Seals `bytes` under `dek` as `encryptFile` does; somewhere other than the main thread, ideally. */
+/** Seals `bytes` under `dek` as `encryptFileBody` does (NEB1); somewhere other than the main thread, ideally. */
 export type BytesSealer = (bytes: Uint8Array, dek: Uint8Array) => Promise<Uint8Array>;
 
 let bytesSealer: BytesSealer | null = null;
@@ -141,9 +141,9 @@ export async function sealBytes(bytes: Uint8Array, dek: Uint8Array): Promise<Uin
       // fall through to the main thread
     }
   }
-  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+  const { initSodium, encryptFileBody } = await import('@neutrino/e2e-crypto');
   await initSodium();
-  return encryptFile(bytes, dek);
+  return encryptFileBody(bytes, dek);
 }
 
 export const storageApi = {
@@ -789,16 +789,13 @@ export async function uploadEncryptedFile(
    */
   keyVersion?: number,
 ): Promise<FileItem> {
-  // Encrypt the file bytes.
-  const plainBytes = new Uint8Array(await file.arrayBuffer());
-  // The measure covers `encryptFile` alone, not the read before it: this is
-  // the main-thread block a large upload costs, and the number that decides
-  // whether the work belongs in a worker.
-  const cipherBytes = await measurePhase('crypto:encrypt', async () =>
-    sealBytes(plainBytes, dek),
-  );
-  // Cast to ArrayBuffer for Blob compatibility across TS targets.
-  const cipherBlob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  // Encrypt as NEB1 a chunk at a time, straight from the picked file (#318): the plaintext is
+  // sliced from the `File` and each sealed chunk handed back to the browser as a `Blob`, so a
+  // multi-gigabyte video costs about one chunk of heap rather than four or five times its size.
+  // Chunks are sealed between awaits, so the page stays responsive without the worker.
+  const { initSodium, encryptBlobNeb1 } = await import('@neutrino/e2e-crypto');
+  await initSodium();
+  const cipherBlob = await measurePhase('crypto:encrypt', () => encryptBlobNeb1(file, dek));
   const encryptedFile = new File([cipherBlob], file.name, { type: 'application/octet-stream' });
 
   const formData = new FormData();

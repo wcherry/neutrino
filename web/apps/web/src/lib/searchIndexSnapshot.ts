@@ -127,6 +127,8 @@ async function encryptSnapshot(
   await initSodium();
   const dek = generateFileKey();
   return {
+    // Deliberately v0, not NEB1 (#318): Drive iOS reads the snapshot with its own single-push
+    // reader (`SearchSnapshotCrypto.swift`). Move it with that reader, not before.
     ciphertext: encryptFile(serializeSnapshot(snapshot), dek),
     // Sealed to the user's own public key: every device of theirs holds the
     // matching secret key, and nothing else does.

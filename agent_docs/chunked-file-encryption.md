@@ -560,6 +560,11 @@ off. Enable for internal accounts, then broadly.
     file to file, lifting the 512 MB cap and the videos-alone rule; Android Drive and the macOS
     Drive client write NEB1 through their shared libraries. Branch `feature/neb1-writes-on`, opened
     as drafts until 2a has shipped. The search-index snapshot and encrypted metadata stay v0.
+  - **Web, as written in 2b:** `encryptFileBody` (NEB1) is the file-body writer — `sealBytes` and
+    the editor worker, the Sheets/Diagrams/Drawing autosaves and Atlas use it — and
+    `uploadEncryptedFile` streams through `encryptBlobNeb1`, slicing the picked `File` a chunk at a
+    time and handing each sealed chunk back as a `Blob` (§8.1), so an upload's heap is about one
+    chunk. `encryptFile` stays v0 for the search snapshot only.
 - **Update (2026-11-14): the flag is gone.** Neutrino ships no feature flags during the beta
   (`agent_docs/developer_workflow.md` Step 4), so `e2eeChunkedWrites` was removed (migration 00156)
   and `GET /api/v1/feature-flags` no longer carries it. Drive iOS reads a missing key as off, so it

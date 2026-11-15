@@ -253,6 +253,56 @@ export function encryptFileNeb1(
   return out;
 }
 
+/**
+ * Encrypt a **file body** — what `/drive/files/{id}` stores — in the format every client reads:
+ * NEB1 (#318). Use this, not `encryptFile`, for anything uploaded or autosaved as a file's content.
+ * `encryptFile` (v0) stays for what is deliberately left on the old format: the search-index
+ * snapshot, and `encryptMetadata`.
+ */
+export function encryptFileBody(plaintext: Uint8Array, dek: Uint8Array): Uint8Array {
+  return encryptFileNeb1(plaintext, dek);
+}
+
+/**
+ * Encrypt a `Blob` (a picked `File`, a zip entry) as NEB1 without ever holding it whole
+ * (`agent_docs/chunked-file-encryption.md` §8.1): each chunk is sliced from the source, sealed,
+ * and handed to the browser as a `Blob` of its own, so the JS heap holds about one chunk however
+ * large the file is. The result is byte-identical to `encryptFileNeb1` of the same bytes.
+ *
+ * `onProgress` gets the fraction of the source encrypted, from 0 to 1.
+ */
+export async function encryptBlobNeb1(
+  source: Blob,
+  dek: Uint8Array,
+  chunkSize: number = NEB1_DEFAULT_CHUNK_SIZE,
+  onProgress?: (fraction: number) => void,
+): Promise<Blob> {
+  ensureReady();
+  if (!Number.isInteger(chunkSize) || chunkSize < NEB1_MIN_CHUNK_SIZE || chunkSize > NEB1_MAX_CHUNK_SIZE) {
+    throw new RangeError(`chunkSize must be in [${NEB1_MIN_CHUNK_SIZE}, ${NEB1_MAX_CHUNK_SIZE}]`);
+  }
+  const P = source.size;
+  const n = Math.max(1, Math.ceil(P / chunkSize));
+  const prefix = neb1Prefix(chunkSize, P);
+  const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(dek);
+  // libsodium's arrays are plain `ArrayBuffer`-backed; TS 5.7 types them over `ArrayBufferLike`.
+  const parts: BlobPart[] = [prefix as BlobPart, header as BlobPart];
+  for (let i = 0; i < n; i++) {
+    const start = i * chunkSize;
+    const plain = new Uint8Array(await source.slice(start, Math.min(P, start + chunkSize)).arrayBuffer());
+    // The header says P bytes; a source that changed underneath us must not produce a blob that lies.
+    if (plain.length !== Math.min(chunkSize, P - start)) throw new Error('The file changed while it was being encrypted');
+    const tag = i === n - 1
+      ? sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
+      : sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE;
+    const cipher = sodium.crypto_secretstream_xchacha20poly1305_push(state, plain, prefix, tag);
+    plain.fill(0);
+    parts.push(new Blob([cipher as BlobPart]));
+    onProgress?.((i + 1) / n);
+  }
+  return new Blob(parts, { type: 'application/octet-stream' });
+}
+
 /** `NEB1 ‖ version ‖ alg ‖ reserved ‖ be32(chunkSize) ‖ be64(plaintextLength)`: 20 bytes. */
 function neb1Prefix(chunkSize: number, plaintextLength: number): Uint8Array {
   const prefix = new Uint8Array(NEB1_PREFIX_BYTES);

@@ -222,9 +222,9 @@ export const drawingApi = {
     metadata?: { title?: string },
     versionCheck?: ContentVersionCheck,
   ): Promise<DrawingMetaResponse> {
-    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+    const { initSodium, encryptFileBody } = await import('@neutrino/e2e-crypto');
     await initSodium();
-    const cipherBytes = encryptFile(new TextEncoder().encode(content), dek);
+    const cipherBytes = encryptFileBody(new TextEncoder().encode(content), dek);
     const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
     const formData = new FormData();
     formData.append('file', blob, filename);
