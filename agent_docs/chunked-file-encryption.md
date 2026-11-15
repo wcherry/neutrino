@@ -1,9 +1,9 @@
 # Chunked File Encryption Format (NEB1)
 
 **Date:** 2026-08-13 (accepted 2026-11-13, #318)
-**Status:** Accepted — readers and the first writer (Drive iOS photo sync) in progress; see §10
+**Status:** Accepted — readers shipping (round 2a); no client writes NEB1 until they have; see §10
 **Owner:** William Cherry
-**Affects:** `neutrino` (web, vectors, the `e2eeChunkedWrites` flag), `neutrino_shared_ios` (every iOS app and the Mac Drive client), `neutrino_drive_ios_mobile` (its own encrypt and decrypt paths), `neutrino_photos_ios_mobile` (`MediaCrypto`), `neutrino_drive_windows_desktop`, `neutrino_shared_android`. The server is unaffected.
+**Affects:** `neutrino` (web, vectors), `neutrino_shared_ios` (every iOS app and the Mac Drive client), `neutrino_drive_ios_mobile` (its own encrypt and decrypt paths), `neutrino_photos_ios_mobile` (`MediaCrypto`), `neutrino_docs_ios_mobile`, `neutrino_notes_ios_mobile`, `neutrino_sheets_ios_mobile`, `neutrino_slides_ios_mobile` (their content services), `neutrino_drive_windows_desktop`, `neutrino_shared_android`, `neutrino_drive_android_mobile` (its streaming downloader). The server is unaffected.
 
 > **Decision (#318):** NEB1 is the format for new chunked writes. The **Photos-chunked** shape that
 > Neutrino Photos iOS already writes (§3.6) is a second, permanent legacy shape every reader also
@@ -517,7 +517,16 @@ into the shared packages.
 | `neutrino_photos_ios_mobile` | `Services/MediaCrypto.swift` | Photos-chunked; NEB1 to add | Photos-chunked (§3.6) |
 | `neutrino_drive_windows_desktop` | `crates/neutrino-core/src/crypto.rs` | NEB1 and Photos-chunked to add, streaming | — |
 | `neutrino_shared_android` | `neutrino-core/.../core/crypto/FileCrypto.kt`, `SecretStream.kt` | Photos-chunked already; NEB1 to add, after AD support | — |
-| `neutrino_notes_ios_mobile`, `neutrino_docs_ios_mobile` | their content services | through `neutrino_shared_ios` where they use it | — |
+| `neutrino_docs_ios_mobile`, `neutrino_notes_ios_mobile`, `neutrino_sheets_ios_mobile`, `neutrino_slides_ios_mobile` | `Services/*ContentService.swift` `decrypt` | v0 only until round 2a, which routes it through `DriveFileCrypto.decrypt` | v0 (editor saves) |
+| `neutrino_drive_android_mobile` | `core/.../drive/Transfers.kt` `Downloader` | v0 only (its own streaming `SecretStream.decrypt`) until round 2a, which streams through the shared `FileCrypto.decryptFile(input, output, …)` | v0 |
+
+**Missed by round 1, found 2026-11-15.** The five rows above decrypted file bodies with their own
+v0-only secretstream calls rather than through the shared readers, so "readers everywhere" was not
+true when round 1 merged: a NEB1 body would have failed to download on Android Drive and failed to
+open in the four iOS editors. When adding a client, grep it for `initPull`/`SecretStream.decrypt`
+before counting it as a reader. Two v0-only readers are deliberately left alone: the **search-index
+snapshot** (`SearchSnapshotCrypto.swift` in Drive iOS; the web writes it with `encryptFile`, which
+stays v0), and the device-local stores in §8.3.
 
 ### Server
 
@@ -541,6 +550,16 @@ CI. No writer ships until this is green everywhere.
 (`GET /api/v1/feature-flags`; see the Feature flags section of `web/CLAUDE.md`) defaulting to
 off. Enable for internal accounts, then broadly.
 
+- **Update (2026-11-15): two rounds, ordered by release.** With no flag, merging a writer ships
+  it, so writes are a separate round from the readers they depend on:
+  - **Round 2a — the remaining readers, and streaming reads.** Android Drive's downloader and the
+    Docs, Notes, Sheets and Slides iOS content services (§9, "Missed by round 1"); Windows
+    downloads streamed to disk and decrypted file to file. All branch `feature/neb1-chunked-writes`.
+  - **Round 2b — writes on, once every 2a reader is released.** The web writes file bodies as NEB1
+    (uploads stream from the `Blob`, never whole); Drive iOS photo sync exports to disk and encrypts
+    file to file, lifting the 512 MB cap and the videos-alone rule; Android Drive and the macOS
+    Drive client write NEB1 through their shared libraries. Branch `feature/neb1-writes-on`, opened
+    as drafts until 2a has shipped. The search-index snapshot and encrypted metadata stay v0.
 - **Update (2026-11-14): the flag is gone.** Neutrino ships no feature flags during the beta
   (`agent_docs/developer_workflow.md` Step 4), so `e2eeChunkedWrites` was removed (migration 00156)
   and `GET /api/v1/feature-flags` no longer carries it. Drive iOS reads a missing key as off, so it
