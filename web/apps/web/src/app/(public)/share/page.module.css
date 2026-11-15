@@ -118,7 +118,7 @@
 
 .status,
 .statusError {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--palette-blue-98);
@@ -126,8 +126,8 @@
 }
 
 .statusError {
-  background: var(--palette-red-95, #fdecec);
-  color: var(--palette-red-40, #b42318);
+  background: var(--color-error-subtle);
+  color: var(--color-error);
 }
 
 .rows {
@@ -181,7 +181,7 @@
 
 .rowMeta {
   flex: none;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 

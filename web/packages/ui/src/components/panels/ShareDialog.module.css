@@ -397,7 +397,7 @@
 }
 
 .linkNotice {
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.4;
   color: var(--color-text-secondary);
   background: var(--color-surface-secondary, var(--color-bg-secondary));
