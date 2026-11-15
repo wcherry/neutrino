@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { Pencil, Pin, PinOff, Star, StarOff, FolderInput, Trash2 } from 'lucide-react';
+import { Pencil, Pin, PinOff, Share2, Star, StarOff, FolderInput, Trash2 } from 'lucide-react';
 import { type Folder as FolderItem } from '@/lib/api';
 import { useDismiss } from '@neutrino/commands';
 import { usePreference } from '@neutrino/preferences';
@@ -17,9 +17,11 @@ interface Props {
   onStarToggle: () => void;
   onMove: () => void;
   onDelete: () => void;
+  /** Open the Share dialog for this folder: people, and a link anyone can use (#321). */
+  onShare: () => void;
 }
 
-export function FolderContextMenu({ folder, x, y, onClose, onRename, onStarToggle, onMove, onDelete }: Props) {
+export function FolderContextMenu({ folder, x, y, onClose, onRename, onStarToggle, onMove, onDelete, onShare }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,6 +46,7 @@ export function FolderContextMenu({ folder, x, y, onClose, onRename, onStarToggl
   const adjustedY = Math.min(y, window.innerHeight - 200);
 
   const items = [
+    { icon: <Share2 size={14} />, label: 'Share', action: onShare },
     { icon: <Pencil size={14} />, label: 'Rename', action: onRename },
     {
       icon: folder.isStarred ? <StarOff size={14} /> : <Star size={14} />,

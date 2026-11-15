@@ -7,6 +7,7 @@
  */
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext } from '@playwright/test';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import { randomBytes } from 'crypto';
 
 const BASE_URL = 'http://localhost:9880';
@@ -291,5 +292,50 @@ test.describe('Folder link with a password', () => {
       data: { name: 'nope' },
     });
     expect(write.status()).toBe(403);
+  });
+
+  /**
+   * A folder can be shared from Drive at all: its menu has Share, the dialog opens for the folder,
+   * and creating a link there gives it a key (and the owner a sealed copy of it) — which is what
+   * makes the link usable for encrypted files.
+   */
+  test('a folder is shared by link from its menu in Drive', async ({ page, request }) => {
+    const email = uniqueEmail();
+    const reg = await request.post(`${BASE_URL}/api/v1/auth/register`, {
+      data: { name: 'Folder Sharer', email, password: 'Password123!' },
+    });
+    expect(reg.ok()).toBeTruthy();
+    await page.goto('/sign-in');
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('Password123!');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+    await setUpEncryption(page);
+    const token = (await page.evaluate(() => localStorage.getItem('access_token')))!;
+
+    const name = `Shared from menu ${Date.now()}`;
+    const created = await request.post(`${BASE_URL}/api/v1/drive/folders`, {
+      headers: bearer(token),
+      data: { name },
+    });
+    const folderId = ((await created.json()) as { id: string }).id;
+
+    await page.goto('/drive');
+    await page.getByRole('button', { name: `More options for ${name}` }).click();
+    await page.getByRole('menu', { name: 'Folder options' }).getByRole('menuitem', { name: 'Share' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(name).first()).toBeVisible({ timeout: 10_000 });
+    await dialog.getByRole('button', { name: 'Create link' }).click();
+    await expect(dialog.getByRole('button', { name: /Copy link/ })).toBeEnabled({ timeout: 15_000 });
+    await expect(dialog.getByText(/carries the key that unlocks these files/)).toBeVisible();
+
+    const link = await request.get(`${BASE_URL}/api/v1/drive/folders/${folderId}/share-link`, {
+      headers: bearer(token),
+    });
+    expect(link.ok()).toBeTruthy();
+    const body = (await link.json()) as { publicKey: string | null; sealedSeed: string | null };
+    expect(body.publicKey, 'a folder link made in the dialog carries a link key').toBeTruthy();
+    expect(body.sealedSeed, 'and the owner keeps a sealed copy of its seed').toBeTruthy();
   });
 });

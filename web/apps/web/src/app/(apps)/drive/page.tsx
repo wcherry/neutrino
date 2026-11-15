@@ -137,6 +137,7 @@ function DriveContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [infoFile?.file.id, infoFile?.focusTags]);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
+  const [shareFolder, setShareFolder] = useState<FolderItem | null>(null);
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
   const [renaming, setRenaming] = useState<FileItem | null>(null);
@@ -1006,6 +1007,7 @@ function DriveContent() {
           }}
           onMove={() => { setMovingFolder(folderContextMenu.folder); setFolderContextMenu(null); }}
           onDelete={() => { deleteFolderMutation.mutate(folderContextMenu.folder.id); setFolderContextMenu(null); }}
+          onShare={() => { setShareFolder(folderContextMenu.folder); setFolderContextMenu(null); }}
         />
       )}
 
@@ -1044,6 +1046,10 @@ function DriveContent() {
 
       {shareFile && (
         <ShareDialog resource={shareFile} resourceType="file" onClose={() => setShareFile(null)} />
+      )}
+
+      {shareFolder && (
+        <ShareDialog resource={shareFolder} resourceType="folder" onClose={() => setShareFolder(null)} />
       )}
 
       {moveFile && (
