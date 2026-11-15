@@ -6,7 +6,7 @@
     "/register": 730,
     "/share": 600,
     "/self-host": 510,
-    "/drive": 1240,
+    "/drive": 1250,
     "/docs": 1150,
     "/docs/editor": 1960,
     "/sheets": 1140,
@@ -17,11 +17,11 @@
     "/notes/editor": 1020,
     "/atlas": 930,
     "/photos": 1010,
-    "/photos/editor": 1070,
+    "/photos/editor": 1080,
     "/diagrams": 1140,
     "/diagrams/editor": 1480,
     "/drawing": 1140,
-    "/drawing/editor": 1240,
+    "/drawing/editor": 1250,
     "/calendar": 1170,
     "/settings": 1090
   }

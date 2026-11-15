@@ -76,7 +76,7 @@ vi.mock('@neutrino/api-drive', () => ({
   encryptionApi: { getFileKey: (...args: unknown[]) => getFileKey(...args) },
 }));
 
-vi.mock('@neutrino/api-photos', () => ({ photosAiApi: {} }));
+vi.mock('@neutrino/api-photos', () => ({ photosAiApi: {}, KeyPhotoConflictError: class extends Error {} }));
 
 const openSealedFileKey = vi.fn();
 
@@ -99,6 +99,11 @@ vi.mock('@/app/(apps)/photos/editor/PhotoCanvas', () => ({
 }));
 vi.mock('@/app/(apps)/photos/editor/PhotoTopBar', () => ({ PhotoTopBar: () => null }));
 vi.mock('@/app/(apps)/photos/editor/PhotoToolbar', () => ({ PhotoToolbar: () => null }));
+// Key photo (issue #317) has its own suites; these photos are not Live Photos.
+vi.mock('@/app/(apps)/photos/useKeyPhotoTarget', () => ({ useKeyPhotoTarget: () => ({ data: null }) }));
+vi.mock('@/app/(apps)/photos/KeyPhotoDialog', () => ({ KeyPhotoDialog: () => null }));
+vi.mock('@/app/(apps)/photos/keyPhotoSession', () => ({ changeKeyPhoto: vi.fn(), CLIP_NOT_UPDATED_WARNING: '' }));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock('@/app/(apps)/photos/editor/AdjustmentsPanel', () => ({
   AdjustmentsRail: ({ children }: { children: React.ReactNode }) => children,
 }));

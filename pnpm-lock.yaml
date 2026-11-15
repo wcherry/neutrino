@@ -472,6 +472,12 @@ importers:
       '@neutrino/api-core':
         specifier: workspace:*
         version: link:../api-core
+      '@neutrino/api-drive':
+        specifier: workspace:*
+        version: link:../api-drive
+      '@neutrino/e2e-crypto':
+        specifier: workspace:*
+        version: link:../e2e-crypto
       '@neutrino/utils':
         specifier: workspace:*
         version: link:../utils

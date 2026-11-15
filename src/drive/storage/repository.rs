@@ -841,6 +841,28 @@ impl StorageRepository {
         Ok(())
     }
 
+    /// Record a new MIME type for a file, scoped to its owner.
+    pub fn update_file_mime_type(
+        &self,
+        file_id: &str,
+        owner_id: &str,
+        mime_type: &str,
+    ) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        diesel::update(
+            files::table
+                .filter(files::id.eq(file_id))
+                .filter(files::user_id.eq(owner_id)),
+        )
+        .set(files::mime_type.eq(mime_type))
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB update file mime type error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+        Ok(())
+    }
+
     fn get_conn(
         &self,
     ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {

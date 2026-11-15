@@ -364,6 +364,14 @@ impl StorageService {
     /// A file with no version rows yet — a record created ahead of its content
     /// by `save_file` — gets its first one here.
     ///
+    /// **Except a named version.** `save_named_version` makes the snapshot the
+    /// live content, so until this guard the very next autosave rewrote the
+    /// named version's bytes in place: a "checkpoint" or a photo's "Original key
+    /// photo" (issue #317) silently became whatever was saved after it, while
+    /// keeping its label. When the live version is named, the autosave is
+    /// written as a new unnamed version on top and the named one is left as it
+    /// was.
+    ///
     /// Permission check (owner/editor) must be enforced by the caller before calling this.
     ///
     /// `check` carries the client's optimistic-concurrency guard; pass
@@ -401,6 +409,10 @@ impl StorageService {
             .repo
             .find_current_version(file_id, &file.storage_path)?
         {
+            Some(current) if current.is_named => {
+                self.commit_new_version(owner_id, file_id, temp_path, size_bytes, false, None)?
+                    .storage_path
+            }
             Some(current) => {
                 let target = self.store.resolve(&current.storage_path);
                 std::fs::rename(temp_path, &target).map_err(|e| {
@@ -956,6 +968,19 @@ impl StorageService {
         self.repo
             .set_cover_thumbnail_mime(file_id, mime_type, now)?;
         Ok(cover_thumbnail_url(file_id, now))
+    }
+
+    /// Change what a file says it is, after its content was rewritten as
+    /// something else — a Live Photo's HEIC still replaced by a JPEG frame
+    /// (issue #317) must not go on claiming `image/heic` over JPEG bytes.
+    ///
+    /// Permission check (owner/editor) must be enforced by the caller.
+    pub fn set_mime_type(&self, file_id: &str, mime_type: &str) -> Result<(), ApiError> {
+        let file = self
+            .repo
+            .find_file_by_id(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+        self.repo.update_file_mime_type(file_id, &file.user_id, mime_type)
     }
 
     /// Resolve a file's cover thumbnail to a path to serve and the MIME type to
@@ -1516,6 +1541,59 @@ mod tests {
             .expect("save named version");
         temp.commit();
         version
+    }
+
+    /// Issue #317: `save_named_version` makes the snapshot the live content, and
+    /// autosave used to rewrite the live version in place — so the next save
+    /// replaced a named checkpoint's bytes while it kept its label.
+    #[tokio::test]
+    async fn an_autosave_after_a_named_version_leaves_the_named_bytes_alone() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let file = upload(&service, &user, "IMG_1.HEIC", b"original").await;
+        let named = save_named(&service, &file.id, b"original", Some("Original key photo"));
+
+        service.store().ensure_user_dir(&user.user_id).expect("mkdir");
+        let temp = service.store().temp_upload(&user.user_id, "autosave");
+        std::fs::write(temp.path(), b"new frame").expect("stage");
+        service
+            .autosave(&file.id, temp.path(), 9, ContentVersionCheck::UNCHECKED)
+            .expect("autosave");
+        temp.commit();
+
+        let versions = list_versions(&service, &user.user_id, &file.id);
+        let kept = versions.iter().find(|v| v.id == named.id).expect("the named version survives");
+        assert!(kept.is_named);
+        let named_row = repo
+            .list_versions(&file.id)
+            .expect("versions")
+            .into_iter()
+            .find(|v| v.id == named.id)
+            .expect("named row");
+        let on_disk = std::fs::read(base.join(&named_row.storage_path)).expect("read named blob");
+        assert_eq!(on_disk, b"original", "the snapshot still holds what it was named for");
+        let live = std::fs::read(base.join(current_key(&repo, &file.id))).expect("read live");
+        assert_eq!(live, b"new frame");
+
+        // A second autosave rewrites the new unnamed version in place, as before.
+        let temp = service.store().temp_upload(&user.user_id, "autosave-2");
+        std::fs::write(temp.path(), b"newer").expect("stage");
+        service
+            .autosave(&file.id, temp.path(), 5, ContentVersionCheck::UNCHECKED)
+            .expect("autosave");
+        temp.commit();
+        assert_eq!(list_versions(&service, &user.user_id, &file.id).len(), versions.len());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn set_mime_type_records_the_new_type() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let file = upload(&service, &user, "IMG_1.HEIC", b"x").await;
+        service.set_mime_type(&file.id, "image/jpeg").expect("set");
+        assert_eq!(repo.find_file_by_id(&file.id).unwrap().unwrap().mime_type, "image/jpeg");
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[tokio::test]

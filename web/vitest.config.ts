@@ -25,6 +25,8 @@ export default defineConfig({
       '@neutrino/api-sheets': path.resolve('./packages/api-sheets/src/index.ts'),
       '@neutrino/api-slides': path.resolve('./packages/api-slides/src/index.ts'),
       '@neutrino/api-themes': path.resolve('./packages/api-themes/src/index.ts'),
+      // Before the package's own entry, which would otherwise match this as a prefix.
+      '@neutrino/api-photos/key-photo': path.resolve('./packages/api-photos/src/keyPhotoEntry.ts'),
       '@neutrino/api-photos': path.resolve('./packages/api-photos/src/index.ts'),
       '@neutrino/api-search': path.resolve('./packages/api-search/src/index.ts'),
       '@neutrino/auth': path.resolve('./packages/auth/src/index.ts'),

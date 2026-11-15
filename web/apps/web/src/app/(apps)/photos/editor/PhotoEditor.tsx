@@ -21,7 +21,32 @@ import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneStamp
 import { DEFAULT_ADJUSTMENTS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
 import { scaleKernel } from './sharpening';
 import { useCommand, useDismiss } from '@neutrino/commands';
+import { useQueryClient } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
+import type { PickedKeyFrame } from '../KeyPhotoDialog';
+import { useKeyPhotoTarget } from '../useKeyPhotoTarget';
+import { invalidateAfterKeyPhoto } from '../invalidateKeyPhoto';
 import styles from './page.module.css';
+
+// Only a Live Photo needs the scrubber or the key-photo save path; both stay
+// out of the editor's first load (`route-budgets.json`).
+const KeyPhotoDialog = dynamic(() => import('../KeyPhotoDialog').then((m) => m.KeyPhotoDialog), { ssr: false });
+
+/** The editor's export, re-encoded as the JPEG a key photo is stored as. */
+async function exportAsJpeg(png: Blob): Promise<{ jpeg: Uint8Array; width: number; height: number }> {
+  const bitmap = await createImageBitmap(png);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('This browser cannot draw the photo.');
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const jpeg = await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('JPEG encoding failed'))), 'image/jpeg', 0.92),
+  );
+  return { jpeg: new Uint8Array(await jpeg.arrayBuffer()), width: canvas.width, height: canvas.height };
+}
 
 // ── AI image prep ────────────────────────────────────────────────────────────
 
@@ -192,11 +217,21 @@ function failureDetail(err: unknown): string {
 export function PhotoEditor() {
   const searchParams = useSearchParams();
   const exitEditor = useEditorExit('/photos');
-  const { success: toastSuccess, error: toastError } = useToast();
+  const { success: toastSuccess, error: toastError, warning: toastWarning } = useToast();
   const { user: currentUser } = useAuth();
   const keyPair = useSessionKeyPair(currentUser?.id);
 
   const fileId = searchParams.get('fileId');
+  const queryClient = useQueryClient();
+
+  // Key photo (issue #317). The target is null for anything but an Apple Live
+  // Photo the user may edit, which is what keeps both entry points hidden.
+  const keyPhotoTarget = useKeyPhotoTarget(fileId).data ?? null;
+  const [keyPhotoDialog, setKeyPhotoDialog] = useState<null | 'apply' | 'pick'>(null);
+  /** A frame picked with the Key Photo tool, waiting for Save to write it into the file. */
+  const [pendingKeyFrame, setPendingKeyFrame] = useState<{ seconds: number } | null>(null);
+  /** Bumped to re-read the photo after its key photo changed underneath the editor. */
+  const [reloadSeq, setReloadSeq] = useState(0);
 
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -358,7 +393,7 @@ export function PhotoEditor() {
     // keyPair belongs in the deps: this editor is routinely mounted while the
     // vault is still locked, and without a re-run on unlock the ciphertext
     // fetched on the first pass stays on screen as a broken image.
-  }, [fileId, currentUser?.id, keyPair]);
+  }, [fileId, currentUser?.id, keyPair, reloadSeq]);
 
   type EditorSnapshot = {
     imageDataUrl: string | null;
@@ -393,6 +428,31 @@ export function PhotoEditor() {
   const handleSave = useCallback(async () => {
     if (!canvasRef.current || !fileId) return;
     setIsSaving(true);
+
+    // A frame picked with the Key Photo tool is saved *into this file*, as a
+    // JPEG carrying the original's EXIF, through the same path the viewer's
+    // Choose Key Photo uses — not as a new PNG beside it (issue #317).
+    if (pendingKeyFrame && keyPhotoTarget && currentUser?.id) {
+      try {
+        const image = await exportAsJpeg(await canvasRef.current.getExportBlob());
+        const { changeKeyPhoto, CLIP_NOT_UPDATED_WARNING } = await import('../keyPhotoSession');
+        const outcome = await changeKeyPhoto(keyPhotoTarget, currentUser.id, image, pendingKeyFrame.seconds);
+        if (outcome.clipRewritten) toastSuccess('Key photo saved');
+        else toastWarning(CLIP_NOT_UPDATED_WARNING);
+        setPendingKeyFrame(null);
+        setIsDirty(false);
+        invalidateAfterKeyPhoto(queryClient);
+        setReloadSeq((n) => n + 1);
+      } catch (err) {
+        console.error('[photos:editor] key photo save failed', err);
+        const conflict = (err as Error | null)?.name === 'KeyPhotoConflictError';
+        toastError(conflict ? (err as Error).message : 'Failed to save the key photo');
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     try {
       const blob = await canvasRef.current.getExportBlob();
       const file = new File([blob], fileName || 'photo.png', { type: 'image/png' });
@@ -411,7 +471,16 @@ export function PhotoEditor() {
     } finally {
       setIsSaving(false);
     }
-  }, [fileId, fileName, folderId, currentUser?.id, toastSuccess, toastError]);
+  }, [fileId, fileName, folderId, currentUser?.id, toastSuccess, toastError, toastWarning, pendingKeyFrame, keyPhotoTarget, queryClient]);
+
+  /** The Key Photo tool's frame becomes the picture under whatever edits follow. */
+  const handleKeyFramePicked = useCallback((frame: PickedKeyFrame) => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = frame.url;
+    setImageDataUrl(frame.url);
+    setPendingKeyFrame({ seconds: frame.seconds });
+    setIsDirty(true);
+  }, []);
 
   const handleRename = useCallback(async (name: string) => {
     setFileName(name);
@@ -982,9 +1051,14 @@ export function PhotoEditor() {
         onPaste={handlePaste}
         onDelete={handleDeleteSelected}
         onRename={handleRename}
+        onChooseKeyPhoto={keyPhotoTarget ? () => setKeyPhotoDialog('apply') : undefined}
       />
       <div className={styles.editorBody}>
-        <PhotoToolbar activeTool={activeTool} onToolChange={setActiveTool} />
+        <PhotoToolbar
+          activeTool={activeTool}
+          onToolChange={setActiveTool}
+          onKeyPhoto={keyPhotoTarget ? () => setKeyPhotoDialog('pick') : undefined}
+        />
         <AdjustmentsRail
           adjustments={adjustments}
           blurAnalysis={blurAnalysis}
@@ -1060,6 +1134,19 @@ export function PhotoEditor() {
           </div>
         </AdjustmentsRail>
       </div>
+      {keyPhotoDialog && keyPhotoTarget && (
+        <KeyPhotoDialog
+          open
+          mode={keyPhotoDialog}
+          target={keyPhotoTarget}
+          onClose={() => setKeyPhotoDialog(null)}
+          onPicked={handleKeyFramePicked}
+          onChanged={() => {
+            invalidateAfterKeyPhoto(queryClient);
+            setReloadSeq((n) => n + 1);
+          }}
+        />
+      )}
       <AlertDialog
         open={confirmDialog !== null}
         onClose={() => setConfirmDialog(null)}

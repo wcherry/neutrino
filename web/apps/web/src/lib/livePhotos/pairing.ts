@@ -39,6 +39,8 @@ export interface PairableFile {
   mimeType: string;
   folderId: string | null;
   sizeBytes: number;
+  /** Bumped on every content write; part of the cache key, so a rewritten clip is fetched again. */
+  contentVersion?: number;
 }
 
 /** A clip held in a Drive file of its own — Apple's split. */
@@ -49,6 +51,8 @@ export interface FileClip {
   /** What to type the decrypted bytes as; the server may only know octet-stream. */
   mimeType: string;
   sizeBytes: number | null;
+  /** The clip file's content version when known — a key photo change (#317) rewrites the clip. */
+  contentVersion?: number;
   /** How it was found: the record's link, or a sibling's name. */
   via: 'link' | 'stem';
   /**
@@ -151,6 +155,7 @@ export function findLiveClip<T extends PairableFile>(
           ? clipMimeType({ name: clipRecord.fileName, mimeType: clipRecord.mimeType })
           : 'video/quicktime',
       sizeBytes: file?.sizeBytes ?? clipRecord?.sizeBytes ?? null,
+      ...(file?.contentVersion !== undefined ? { contentVersion: file.contentVersion } : {}),
       via: 'link',
       confirmed: true,
       subtype: (clipRecord && motionPhotoOf(clipRecord)?.subtype) || 'live_photo_apple',
@@ -166,6 +171,7 @@ export function findLiveClip<T extends PairableFile>(
       fileId: sibling.id,
       mimeType: clipMimeType(sibling),
       sizeBytes: sibling.sizeBytes,
+      ...(sibling.contentVersion !== undefined ? { contentVersion: sibling.contentVersion } : {}),
       via: 'stem',
       confirmed: clipInfo !== null,
       subtype: clipInfo?.subtype ?? 'live_photo_apple',
@@ -204,7 +210,12 @@ export function pairListing<T extends PairableFile>(
   return result;
 }
 
-/** The session-cache key a clip's verdict and bytes are kept under. */
+/**
+ * The session-cache key a clip's verdict and bytes are kept under: the file and
+ * its content version, so a clip rewritten by a key-photo change (#317) is a
+ * different entry rather than the stale one.
+ */
 export function clipKey(stillId: string, clip: LiveClip): string {
-  return clip.kind === 'file' ? clip.fileId : `embedded:${stillId}`;
+  if (clip.kind === 'embedded') return `embedded:${stillId}`;
+  return clip.contentVersion !== undefined ? `${clip.fileId}@${clip.contentVersion}` : clip.fileId;
 }

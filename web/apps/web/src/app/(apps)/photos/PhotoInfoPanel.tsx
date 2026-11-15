@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Image as ImageIcon,
   Video,
@@ -13,11 +13,18 @@ import {
   MapPin,
   Sun,
   Users,
+  Film,
 } from 'lucide-react';
-import { Text, Heading } from '@neutrino/ui';
+import { Text, Heading, Button } from '@neutrino/ui';
 import { facesApi, storageApi, type PhotoResponse } from '@/lib/api';
 import type { MotionPhotoSubtype } from '@neutrino/api-photos';
 import { LocationMap } from './LocationMap';
+import dynamic from 'next/dynamic';
+import { useKeyPhotoTarget } from './useKeyPhotoTarget';
+import { invalidateAfterKeyPhoto } from './invalidateKeyPhoto';
+
+// Loaded when the action is used, not with the library (`route-budgets.json`).
+const KeyPhotoDialog = dynamic(() => import('./KeyPhotoDialog').then((m) => m.KeyPhotoDialog), { ssr: false });
 import styles from './PhotoInfoPanel.module.css';
 
 function formatFileSize(bytes: number): string {
@@ -77,6 +84,13 @@ export function PhotoInfoPanel({
   });
   const faces = facesQuery.data?.faces ?? [];
 
+  // Choose Key Photo (issue #317): an Apple Live Photo with its clip, that the
+  // user may edit. The hook answers null for anything else.
+  const queryClient = useQueryClient();
+  const isAppleLive = subtype === 'live_photo_apple' && motion !== null && photo.mimeType.startsWith('image/');
+  const keyPhotoTarget = useKeyPhotoTarget(isAppleLive ? photo.fileId : null).data ?? null;
+  const [choosingKeyPhoto, setChoosingKeyPhoto] = useState(false);
+
   const thumbnailSrc = storageApi.getThumbnailUrl(photo.thumbnailUrl);
   const isVideo = photo.mimeType.startsWith('video/');
   const ext = photo.fileName.includes('.')
@@ -103,6 +117,23 @@ export function PhotoInfoPanel({
       <Text weight="medium" size="sm" truncate>
         {photo.fileName}
       </Text>
+
+      {keyPhotoTarget && (
+        <div className={styles.section}>
+          <Button variant="secondary" size="sm" icon={<Film size={14} />} onClick={() => setChoosingKeyPhoto(true)}>
+            Choose Key Photo
+          </Button>
+          {choosingKeyPhoto && (
+            <KeyPhotoDialog
+              open
+              mode="apply"
+              target={keyPhotoTarget}
+              onClose={() => setChoosingKeyPhoto(false)}
+              onChanged={() => invalidateAfterKeyPhoto(queryClient)}
+            />
+          )}
+        </div>
+      )}
 
       {/* Faces */}
       {photo.mimeType.startsWith('image/') && (

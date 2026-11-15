@@ -4,10 +4,13 @@
   "private": true,
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./key-photo": "./src/keyPhotoEntry.ts"
   },
   "dependencies": {
     "@neutrino/api-core": "workspace:*",
+    "@neutrino/api-drive": "workspace:*",
+    "@neutrino/e2e-crypto": "workspace:*",
     "@neutrino/utils": "workspace:*"
   },
   "devDependencies": {

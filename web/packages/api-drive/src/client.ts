@@ -1009,6 +1009,55 @@ export async function driveAutosaveEncryptedBytes(
   );
 }
 
+/** What a content write may change about the file besides its bytes. */
+export interface ReplaceFileExtras {
+  /** A new name for the file, applied once the content lands. */
+  name?: string;
+  /** A new MIME type, for a write that changes what the file is. */
+  mimeType?: string;
+  /** A new cover thumbnail, base64 JPEG/PNG/WebP as an upload sends it. */
+  thumbnailB64?: string | null;
+}
+
+/**
+ * Encrypt `bytes` with `dek` and write them as the file's live content, with a
+ * new name, type and thumbnail landing alongside (issue #317 — a Live Photo's
+ * HEIC still replaced by a JPEG frame).
+ *
+ * The same autosave route and the same stale-write guard as
+ * `driveAutosaveEncryptedBytes`; the extras ride as the optional `metadata`,
+ * `mime_type` and `thumbnail_b64` parts and are applied only once the content
+ * lands, so a rejected write leaves the name and type alone too.
+ */
+export async function driveReplaceEncryptedBytes(
+  fileId: string,
+  bytes: Uint8Array | ArrayBuffer,
+  dek: Uint8Array,
+  extras: ReplaceFileExtras = {},
+  versionCheck?: ContentVersionCheck,
+): Promise<FileItem> {
+  const cipherBytes = await sealBytes(toUint8Array(bytes), dek);
+  const formData = new FormData();
+  formData.append('file', new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' }), 'blob');
+  if (extras.name) formData.append('metadata', JSON.stringify({ title: extras.name }));
+  if (extras.mimeType) formData.append('mime_type', extras.mimeType);
+  if (extras.thumbnailB64) formData.append('thumbnail_b64', extras.thumbnailB64);
+  return request<FileItem>(
+    `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
+    { method: 'PUT', body: formData },
+  );
+}
+
+/** One version's stored bytes, as stored — ciphertext for an encrypted file. */
+export async function driveDownloadVersionBytes(fileId: string, versionId: string): Promise<Uint8Array> {
+  const blob = await request<Blob>(
+    `/api/v1/drive/files/${fileId}/versions/${versionId}/download`,
+    {},
+    { responseType: 'blob' },
+  );
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 /**
  * Encrypt raw `bytes` with `dek` and save it as a named version snapshot.
  * See `driveAutosaveEncryptedBytes` for why this avoids `TextEncoder`.

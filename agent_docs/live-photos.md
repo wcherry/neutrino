@@ -98,7 +98,35 @@ hides claimed clips, and backfills its existing Live Photos.
 **Drive iOS** (wcherry/neutrino_drive_ios_mobile#51) — when "Show in Neutrino Photos" is on,
 registers the clip, then the still in one complete write with `motionPhoto` and `liveVideoFileID`.
 
-## Why the link is an id
+## Changing the key photo (#317)
+
+Photos web can replace a Live Photo's still with another frame of its clip. The still is replaced
+**as a new Drive version of the same file**, so its id — and with it the `liveVideoFileID` link,
+album membership, favourites and shares — never changes, and the stem is kept
+(`IMG_1234.HEIC` → `IMG_1234.JPG`) so stem pairing still holds. Apple Live Photos only: a Google
+Motion Photo's clip is inside the JPEG, and replacing that still is a follow-up.
+
+- **The clip moves too.** Its `com.apple.quicktime.still-image-time` sample is a timed metadata
+  track whose sample *timestamp* is the key frame. `quicktime.ts` reads it and moves it by
+  overwriting one pair of integers in place — an empty edit in `elst` and the edit after it, or a
+  leading filler sample in `stts` and the key sample — so no box changes size, no chunk offset
+  moves, and track and movie durations are unchanged. Any other layout is refused, not guessed:
+  the still is replaced and the user is warned the motion may end on the old frame on an iPhone.
+- **Order and rollback.** Both files are snapshotted (named versions — *Original key photo*, then
+  *Key photo* — which retention never prunes), then the clip is written, then the still, then the
+  record; a failure puts back what was already written.
+- **What the record says.** `motionPhoto.stillImageTime` becomes the chosen time, and `keyPhoto`
+  records where the originals are (`originalVersionId`, `originalName`, `originalMimeType`,
+  `clipOriginalVersionId`, `originalStillImageTime`, `clipRewritten`, `frameSeconds`, `changedAt`).
+  Revert writes both originals back through autosave — not `/versions/{id}/restore`, which restores
+  bytes but not the name or type — and clears `keyPhoto`.
+- **The new JPEG carries the original's EXIF**, copied as a whole TIFF block (so Apple's MakerNote,
+  which holds the content identifier, survives byte for byte) with `Orientation` = 1 and the frame's
+  pixel size. A native client that saves the pair back to an iPhone (`PHAssetCreationRequest`) should
+  find a still and a clip that agree. **This has not yet been checked on a device or against real
+  iPhone clips** — the layouts above are the issue's expected ones, built as synthetic fixtures.
+
+
 
 The two older mechanisms each fail somewhere. A filename stem breaks the moment a clip is stored
 under another name (Photos iOS does exactly that), and Apple's content identifier is read from the

@@ -117,6 +117,7 @@ export const EDITOR_TOOLBARS: Record<EditorToolbarId, { label: string; tools: To
       { id: 'annotate', label: 'Pen, highlighter, shapes and text', caption: 'Draw' },
       { id: 'redact', label: 'Blur, pixelate and black box', caption: 'Redact' },
       { id: 'clone', label: 'Clone stamp', caption: 'Clone' },
+      { id: 'keyPhoto', label: "Choose a Live Photo's key photo", caption: 'Key Photo' },
     ],
   },
 };
