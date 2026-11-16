@@ -9,7 +9,7 @@ that opens `{server}/forgot-password` in the browser.
 1. Sign-in → **Forgot password?** → `/forgot-password` → `POST /api/v1/auth/password/forgot {email}`.
 2. The server always answers **202**, account or not. If the address belongs to a live, enabled
    account under the hourly cap, it stores a link and mails
-   `{DRIVE_URL}/reset-password?token=<token>` (sent after the response, so its latency reveals
+   `{PUBLIC_URL}/reset-password?token=<token>` (sent after the response, so its latency reveals
    nothing).
 3. `/reset-password` calls `POST /auth/password/reset/check {token}` → `{email, requiresTwoFactor}`,
    then `POST /auth/password/reset {token, newPassword, totpCode?}` → 204.

@@ -77,7 +77,7 @@ pub struct SendInvitesRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PersonalInviteLinkDto {
     pub token: String,
-    /// `{DRIVE_URL}/register?invite={token}`.
+    /// `{PUBLIC_URL}/register?invite={token}`.
     pub url: String,
     pub expires_at: String,
     pub use_count: i32,

@@ -21,7 +21,8 @@ use uuid::Uuid;
 pub struct PhotosService {
     repo: Arc<PhotosRepository>,
     drive: Arc<DriveClient>,
-    drive_base_url: String,
+    /// This server's own address (`Config::internal_url`), for queueing jobs.
+    internal_url: String,
     worker_secret: String,
     http: reqwest::Client,
 }
@@ -30,13 +31,13 @@ impl PhotosService {
     pub fn new(
         repo: Arc<PhotosRepository>,
         drive: Arc<DriveClient>,
-        drive_base_url: String,
+        internal_url: String,
         worker_secret: String,
     ) -> Self {
         PhotosService {
             repo,
             drive,
-            drive_base_url,
+            internal_url,
             worker_secret,
             http: reqwest::Client::new(),
         }
@@ -118,7 +119,7 @@ impl PhotosService {
         file_id: &str,
         user_id: &str,
     ) -> Result<(), String> {
-        let url = format!("{}/api/v1/jobs", self.drive_base_url);
+        let url = format!("{}/api/v1/jobs", self.internal_url);
         let body = serde_json::json!({
             "jobType": "face_detect",
             "payload": { "photoId": photo_id, "fileId": file_id, "userId": user_id },
@@ -140,7 +141,7 @@ impl PhotosService {
     }
 
     async fn enqueue_thumbnail_job(&self, file_id: &str) -> Result<(), String> {
-        let url = format!("{}/api/v1/jobs", self.drive_base_url);
+        let url = format!("{}/api/v1/jobs", self.internal_url);
         let body = serde_json::json!({
             "jobType": "thumbnail",
             "payload": { "fileId": file_id },
