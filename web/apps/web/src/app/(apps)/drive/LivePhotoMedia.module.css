@@ -87,7 +87,7 @@
   border: none;
   border-radius: var(--radius-full, 999px);
   background: rgba(0, 0, 0, 0.55);
-  color: var(--palette-gray-100, #fff);
+  color: var(--palette-gray-100);
   font: inherit;
   font-size: var(--font-size-10, 10px);
   font-weight: 600;
