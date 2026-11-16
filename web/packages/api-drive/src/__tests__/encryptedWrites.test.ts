@@ -43,6 +43,8 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   encryptMetadata: (meta: Record<string, unknown>) => `enc(${JSON.stringify(meta)})`,
   openSealedFileKey: () => new Uint8Array(32).fill(4),
   encryptFile: (plain: Uint8Array) => plain,
+  encryptFileBody: (plain: Uint8Array) => plain,
+  encryptBlobNeb1: async (blob: Blob) => new Blob([blob], { type: 'application/octet-stream' }),
 }));
 
 const generateThumbnail = vi.fn();

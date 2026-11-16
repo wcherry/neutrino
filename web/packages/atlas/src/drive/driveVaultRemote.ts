@@ -4,7 +4,7 @@ import {
   activeKeyVersion,
   decryptFile,
   decryptMetadata,
-  encryptFile,
+  encryptFileBody,
   encryptFileKey,
   encryptMetadata,
   generateFileKey,
@@ -140,7 +140,7 @@ export class DriveVaultRemote implements VaultRemote {
     form.append('mime_type', mimeType);
     form.append('encrypted_file_key', encryptFileKey(dek, active.publicKey));
     form.append('key_version', String(active.version));
-    form.append('file', new Blob([buffer(encryptFile(data, dek))], { type: 'application/octet-stream' }), name);
+    form.append('file', new Blob([buffer(encryptFileBody(data, dek))], { type: 'application/octet-stream' }), name);
     const file = await call<FileDTO>('POST', '/api/v1/drive/files/upload', form);
     this.deks.set(file.id, dek);
     this.names.set(file.id, name);
@@ -153,7 +153,7 @@ export class DriveVaultRemote implements VaultRemote {
     // No `metadata` part: autosave would apply its title as a rename, and the name is managed
     // by `move`.
     const form = new FormData();
-    form.append('file', new Blob([buffer(encryptFile(data, dek))], { type: 'application/octet-stream' }), this.names.get(id) ?? 'file');
+    form.append('file', new Blob([buffer(encryptFileBody(data, dek))], { type: 'application/octet-stream' }), this.names.get(id) ?? 'file');
     const file = await call<FileDTO>('PUT', `/api/v1/drive/files/${id}/autosave?expectedContentVersion=${expectedVersion}`, form);
     return file.contentVersion;
   }

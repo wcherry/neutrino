@@ -19,6 +19,8 @@ import {
   encryptFile,
   decryptFile,
   encryptFileNeb1,
+  encryptFileBody,
+  encryptBlobNeb1,
   decryptNeb1,
   decryptPhotosChunked,
   chunkSizeFromMetadata,
@@ -154,5 +156,44 @@ describe('v0 is unchanged', () => {
   it('fails a wrong key with the v0 error, not a chunked one', () => {
     const blob = encryptFile(plaintextOf(3 * 1024 * 1024), generateFileKey());
     expect(() => decryptFile(blob, generateFileKey())).toThrow(/invalid ciphertext or key/);
+  });
+});
+
+describe('writing file bodies', () => {
+  it('encryptFileBody writes NEB1', () => {
+    const dek = generateFileKey();
+    const plain = plaintextOf(10_000);
+    const body = encryptFileBody(plain, dek);
+    expect(Array.from(body.subarray(0, 4))).toEqual([0x4e, 0x45, 0x42, 0x31]);
+    expect(decryptFile(body, dek)).toEqual(plain);
+  });
+
+  it('encryptBlobNeb1 produces what the readers open, at the boundary sizes', async () => {
+    for (const C of [NEB1_MIN_CHUNK_SIZE, 65_536]) {
+      for (const size of [0, 1, C - 1, C, C + 1, 2 * C, 2 * C + 1]) {
+        const dek = generateFileKey();
+        const plain = plaintextOf(size);
+        const blob = await encryptBlobNeb1(new Blob([plain]), dek, C);
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        expect(bytes.length).toBe(44 + size + 17 * Math.max(1, Math.ceil(size / C)));
+        expect(decryptNeb1(bytes, dek)).toEqual(plain);
+      }
+    }
+  });
+
+  it('encryptBlobNeb1 reads the source a chunk at a time, never whole', async () => {
+    const C = NEB1_MIN_CHUNK_SIZE;
+    const source = new Blob([plaintextOf(10 * C + 3)]);
+    const sliced: number[] = [];
+    const slice = source.slice.bind(source);
+    source.slice = (start?: number, end?: number, type?: string) => {
+      sliced.push((end ?? source.size) - (start ?? 0));
+      return slice(start, end, type);
+    };
+    const progress: number[] = [];
+    await encryptBlobNeb1(source, generateFileKey(), C, (f) => progress.push(f));
+    expect(sliced).toHaveLength(11);
+    expect(Math.max(...sliced)).toBe(C);
+    expect(progress.at(-1)).toBe(1);
   });
 });

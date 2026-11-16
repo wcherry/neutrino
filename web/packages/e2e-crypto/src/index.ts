@@ -6,6 +6,8 @@ export {
   encryptFile,
   decryptFile,
   encryptFileNeb1,
+  encryptFileBody,
+  encryptBlobNeb1,
   decryptNeb1,
   decryptPhotosChunked,
   chunkSizeFromMetadata,

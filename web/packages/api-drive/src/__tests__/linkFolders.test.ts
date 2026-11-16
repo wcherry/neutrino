@@ -24,6 +24,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   encryptFileKey: (_dek: Uint8Array, pk: Uint8Array) => `sealed-to:${new TextDecoder().decode(pk)}`,
   encryptMetadata: (meta: Record<string, unknown>) => `enc(${JSON.stringify(meta)})`,
   encryptFile: (plain: Uint8Array) => plain,
+  encryptFileBody: (plain: Uint8Array) => plain,
   fromBase64url: (s: string) => new TextEncoder().encode(s),
   linkPublicKey: async (seed: string) => `pk-of-${seed}`,
   openSealedFileKey: () => new Uint8Array(32).fill(4),
