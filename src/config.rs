@@ -33,7 +33,19 @@ pub struct Config {
 
     // OAuth for calendar connections
     pub oauth: OAuthConfig,
-    pub drive_base_url: String,
+
+    /// The address people reach this server on (`PUBLIC_URL`), e.g.
+    /// `https://neutrino.example.com`. Every link the server hands out starts
+    /// with it: verification, reset, invite, share and notification email,
+    /// and invite links returned by the API. Never used to call the server
+    /// itself — that is [`Config::internal_url`].
+    pub public_url: String,
+
+    /// How the server reaches its own API from inside the process or
+    /// container: always `http://127.0.0.1:<PORT>`, which is what it binds.
+    /// Not configurable, so changing `PUBLIC_URL` can never send a self-call
+    /// out through a reverse proxy.
+    pub internal_url: String,
 
     pub web_dir: String,
 
@@ -72,7 +84,7 @@ pub struct OAuthConfig {
     pub outlook_client_secret: Option<String>,
     /// See [`OAuthConfig::google_redirect_uri`]; same rule.
     pub outlook_redirect_uri: Option<String>,
-    /// Where the deployment believes it lives, from `DRIVE_URL`. Only the
+    /// Where the deployment believes it lives, from `PUBLIC_URL`. Only the
     /// fallback for a redirect URI — the request's own origin is preferred.
     pub base_url: String,
 }
@@ -136,6 +148,61 @@ fn redirect_uri(
     }
 }
 
+/// What [`resolve_public_url`] settled on, and anything an admin should hear
+/// about it.
+#[derive(Debug, PartialEq)]
+struct PublicUrl {
+    url: String,
+    warnings: Vec<String>,
+}
+
+/// `PUBLIC_URL`, else the old name `DRIVE_URL`, else `http://localhost:<PORT>`.
+///
+/// `DRIVE_URL` is still read so a deployment that set it keeps working after
+/// the rename. Dropping it would have quietly put localhost back into every
+/// emailed link. The localhost default only suits a server nobody reaches from
+/// another machine, so falling back to it gets a warning too.
+fn resolve_public_url(public: Option<String>, legacy: Option<String>, port: u16) -> PublicUrl {
+    let mut warnings = Vec::new();
+    let url = match (public, legacy) {
+        (Some(url), legacy) => {
+            if legacy.is_some() {
+                warnings.push(
+                    "DRIVE_URL is ignored because PUBLIC_URL is set; remove DRIVE_URL".to_string(),
+                );
+            }
+            url
+        }
+        (None, Some(url)) => {
+            warnings.push("DRIVE_URL is deprecated; rename it to PUBLIC_URL".to_string());
+            url
+        }
+        (None, None) => format!("http://localhost:{}", port),
+    };
+    let url = url.trim().trim_end_matches('/').to_string();
+    if is_loopback(&url) {
+        warnings.push(format!(
+            "PUBLIC_URL is {url}: links in email will only open on this machine. \
+             Set PUBLIC_URL to the address people reach this server on"
+        ));
+    }
+    PublicUrl { url, warnings }
+}
+
+fn is_loopback(url: &str) -> bool {
+    let host = url
+        .split_once("://")
+        .map_or(url, |(_, rest)| rest)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    let host = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host, |(h, _)| h),
+    };
+    host.eq_ignore_ascii_case("localhost") || host.starts_with("127.") || host == "::1"
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, String> {
         let port = env::var("PORT")
@@ -195,8 +262,17 @@ impl Config {
             .unwrap_or(4)
             .max(1);
 
-        let drive_base_url =
-            env::var("DRIVE_URL").unwrap_or_else(|_| format!("http://localhost:{}", port));
+        let public_url = resolve_public_url(
+            non_empty(env::var("PUBLIC_URL").ok()),
+            non_empty(env::var("DRIVE_URL").ok()),
+            port,
+        );
+        for warning in &public_url.warnings {
+            // Printed for the same reason as the paths below: logging is not up yet.
+            println!("WARNING: {warning}");
+        }
+        let public_url = public_url.url;
+        let internal_url = format!("http://127.0.0.1:{}", port);
 
         let oauth = OAuthConfig {
             google_client_id: get_env_or_secret("GOOGLE_CLIENT_ID").ok(),
@@ -205,7 +281,7 @@ impl Config {
             outlook_client_id: get_env_or_secret("OUTLOOK_CLIENT_ID").ok(),
             outlook_client_secret: get_env_or_secret("OUTLOOK_CLIENT_SECRET").ok(),
             outlook_redirect_uri: non_empty(get_env_or_secret("OUTLOOK_REDIRECT_URI").ok()),
-            base_url: drive_base_url.clone(),
+            base_url: public_url.clone(),
         };
 
         let web_dir = env::var("WEB_DIR").unwrap_or_else(|_| "web/apps/web/out".to_string());
@@ -219,7 +295,8 @@ impl Config {
         // instead of on the day the files cannot be found. Printed rather than
         // logged because `init_logging` runs on the values being returned here.
         println!(
-            "Resolved paths: database={} storage={} web={} logs={}",
+            "Resolved paths: public_url={} database={} storage={} web={} logs={}",
+            public_url,
             database_url,
             storage_path,
             web_dir,
@@ -240,8 +317,9 @@ impl Config {
             temp_max_age_secs,
             worker_secret,
             jobs_per_worker,
-            drive_base_url,
             oauth,
+            public_url,
+            internal_url,
             web_dir,
             public_signup_open,
             email_verification: env::var("EMAIL_VERIFICATION").ok(),
@@ -252,6 +330,64 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resolve(public: Option<&str>, legacy: Option<&str>) -> PublicUrl {
+        resolve_public_url(public.map(str::to_string), legacy.map(str::to_string), 8080)
+    }
+
+    #[test]
+    fn public_url_is_read_as_given_without_a_trailing_slash() {
+        assert_eq!(
+            resolve(Some("https://neutrino.example.com/"), None),
+            PublicUrl {
+                url: "https://neutrino.example.com".into(),
+                warnings: vec![]
+            }
+        );
+    }
+
+    #[test]
+    fn the_old_drive_url_name_still_works_with_a_warning() {
+        let got = resolve(None, Some("https://neutrino.example.com"));
+        assert_eq!(got.url, "https://neutrino.example.com");
+        assert_eq!(got.warnings.len(), 1);
+        assert!(got.warnings[0].contains("rename it to PUBLIC_URL"));
+    }
+
+    #[test]
+    fn public_url_wins_over_drive_url() {
+        let got = resolve(Some("https://new.example"), Some("http://localhost:8080"));
+        assert_eq!(got.url, "https://new.example");
+        assert_eq!(got.warnings.len(), 1);
+        assert!(got.warnings[0].contains("DRIVE_URL is ignored"));
+    }
+
+    #[test]
+    fn unset_defaults_to_localhost_and_says_so() {
+        let got = resolve(None, None);
+        assert_eq!(got.url, "http://localhost:8080");
+        assert_eq!(got.warnings.len(), 1);
+        assert!(got.warnings[0].contains("only open on this machine"));
+    }
+
+    #[test]
+    fn a_loopback_public_url_is_warned_about() {
+        for url in [
+            "http://localhost:8080",
+            "http://LOCALHOST",
+            "http://127.0.0.1:9000/",
+            "http://[::1]:8080",
+        ] {
+            assert_eq!(resolve(Some(url), None).warnings.len(), 1, "{url}");
+        }
+        for url in [
+            "https://neutrino.example.com",
+            "http://192.168.1.10:8080",
+            "https://localhost.example.com",
+        ] {
+            assert!(resolve(Some(url), None).warnings.is_empty(), "{url}");
+        }
+    }
 
     #[test]
     fn public_signup_defaults_to_open_and_refuses_unknown_values() {

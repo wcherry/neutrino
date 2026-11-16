@@ -273,7 +273,7 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `DATABASE_URL` | `./data/neutrino.db` | SQLite database file path |
 | `STORAGE_PATH` | `./storage` | Root directory for uploaded files |
 | `WEB_DIR` | `web/apps/web/out` | Path to the built Next.js static export (preset in the Docker image) |
-| `DRIVE_URL` | `http://localhost:<PORT>` | Public base URL of this server; used for share links, links in notification email, and OAuth callbacks |
+| `PUBLIC_URL` | `http://localhost:<PORT>` | The address people reach this server on (e.g. `https://neutrino.example.com`). Every link the server sends starts with it — verification, password reset, invite, share and notification email — and it is the fallback for OAuth callbacks. Set it even in a container: the server calls itself on `127.0.0.1:<PORT>`, never through this. Replaces `DRIVE_URL`, which still works with a startup warning |
 | `MAX_UPLOAD_BYTES` | `10737418240` | Largest single-file upload (default 10 GiB) |
 | `JWT_ACCESS_EXPIRY_SECS` | `900` | Access token lifetime |
 | `JWT_REFRESH_EXPIRY_SECS` | `604800` | Refresh token lifetime (7 days) |

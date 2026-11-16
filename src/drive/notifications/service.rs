@@ -15,7 +15,7 @@ use uuid::Uuid;
 pub struct NotificationService {
     repo: Arc<NotificationsRepository>,
     mailer: Arc<Mailer>,
-    /// The public origin links in email point at (`DRIVE_URL`).
+    /// The public origin links in email point at (`PUBLIC_URL`).
     base_url: String,
     hub: Arc<NotificationHub>,
 }

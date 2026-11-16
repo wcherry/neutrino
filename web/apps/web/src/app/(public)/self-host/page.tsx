@@ -50,9 +50,7 @@ const commonVars = [
   { name: 'PORT', default: '8080', desc: 'HTTP listen port.' },
   { name: 'DATABASE_URL', default: './data/neutrino.db', desc: 'Path to the SQLite database file. Point this at your mounted volume.' },
   { name: 'STORAGE_PATH', default: './data/storage', desc: 'Root directory for uploaded files. Put it on the same volume as the database.' },
-  { name: 'APP_BASE_URL', default: 'http://localhost:<PORT>', desc: 'Public base URL used in links sent to users. Set this to your real hostname or emailed links will point at localhost.' },
-  { name: 'SELF_URL', default: 'http://localhost:<PORT>', desc: 'Public base URL of this server.' },
-  { name: 'DRIVE_URL', default: 'http://localhost:<PORT>', desc: 'Public URL of the Drive service.' },
+  { name: 'PUBLIC_URL', default: 'http://localhost:<PORT>', desc: 'The address people reach this server on, e.g. https://neutrino.example.com. Every link in email (verification, password reset, invites, shares, notifications) starts with it, so set it to your real hostname even when the server runs in a container. Replaces DRIVE_URL, which still works but logs a warning.' },
   { name: 'MAX_UPLOAD_BYTES', default: '10737418240', desc: 'Largest single-file upload, in bytes. Defaults to 10 GiB.' },
   { name: 'LOG_LEVEL', default: 'info', desc: 'One of error, warn, info, debug, trace.' },
   { name: 'LOG_PATH', default: '(stdout only)', desc: 'Directory for log files, written as service.<date>.log and worker.<date>.log and rotated daily. Leave unset to log to stdout only, which is what you want if you collect logs off the container.' },
@@ -217,9 +215,7 @@ docker run -d --name neutrino \\
   -e WORKER_SECRET="$WORKER_SECRET" \\
   -e DATABASE_URL=/usr/local/data/neutrino.db \\
   -e STORAGE_PATH=/usr/local/data/storage \\
-  -e APP_BASE_URL=https://neutrino.example.com \\
-  -e SELF_URL=https://neutrino.example.com \\
-  -e DRIVE_URL=https://neutrino.example.com \\
+  -e PUBLIC_URL=https://neutrino.example.com \\
   -v neutrino-data:/usr/local/data \\
   --restart unless-stopped \\
   ${IMAGE}`}</Code>
@@ -249,9 +245,7 @@ docker run -d --name neutrino \\
       WORKER_SECRET: \${WORKER_SECRET}
       DATABASE_URL: /usr/local/data/neutrino.db
       STORAGE_PATH: /usr/local/data/storage
-      APP_BASE_URL: https://neutrino.example.com
-      SELF_URL: https://neutrino.example.com
-      DRIVE_URL: https://neutrino.example.com
+      PUBLIC_URL: https://neutrino.example.com
       LOG_LEVEL: info
       LOG_PATH: /usr/local/logs
     volumes:
@@ -298,9 +292,7 @@ WORKER_SECRET=replace-me-too
 DATABASE_URL=/var/lib/neutrino/neutrino.db
 STORAGE_PATH=/var/lib/neutrino/storage
 WEB_DIR=/usr/local/share/neutrino/web
-APP_BASE_URL=https://neutrino.example.com
-SELF_URL=https://neutrino.example.com
-DRIVE_URL=https://neutrino.example.com
+PUBLIC_URL=https://neutrino.example.com
 PORT=8080
 LOG_LEVEL=info`}</Code>
             <Code title="/etc/systemd/system/neutrino.service">{`[Unit]
@@ -431,12 +423,11 @@ sudo systemctl status neutrino-worker`}</Code>
     }
 }`}</Code>
             <div className={styles.callout}>
-              Set <code className={styles.inlineCode}>APP_BASE_URL</code>,
-              <code className={styles.inlineCode}>SELF_URL</code> and
-              <code className={styles.inlineCode}>DRIVE_URL</code> to the public HTTPS
-              hostname. They are what share links and emails are built from, so if they
-              still say <code className={styles.inlineCode}>localhost</code> those links
-              will be wrong for everyone but you.
+              Set <code className={styles.inlineCode}>PUBLIC_URL</code> to the public HTTPS
+              hostname. It is what share links and emails are built from, so if it still
+              says <code className={styles.inlineCode}>localhost</code> those links will be
+              wrong for everyone but you. The server calls itself on its own port, so this
+              never needs to be an internal address.
             </div>
           </section>
 
@@ -538,10 +529,10 @@ sudo systemctl start neutrino`}</Code>
 
             <h3 className={styles.h3}>Share links point at localhost</h3>
             <p className={styles.p}>
-              <code className={styles.inlineCode}>APP_BASE_URL</code>,
-              <code className={styles.inlineCode}>SELF_URL</code> and
-              <code className={styles.inlineCode}>DRIVE_URL</code> are still on their
-              defaults. Set all three to the public hostname and restart.
+              <code className={styles.inlineCode}>PUBLIC_URL</code> is unset or still says
+              localhost; the server logs a warning about it at startup. Set it to the
+              public hostname and restart. Links already sent keep the old address, so ask
+              for a new verification or reset email afterwards.
             </p>
 
             <h3 className={styles.h3}>Live collaboration does not connect</h3>

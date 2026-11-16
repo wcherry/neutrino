@@ -409,7 +409,7 @@ async fn main() -> std::io::Result<()> {
             )),
             auth_repo.clone(),
             mailer.clone(),
-            config.drive_base_url.clone(),
+            config.public_url.clone(),
             email_verification_mode,
         ),
     );
@@ -679,7 +679,7 @@ async fn main() -> std::io::Result<()> {
     let drive_notification_service = Arc::new(NotificationService::new(
         drive_notifications_repo,
         mailer.clone(),
-        config.drive_base_url.clone(),
+        config.public_url.clone(),
         notification_hub.clone(),
     ));
 
@@ -763,14 +763,14 @@ async fn main() -> std::io::Result<()> {
         Arc::new(auth::invites::repository::InviteRepository::new(pool.clone())),
         config.jwt_secret.clone(),
         mailer.clone(),
-        config.drive_base_url.clone(),
+        config.public_url.clone(),
     ));
     let invites_state = web::Data::new(auth::invites::api::InvitesApiState {
         invites: invite_service.clone(),
     });
     let welcome_mailer = Arc::new(auth::welcome::WelcomeMailer::new(
         mailer.clone(),
-        config.drive_base_url.clone(),
+        config.public_url.clone(),
     ));
     // Defences against scripted mass sign-up: address checks, CAPTCHA, rate limits.
     let signup_guard_config = auth::signup_guard::config::SignupGuardConfig::from_env()
@@ -814,7 +814,7 @@ async fn main() -> std::io::Result<()> {
             auth_repo.clone(),
             auth_service.clone(),
             mailer.clone(),
-            config.drive_base_url.clone(),
+            config.public_url.clone(),
         )
         .with_email_verification(email_verification_mode)),
     });
@@ -1048,7 +1048,7 @@ async fn main() -> std::io::Result<()> {
     let photos_service = Arc::new(PhotosService::new(
         photos_photos_repo.clone(),
         drive_client_for_photos,
-        config.drive_base_url.clone(),
+        config.internal_url.clone(),
         config.worker_secret.clone(),
     ));
     // Empty the photo trash on the schedule the clients promise the user.
@@ -1082,7 +1082,7 @@ async fn main() -> std::io::Result<()> {
     let weekly_service = Arc::new(weekly::service::WeeklyEmailService::new(
         Arc::new(weekly::repository::WeeklyRepository::new(pool.clone())),
         mailer.clone(),
-        config.drive_base_url.clone(),
+        config.public_url.clone(),
     ));
     let weekly_state = web::Data::new(weekly::api::WeeklyApiState {
         service: weekly_service.clone(),
@@ -1217,7 +1217,10 @@ async fn main() -> std::io::Result<()> {
     let slides_service = Arc::new(SlidesService::new(slides_slides_repo));
     let slides_state = web::Data::new(slides::slides::api::SlidesApiState { slides_service });
 
-    let slides_ai_service = Arc::new(slides::ai::service::SlidesAIService::new(ai_client.clone()));
+    let slides_ai_service = Arc::new(slides::ai::service::SlidesAIService::new(
+        ai_client.clone(),
+        config.internal_url.clone(),
+    ));
     let slides_ai_state = web::Data::new(slides::ai::api::SlidesAIApiState {
         ai_service: slides_ai_service,
     });

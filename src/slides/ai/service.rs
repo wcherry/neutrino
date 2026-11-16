@@ -15,17 +15,16 @@ pub struct ImageResult {
 
 pub struct SlidesAIService {
     ai: Arc<AiClient>,
-    drive_url: String,
+    /// This server's own address (`Config::internal_url`), for the image search.
+    internal_url: String,
     http_client: reqwest::Client,
 }
 
 impl SlidesAIService {
-    pub fn new(ai: Arc<AiClient>) -> Self {
-        let drive_url =
-            std::env::var("DRIVE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    pub fn new(ai: Arc<AiClient>, internal_url: String) -> Self {
         SlidesAIService {
             ai,
-            drive_url,
+            internal_url,
             http_client: reqwest::Client::new(),
         }
     }
@@ -62,7 +61,7 @@ impl SlidesAIService {
             .collect();
         let url = format!(
             "{}/api/v1/drive/files?mime_type=image&name={}&limit=20",
-            self.drive_url, encoded_query
+            self.internal_url, encoded_query
         );
 
         let resp = self

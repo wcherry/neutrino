@@ -6,7 +6,7 @@ welcome email (`src/auth/welcome.rs`) already existed and is unchanged.
 ## Email verification
 
 Every new account (self-serve, invite, admin-created) is mailed a single-use link to
-`{DRIVE_URL}/verify-email?token=…`, alongside the welcome email. How strict it is comes from
+`{PUBLIC_URL}/verify-email?token=…`, alongside the welcome email. How strict it is comes from
 `EMAIL_VERIFICATION`:
 
 | Mode | Links sent | Banner | Sharing, password reset | Sign-in after 30 days |
