@@ -53,4 +53,6 @@ export type {
   PublicKeyVersion,
   PublicKeyRingResponse,
   SetPublicKeyRequest,
+  AppPassword,
+  CreatedAppPassword,
 } from './types';

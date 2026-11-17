@@ -787,6 +787,14 @@ export default function CalendarPage() {
           knownTags={allTags(allTasks)}
           onClose={() => setEditingTask(null)}
           onSave={(id, req) => updateTask.mutateAsync({ id, req })}
+          onDelete={async (id) => {
+            await calendarApi.deleteTask(id);
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ['tasks'] }),
+              // A scheduled task takes its event with it.
+              qc.invalidateQueries({ queryKey: ['events'] }),
+            ]);
+          }}
         />
       )}
 

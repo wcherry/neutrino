@@ -1,5 +1,11 @@
 # Plan: Neutrino as a CalDAV server, for Apple Calendar and Apple Reminders
 
+> **Implemented** on `feature/caldav`; the design as built is `agent_docs/caldav.md`. Two
+> departures from this plan: the DAV bookkeeping (`ical_uid`, `dav_name`, `ical_extra`, the home
+> list) is a side table, `dav_objects`, rather than columns on `events` and `tasks`; and the
+> change log is written by SQLite triggers rather than by the services, with task deletion a
+> hard delete the log records instead of a `deleted_at`.
+
 So that Neutrino can be added as an account in the iPhone's Settings, with its calendars in Apple
 Calendar and its task lists in Apple Reminders:
 

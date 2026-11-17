@@ -619,6 +619,31 @@ export const calendarApi = {
     });
   },
 
+  /** Takes a task out of a list; the task itself is kept. */
+  async removeTaskFromList(taskId: string, listId: string): Promise<void> {
+    return request<void>(`/api/v1/calendar/tasks/${taskId}/lists/${listId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** Deletes a task for good, with its tags, attachments and reminders, and its event if scheduled. */
+  async deleteTask(taskId: string): Promise<void> {
+    return request<void>(`/api/v1/calendar/tasks/${taskId}`, { method: 'DELETE' });
+  },
+
+  /** Renames or recolours a list; `color: null` clears it. */
+  async updateTaskList(listId: string, body: { name?: string; color?: string | null }): Promise<TaskListResponse> {
+    return request<TaskListResponse>(`/api/v1/calendar/tasks/lists/${listId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Deletes a list. Its tasks are kept, out of the list. */
+  async deleteTaskList(listId: string): Promise<void> {
+    return request<void>(`/api/v1/calendar/tasks/lists/${listId}`, { method: 'DELETE' });
+  },
+
   async updateTask(taskId: string, body: UpdateTaskRequest): Promise<TaskResponse> {
     return request<TaskResponse>(`/api/v1/calendar/tasks/${taskId}`, {
       method: 'PATCH',

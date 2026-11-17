@@ -429,6 +429,20 @@ sudo systemctl status neutrino-worker`}</Code>
               wrong for everyone but you. The server calls itself on its own port, so this
               never needs to be an internal address.
             </div>
+            <p className={styles.p}>
+              Calendar and reminders apps (Apple Calendar and Reminders, Thunderbird, DAVx⁵)
+              connect over CalDAV, at <code className={styles.inlineCode}>/dav</code>, and find it
+              from the bare hostname through <code className={styles.inlineCode}>/.well-known/caldav</code>.
+              Both configurations above pass CalDAV&apos;s methods
+              (<code className={styles.inlineCode}>PROPFIND</code>, <code className={styles.inlineCode}>REPORT</code>,{' '}
+              <code className={styles.inlineCode}>MKCALENDAR</code>, <code className={styles.inlineCode}>MOVE</code>) and
+              headers through unchanged. If something else answers
+              <code className={styles.inlineCode}>/.well-known/</code> on your host, route
+              <code className={styles.inlineCode}>/.well-known/caldav</code> to Neutrino too. These apps sign
+              in with app passwords, and repeated failures are limited per client address, so set
+              <code className={styles.inlineCode}>CLIENT_IP_HEADER</code> to the header your proxy writes,
+              or every client is counted as the proxy.
+            </p>
           </section>
 
           <section id="backups" className={styles.block}>

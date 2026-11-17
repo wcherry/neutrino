@@ -1,4 +1,5 @@
 pub mod api;
+pub mod app_passwords;
 pub mod dto;
 pub mod email_verification;
 pub mod invites;

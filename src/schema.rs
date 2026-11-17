@@ -1368,6 +1368,44 @@ diesel::joinable!(team_page_versions -> team_pages (page_id));
 
 // ── Cross-table query allowlist ───────────────────────────────────────────────
 
+// ── Added in migration 158: CalDAV ───────────────────────────────────────────
+diesel::table! {
+    app_passwords (id) {
+        id -> Text,
+        user_id -> Text,
+        name -> Text,
+        password_hash -> Text,
+        scope -> Text,
+        created_at -> Timestamp,
+        last_used_at -> Nullable<Timestamp>,
+        revoked_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    dav_objects (kind, object_id) {
+        kind -> Text,
+        object_id -> Text,
+        user_id -> Text,
+        uid -> Text,
+        name -> Text,
+        collection -> Text,
+        extra -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    dav_changes (seq) {
+        seq -> Integer,
+        user_id -> Text,
+        kind -> Text,
+        object_id -> Text,
+        changed_at -> Timestamp,
+    }
+}
+
+diesel::joinable!(app_passwords -> users (user_id));
+
 diesel::allow_tables_to_appear_in_same_query!(
     // Auth
     users,
@@ -1377,7 +1415,10 @@ diesel::allow_tables_to_appear_in_same_query!(
     password_policies,
     password_history,
     signup_events,
+    app_passwords,
     // Calendar
+    dav_objects,
+    dav_changes,
     calendars,
     events,
     reminders,

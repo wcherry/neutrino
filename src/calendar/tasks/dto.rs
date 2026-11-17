@@ -23,6 +23,16 @@ pub struct CreateTaskListRequest {
     pub color: Option<String>,
 }
 
+/// Rename or recolour a list. Omit a field to leave it alone; `color: null` clears it.
+#[derive(Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateTaskListRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    pub color: Option<Option<String>>,
+}
+
 // ── Task List Response types ──────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, ToSchema)]

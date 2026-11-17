@@ -400,6 +400,36 @@ impl EventsService {
 
     /// A series an occurrence can be taken from: live, repeating, not itself an exception, and
     /// not in a read-only calendar.
+    /// Undoes one exception: the occurrence it changed or cancelled is the series' own again.
+    /// The exception is soft-deleted, so the changes feed reports it. Used by CalDAV, where a
+    /// client that drops an override from a series means exactly this.
+    pub fn restore_occurrence(
+        &self,
+        user: &AuthenticatedUser,
+        series_id: &str,
+        exception_id: &str,
+    ) -> Result<(), ApiError> {
+        let now = Utc::now().naive_utc();
+        self.repo.transaction(|conn| {
+            let series = series::find_live(conn, series_id, &user.user_id)?;
+            calendars::ensure_writable(conn, &user.user_id, series.calendar_id.as_deref())?;
+            let exception = series::find_live(conn, exception_id, &user.user_id)?;
+            if exception.recurring_event_id.as_deref() != Some(series_id) {
+                return Err(ApiError::not_found("Event not found"));
+            }
+            series::update(
+                conn,
+                exception_id,
+                &UpdateEventRecord {
+                    deleted_at: Some(Some(now)),
+                    updated_at: now,
+                    ..Default::default()
+                },
+            )?;
+            Ok(())
+        })
+    }
+
     fn live_series(
         &self,
         conn: &mut diesel::SqliteConnection,
