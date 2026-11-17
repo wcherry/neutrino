@@ -89,16 +89,17 @@ export function LocalImportSummary({ local, blockedReason, onStart }: LocalImpor
       {blockedReason && <Alert variant="info" message={blockedReason} />}
 
       <div className={styles.actions}>
-        <Button onClick={onStart} disabled={!local.canStart || !!blockedReason}>
-          Import {filesLabel(fileCount)}
-        </Button>
-        <span className={styles.actionsHint}>
-          {fileCount > 0 && `${formatBytes(bytes)} · `}Runs in the background — go on to the next step or finish
-          setup while it uploads.
-        </span>
-        <Button variant="ghost" size="sm" onClick={local.clear}>
-          Clear
-        </Button>
+        <div className={styles.actionsRow}>
+          <Button variant="primary" className={styles.importButton} onClick={onStart} disabled={!local.canStart || !!blockedReason}>
+            Import {filesLabel(fileCount)}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={local.clear}>
+            Clear
+          </Button>
+        </div>
+        <p className={styles.actionsHint}>
+          {fileCount > 0 && `${formatBytes(bytes)} · `}Runs in the background — you can keep going while it uploads.
+        </p>
       </div>
 
       {choosingFolder && (

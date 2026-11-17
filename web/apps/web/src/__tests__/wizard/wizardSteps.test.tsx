@@ -60,8 +60,10 @@ vi.mock('@neutrino/ui', async (importOriginal) => ({
   ),
 }));
 const localImportStarted = vi.hoisted(() => ({ fire: null as null | (() => void) }));
+vi.mock('@/components/ImportRun', () => ({ useImportRun: () => ({ state: { status: 'idle' } }) }));
 vi.mock('@/components/LocalImport', () => ({
-  LocalImport: ({ onStarted, showTakeout }: { onStarted?: () => void; showTakeout?: boolean }) => {
+  useLocalImport: () => ({ fileCount: 0, start: async () => false }),
+  LocalImportPanel: ({ onStarted, showTakeout }: { onStarted?: () => void; showTakeout?: boolean }) => {
     localImportStarted.fire = () => onStarted?.();
     return (
       <div data-testid="local-import" data-takeout={String(showTakeout)}>
@@ -92,6 +94,7 @@ function host() {
   const value = {
     markDone: () => { state.done += 1; },
     setCommit: (c: StepCommit | null) => { state.commit = c; },
+    setForward: () => {},
   };
   return { state, value };
 }

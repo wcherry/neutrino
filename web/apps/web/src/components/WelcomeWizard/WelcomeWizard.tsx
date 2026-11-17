@@ -7,7 +7,8 @@
  * A left column lists the seven steps with a status each, and under it a footnote saying where the
  * current step's settings live later. The main area holds "Step N of 7", the heading, the intro and
  * the step itself. The footer is the progress bar and Back / Next / Finish, and nothing else —
- * a step's own buttons (Connect, Test key, Send invites) are in its body.
+ * a step's own buttons (Connect, Test key, Send invites) are in its body. A step can make Next
+ * read "Skip" and ask before the user goes forward (`useForward`).
  *
  * Every step can be left without doing anything, and a step left that way is listed as
  * "skipped". It is not resumable: closing, or Finish, ends it for good (`onClose`), and the next
@@ -23,7 +24,7 @@ import { FilesStep } from './steps/FilesStep';
 import { InviteStep } from './steps/InviteStep';
 import { LookStep } from './steps/LookStep';
 import { ProfileStep } from './steps/ProfileStep';
-import { StepContext, type StepCommit } from './stepApi';
+import { StepContext, type StepCommit, type StepForward } from './stepApi';
 import { FIRST_STEP, LAST_STEP, STEPS, canGoBack, canGoNext, statusOf, type StepId } from './steps';
 import styles from './WelcomeWizard.module.css';
 
@@ -51,6 +52,8 @@ export function WelcomeWizard({ startStep = FIRST_STEP, onClose }: WelcomeWizard
   const [left, setLeft] = useState<ReadonlySet<StepId>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const commitRef = useRef<StepCommit | null>(null);
+  const guardRef = useRef<StepForward['guard'] | null>(null);
+  const [skip, setSkip] = useState(false);
 
   const step = STEPS[current];
   const Body = BODIES[step.id];
@@ -61,6 +64,13 @@ export function WelcomeWizard({ startStep = FIRST_STEP, onClose }: WelcomeWizard
   const setCommit = useCallback((commit: StepCommit | null) => {
     commitRef.current = commit;
   }, []);
+  const setForward = useCallback((forward: StepForward | null) => {
+    guardRef.current = forward?.guard ?? null;
+    setSkip(!!forward?.skip);
+  }, []);
+
+  /** Ask the step before going forward (Next/Skip, Finish); false stays on the step. */
+  const mayGoForward = useCallback(async () => (guardRef.current ? guardRef.current() : true), []);
 
   /** Run the step's save. A throw keeps the user on the step (the step shows why); `force` goes on. */
   const leave = useCallback(
@@ -83,20 +93,22 @@ export function WelcomeWizard({ startStep = FIRST_STEP, onClose }: WelcomeWizard
   const go = useCallback(
     async (delta: number) => {
       if (busy) return;
+      if (delta > 0 && !(await mayGoForward())) return;
       if (await leave(false)) setCurrent((c) => c + delta);
     },
-    [busy, leave],
+    [busy, leave, mayGoForward],
   );
 
   const end = useCallback(
     async (how: WizardEnd, force: boolean) => {
       if (busy) return;
+      if (how === 'finish' && !(await mayGoForward())) return;
       if (await leave(force)) onClose(how);
     },
-    [busy, leave, onClose],
+    [busy, leave, mayGoForward, onClose],
   );
 
-  const host = React.useMemo(() => ({ markDone, setCommit }), [markDone, setCommit]);
+  const host = React.useMemo(() => ({ markDone, setCommit, setForward }), [markDone, setCommit, setForward]);
   const last = current === LAST_STEP;
 
   return (
@@ -158,8 +170,13 @@ export function WelcomeWizard({ startStep = FIRST_STEP, onClose }: WelcomeWizard
             <Button type="button" variant="ghost" disabled={!canGoBack(current) || busy} onClick={() => void go(-1)}>
               Back
             </Button>
-            <Button type="button" variant={last ? 'secondary' : 'primary'} disabled={!canGoNext(current) || busy} onClick={() => void go(1)}>
-              Next
+            <Button
+              type="button"
+              variant={last || skip ? 'secondary' : 'primary'}
+              disabled={!canGoNext(current) || busy}
+              onClick={() => void go(1)}
+            >
+              {skip ? 'Skip' : 'Next'}
             </Button>
             <Button type="button" variant={last ? 'primary' : 'secondary'} disabled={busy} onClick={() => void end('finish', false)}>
               Finish
