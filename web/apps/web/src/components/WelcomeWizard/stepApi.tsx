@@ -14,11 +14,27 @@ export interface StepApi {
  */
 export type StepCommit = () => Promise<boolean | void>;
 
-export interface StepHost extends StepApi {
-  setCommit: (commit: StepCommit | null) => void;
+/** How a step wants the footer's forward button (Next, and Finish) to behave right now. */
+export interface StepForward {
+  /** The forward button reads "Skip", not "Next", and is not the primary button. */
+  skip?: boolean;
+  /**
+   * Asked before going forward with Next/Skip or Finish — never on Back or close. Resolves to
+   * whether to go on; false keeps the user on the step.
+   */
+  guard?: () => Promise<boolean>;
 }
 
-export const StepContext = createContext<StepHost>({ markDone: () => {}, setCommit: () => {} });
+export interface StepHost extends StepApi {
+  setCommit: (commit: StepCommit | null) => void;
+  setForward: (forward: StepForward | null) => void;
+}
+
+export const StepContext = createContext<StepHost>({
+  markDone: () => {},
+  setCommit: () => {},
+  setForward: () => {},
+});
 
 export function useStep(): StepApi {
   return useContext(StepContext);
@@ -34,4 +50,19 @@ export function useCommitOnLeave(commit: StepCommit): void {
     setCommit(() => latest.current());
     return () => setCommit(null);
   }, [setCommit]);
+}
+
+/**
+ * Say how this step's forward button reads, and what to ask before going forward. The guard is
+ * always the latest one passed; only a change of `skip` re-registers.
+ */
+export function useForward(forward: StepForward): void {
+  const { setForward } = useContext(StepContext);
+  const latest = useRef(forward);
+  latest.current = forward;
+  const skip = !!forward.skip;
+  useEffect(() => {
+    setForward({ skip, guard: () => latest.current.guard?.() ?? Promise.resolve(true) });
+  }, [setForward, skip]);
+  useEffect(() => () => setForward(null), [setForward]);
 }

@@ -15,7 +15,7 @@ import { useImportRun } from '@/components/ImportRun';
 import { LocalImportRunStatus } from './LocalImportRunStatus';
 import { LocalImportSources } from './LocalImportSources';
 import { LocalImportSummary } from './LocalImportSummary';
-import { useLocalImport } from './useLocalImport';
+import { useLocalImport, type UseLocalImportResult } from './useLocalImport';
 import styles from './LocalImport.module.css';
 
 export interface LocalImportProps {
@@ -30,15 +30,19 @@ export interface LocalImportProps {
   className?: string;
 }
 
-export function LocalImport({
-  defaultFolderId = null,
-  defaultFolderName = 'My Drive',
-  showTakeout = true,
-  onStarted,
-  className,
-}: LocalImportProps) {
-  const run = useImportRun();
+export function LocalImport({ defaultFolderId = null, defaultFolderName = 'My Drive', ...rest }: LocalImportProps) {
   const local = useLocalImport({ defaultFolderId, defaultFolderName });
+  return <LocalImportPanel local={local} {...rest} />;
+}
+
+export interface LocalImportPanelProps extends Omit<LocalImportProps, 'defaultFolderId' | 'defaultFolderName'> {
+  /** The pick, owned by the caller — for a host that needs to see it (the wizard's Files step). */
+  local: UseLocalImportResult;
+}
+
+/** `<LocalImport>` over a `useLocalImport` the caller holds. */
+export function LocalImportPanel({ local, showTakeout = true, onStarted, className }: LocalImportPanelProps) {
+  const run = useImportRun();
 
   const localRun = run.state.status !== 'idle' && run.state.kind === 'local';
   const otherRunning = run.state.status === 'running' && run.state.kind !== 'local';

@@ -159,6 +159,16 @@ describe('LocalImport — what was picked', () => {
     expect(importButton().textContent).toBe('Import 4 files');
   });
 
+  it('makes Import the filled primary button, with the hint on its own line (#331)', () => {
+    renderPanel();
+    pick(holiday());
+    expect(importButton().className).toMatch(/primary/);
+    expect(importButton().className).toMatch(/importButton/);
+    const hint = screen.getByText(/Runs in the background/);
+    expect(hint.tagName).toBe('P');
+    expect(importButton().contains(hint)).toBe(false);
+  });
+
   it('says "file" for one', () => {
     renderPanel();
     pick([fileAt('Trip/a.jpg', 10, 'image/jpeg')]);

@@ -183,14 +183,37 @@
 
 .actions {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.actionsRow {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
 
+/* Import is the action the whole panel leads to, so it is filled in every look. The two flow
+   looks draw a primary button as accent text only, which next to the hint read as a link (#331);
+   here it takes classic's filled accent pair instead. */
+:global([data-look='lightflow']) .importButton,
+:global([data-look='blended']) .importButton {
+  background-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+  border-color: var(--color-accent);
+}
+
+:global([data-look='lightflow']) .importButton:hover:not(:disabled),
+:global([data-look='blended']) .importButton:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+  color: var(--color-text-on-accent);
+  border-color: var(--color-accent-hover);
+}
+
 .actionsHint {
-  flex: 1;
-  min-width: 12rem;
+  margin: 0;
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
