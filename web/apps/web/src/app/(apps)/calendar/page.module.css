@@ -1915,3 +1915,8 @@
 .tourGroup {
   display: contents;
 }
+
+/* The task editor's Delete sits apart from Cancel and Save, at the footer's start. */
+.taskDeleteButton {
+  margin-right: auto;
+}

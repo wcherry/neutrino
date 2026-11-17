@@ -594,9 +594,14 @@ pub async fn revoke_session(
 #[delete("/sessions")]
 pub async fn revoke_all_sessions(
     state: web::Data<AuthApiState>,
+    app_passwords: Option<web::Data<crate::auth::app_passwords::api::AppPasswordsApiState>>,
     user: AuthenticatedUser,
 ) -> Result<actix_web::HttpResponse, ApiError> {
     state.auth_service.revoke_all_sessions(&user.user_id)?;
+    // "Sign out everywhere" includes the calendar apps signed in with an app password.
+    if let Some(app_passwords) = app_passwords {
+        app_passwords.app_passwords.revoke_all(&user.user_id)?;
+    }
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
@@ -997,6 +1002,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(list_sessions)
             .service(revoke_session)
             .service(revoke_all_sessions)
+            .configure(crate::auth::app_passwords::api::configure)
             .service(set_public_key)
             .service(get_user_public_key)
             .service(get_user_public_keys)

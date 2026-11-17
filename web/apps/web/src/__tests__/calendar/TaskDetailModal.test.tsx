@@ -49,6 +49,21 @@ vi.mock('@neutrino/ui', () => ({
   ),
   ModalBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ModalFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  AlertDialog: ({ open, title, description, confirmLabel, onConfirm, onClose }: {
+    open: boolean;
+    title: string;
+    description?: string;
+    confirmLabel?: string;
+    onConfirm?: () => void;
+    onClose: () => void;
+  }) =>
+    open ? (
+      <div role="alertdialog" aria-label={title}>
+        <p>{description}</p>
+        <button onClick={onClose}>Keep it</button>
+        <button onClick={onConfirm}>{confirmLabel}</button>
+      </div>
+    ) : null,
   Button: ({ children, onClick, type, form, disabled }: {
     children: React.ReactNode;
     onClick?: () => void;
@@ -391,6 +406,49 @@ describe('TaskDetailModal', () => {
       fireEvent.click(saveButton());
       await waitFor(() => expect(onSave).toHaveBeenCalled());
       expect(onSave).toHaveBeenCalledWith('task-1', expect.objectContaining({ tags: ['home', 'garden'] }));
+    });
+  });
+
+  describe('Delete', () => {
+    function renderWithDelete(task: TaskResponse = makeTask()) {
+      const onDelete = vi.fn(async () => {});
+      const onClose = vi.fn();
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={qc}>
+          <TaskDetailModal task={task} onClose={onClose} onSave={vi.fn(async () => task)} onDelete={onDelete} />
+        </QueryClientProvider>
+      );
+      return { onDelete, onClose };
+    }
+
+    it('is not offered without an onDelete', () => {
+      renderModal();
+      expect(screen.queryByText('Delete')).toBeNull();
+    });
+
+    it('asks first, then deletes the task and closes', async () => {
+      const { onDelete, onClose } = renderWithDelete();
+      fireEvent.click(screen.getByText('Delete'));
+      const dialog = screen.getByRole('alertdialog', { name: 'Delete “Clean ceiling fans”?' });
+      expect(onDelete).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByText('Delete'));
+      await waitFor(() => expect(onDelete).toHaveBeenCalledWith('task-1'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+    });
+
+    it('keeps the task when the question is dismissed', () => {
+      const { onDelete } = renderWithDelete();
+      fireEvent.click(screen.getByText('Delete'));
+      fireEvent.click(screen.getByText('Keep it'));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(onDelete).not.toHaveBeenCalled();
+    });
+
+    it('says a scheduled task takes its event with it', () => {
+      renderWithDelete(makeTask({ eventId: 'event-1' }));
+      fireEvent.click(screen.getByText('Delete'));
+      expect(screen.getByText(/its event on the calendar/)).toBeTruthy();
     });
   });
 });

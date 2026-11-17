@@ -1,0 +1,12 @@
+DROP TRIGGER IF EXISTS dav_log_object_move;
+DROP TRIGGER IF EXISTS dav_log_membership_delete;
+DROP TRIGGER IF EXISTS dav_log_membership_insert;
+DROP TRIGGER IF EXISTS dav_log_task_delete;
+DROP TRIGGER IF EXISTS dav_log_task_update;
+DROP TRIGGER IF EXISTS dav_log_task_insert;
+DROP TRIGGER IF EXISTS dav_log_event_delete;
+DROP TRIGGER IF EXISTS dav_log_event_update;
+DROP TRIGGER IF EXISTS dav_log_event_insert;
+DROP TABLE IF EXISTS dav_changes;
+DROP TABLE IF EXISTS dav_objects;
+DROP TABLE IF EXISTS app_passwords;

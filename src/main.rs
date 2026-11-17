@@ -486,8 +486,9 @@ async fn main() -> std::io::Result<()> {
         cal_events_repo.clone(),
         cal_attendees_repo,
     ));
+    let cal_calendars_service = Arc::new(CalendarsService::new(pool.clone()));
     let cal_calendars_state = web::Data::new(calendar::calendars::api::CalendarsApiState {
-        calendars_service: Arc::new(CalendarsService::new(pool.clone())),
+        calendars_service: cal_calendars_service.clone(),
     });
     let cal_task_places_state = web::Data::new(calendar::task_places::api::TaskPlacesApiState {
         task_places_service: Arc::new(TaskPlacesService::new(pool.clone())),
@@ -542,10 +543,19 @@ async fn main() -> std::io::Result<()> {
 
     let cal_tasks_repo = Arc::new(TasksRepository::new(pool.clone()));
     let purge_events_service = cal_events_service.clone();
+    let dav_events_service = cal_events_service.clone();
     let cal_tasks_service = Arc::new(TasksService::new(cal_tasks_repo, cal_events_service));
     let cal_tasks_state = web::Data::new(calendar::tasks::api::TasksApiState {
-        tasks_service: cal_tasks_service,
+        tasks_service: cal_tasks_service.clone(),
     });
+
+    // App passwords: what CalDAV clients sign in with. Shared by the `/auth/app-passwords`
+    // routes and `/dav`, so revoking one signs its device out at once.
+    let app_passwords_service = Arc::new(auth::app_passwords::service::AppPasswordsService::new(pool.clone()));
+    let app_passwords_state = web::Data::new(auth::app_passwords::api::AppPasswordsApiState {
+        app_passwords: app_passwords_service.clone(),
+    });
+    let dav_purge_pool = pool.clone();
 
     // Reminder engine background worker
     let engine_repo = cal_reminders_repo.clone();
@@ -562,6 +572,19 @@ async fn main() -> std::io::Result<()> {
                 Ok(0) => {}
                 Ok(n) => tracing::info!("Purged {} deleted calendar event(s)", n),
                 Err(e) => tracing::error!("Purging deleted calendar events failed: {:?}", e),
+            }
+            // The CalDAV change log is kept as long as deleted events are: a client offline
+            // longer than that resyncs in full.
+            let cutoff = chrono::Utc::now().naive_utc()
+                - chrono::Duration::days(calendar::events::service::DELETED_RETENTION_DAYS);
+            match dav_purge_pool
+                .get()
+                .map_err(|e| shared::ApiError::internal(e.to_string()))
+                .and_then(|mut conn| calendar::dav::store::purge(&mut conn, cutoff))
+            {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("Purged {} CalDAV change record(s)", n),
+                Err(e) => tracing::error!("Purging the CalDAV change log failed: {:?}", e),
             }
         }
     });
@@ -780,6 +803,14 @@ async fn main() -> std::io::Result<()> {
         });
     info!("Sign-up guard: {}", signup_guard_config.summary());
     let signup_client_ip = signup_guard_config.client_ip.clone();
+    let dav_state = web::Data::new(calendar::dav::DavState {
+        pool: pool.clone(),
+        events: dav_events_service,
+        tasks: cal_tasks_service,
+        calendars: cal_calendars_service,
+        app_passwords: app_passwords_service,
+        client_ip: signup_guard_config.client_ip.clone(),
+    });
     let signup_guard = Arc::new(auth::signup_guard::service::SignupGuard::new(
         Arc::new(auth::signup_guard::repository::SignupGuardRepository::new(pool.clone())),
         signup_guard_config.clone(),
@@ -1397,6 +1428,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(weekly::api::WeeklyApiDoc::openapi());
         doc.merge(auth::keyvault::api::KeyVaultApiDoc::openapi());
         doc.merge(calendar::calendars::api::CalendarsApiDoc::openapi());
+        doc.merge(auth::app_passwords::api::AppPasswordsApiDoc::openapi());
         doc.merge(calendar::events::api::EventsApiDoc::openapi());
         doc.merge(calendar::task_places::api::TaskPlacesApiDoc::openapi());
         doc.merge(calendar::reminders::api::RemindersApiDoc::openapi());
@@ -1495,6 +1527,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(cal_attachments_state.clone())
             .app_data(cal_connections_state.clone())
             .app_data(cal_tasks_state.clone())
+            .app_data(app_passwords_state.clone())
+            .app_data(dav_state.clone())
             // Docs
             .app_data(docs_collab_repo.clone())
             .app_data(docs_collab_state.clone())
@@ -1576,6 +1610,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             // Universal Links. Registered ahead of the static web app below, which would
             // otherwise answer this path with index.html.
             .service(apple_app_site_association)
+            // CalDAV (`/.well-known/caldav`, `/dav`), likewise ahead of the static web app.
+            .configure(calendar::dav::configure)
             // All /api/v1 routes in a single scope — multiple scopes with the same
             // prefix cause actix-web to route only to the first-registered one.
             .service(

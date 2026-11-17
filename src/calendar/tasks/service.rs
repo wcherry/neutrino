@@ -7,11 +7,11 @@ use crate::calendar::tasks::{
         CreateTaskAttachmentRequest, CreateTaskListRequest, CreateTaskRequest,
         ListTaskAttachmentsResponse, ListTaskListsResponse, ReorderTasksRequest,
         ScheduleTaskRequest, TaskAttachmentResponse, TaskListResponse, TaskResponse,
-        UpdateTaskRequest,
+        UpdateTaskListRequest, UpdateTaskRequest,
     },
     model::{
         NewTaskAttachmentRecord, NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord,
-        UpdateTaskRecord,
+        UpdateTaskListRecord, UpdateTaskRecord,
     },
     repository::TasksRepository,
 };
@@ -62,6 +62,38 @@ impl TasksService {
         };
         let saved = self.repo.insert(record)?;
         Ok(task_list_to_response(saved))
+    }
+
+    /// Renames or recolours a list.
+    pub fn update_task_list(
+        &self,
+        user: &AuthenticatedUser,
+        list_id: &str,
+        req: UpdateTaskListRequest,
+    ) -> Result<TaskListResponse, ApiError> {
+        let name = match req.name {
+            Some(name) if name.trim().is_empty() => {
+                return Err(ApiError::bad_request("A list needs a name"))
+            }
+            Some(name) => Some(name.trim().to_string()),
+            None => None,
+        };
+        let saved = self.repo.update_list(
+            list_id,
+            &user.user_id,
+            UpdateTaskListRecord {
+                name,
+                color: req.color,
+                updated_at: Utc::now().naive_utc(),
+            },
+        )?;
+        Ok(task_list_to_response(saved))
+    }
+
+    /// Deletes a list. Its tasks stay, out of that list; a task in no other list is then in
+    /// none, which every client shows as its inbox.
+    pub fn delete_task_list(&self, user: &AuthenticatedUser, list_id: &str) -> Result<(), ApiError> {
+        self.repo.delete_list(list_id, &user.user_id)
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
@@ -392,6 +424,33 @@ impl TasksService {
             list_id: list_id.to_string(),
         })?;
         Ok(())
+    }
+
+    /// Takes a task out of a list. Idempotent: a task that wasn't in it is left as it is.
+    pub fn remove_task_from_list(
+        &self,
+        user: &AuthenticatedUser,
+        task_id: &str,
+        list_id: &str,
+    ) -> Result<(), ApiError> {
+        self.repo.find_task_by_id(task_id, &user.user_id)?;
+        self.repo.find_by_id(list_id, &user.user_id)?;
+        self.repo.delete_membership(task_id, list_id)?;
+        Ok(())
+    }
+
+    /// Deletes a task for good, with its tags, attachments and reminders. A task on the
+    /// calendar takes its event with it: the event was made for the task, and leaving it would
+    /// keep showing a task that no longer exists. A deleted task does not come back, so a
+    /// CalDAV client (Apple Reminders) that deleted it never sees it again.
+    pub fn delete_task(&self, user: &AuthenticatedUser, task_id: &str) -> Result<(), ApiError> {
+        let task = self.repo.find_task_by_id(task_id, &user.user_id)?;
+        if let Some(event_id) = task.event_id.as_deref() {
+            if let Err(e) = self.events.delete_event(user, event_id) {
+                tracing::warn!("Could not delete event {} with task {}: {:?}", event_id, task_id, e);
+            }
+        }
+        self.repo.delete_task(task_id, &user.user_id)
     }
 
     // ── Calendar scheduling ───────────────────────────────────────────────────
@@ -1622,5 +1681,62 @@ mod tests {
             .unwrap();
         let after = service.list_tasks(&user, None).unwrap().into_iter().find(|t| t.id == task.id).unwrap();
         assert_eq!(after.geo_place_id, None);
+    }
+
+    // ── Deleting, and managing lists ──────────────────────────────────────────
+
+    fn new_list(service: &TasksService, user: &AuthenticatedUser, name: &str) -> TaskListResponse {
+        service
+            .create_task_list(user, CreateTaskListRequest { name: name.into(), color: None })
+            .unwrap()
+    }
+
+    #[test]
+    fn deleting_a_task_removes_it_and_its_event() {
+        let (service, user, other) = test_service();
+        let task = new_task(&service, &user, "Dentist");
+        let event = service.schedule_task(&user, &task.id, schedule_req()).unwrap();
+        assert_eq!(service.delete_task(&other, &task.id).unwrap_err().status, 404);
+        service.delete_task(&user, &task.id).unwrap();
+        assert!(service.list_tasks(&user, None).unwrap().is_empty());
+        assert_eq!(service.events.get_event(&user, &event.id).unwrap_err().status, 404);
+        assert_eq!(service.delete_task(&user, &task.id).unwrap_err().status, 404);
+    }
+
+    #[test]
+    fn a_task_leaves_a_list_and_stays() {
+        let (service, user, _) = test_service();
+        let list = new_list(&service, &user, "Groceries");
+        let task = new_task(&service, &user, "Milk");
+        service.add_task_to_list(&user, &task.id, &list.id).unwrap();
+        service.remove_task_from_list(&user, &task.id, &list.id).unwrap();
+        // Idempotent.
+        service.remove_task_from_list(&user, &task.id, &list.id).unwrap();
+        assert!(service.list_tasks(&user, Some(&list.id)).unwrap().is_empty());
+        assert_eq!(service.list_tasks(&user, None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_list_is_renamed_recoloured_and_deleted_without_its_tasks() {
+        let (service, user, other) = test_service();
+        let list = new_list(&service, &user, "Groceries");
+        let task = new_task(&service, &user, "Milk");
+        service.add_task_to_list(&user, &task.id, &list.id).unwrap();
+        let renamed = service
+            .update_task_list(
+                &user,
+                &list.id,
+                UpdateTaskListRequest { name: Some(" Food ".into()), color: Some(Some("#ff9500".into())) },
+            )
+            .unwrap();
+        assert_eq!((renamed.name.as_str(), renamed.color.as_deref()), ("Food", Some("#ff9500")));
+        let blank = UpdateTaskListRequest { name: Some("  ".into()), color: None };
+        assert_eq!(service.update_task_list(&user, &list.id, blank).unwrap_err().status, 400);
+        assert_eq!(service.delete_task_list(&other, &list.id).unwrap_err().status, 404);
+        service.delete_task_list(&user, &list.id).unwrap();
+        assert!(service.list_task_lists(&user).unwrap().task_lists.is_empty());
+        let tasks = service.list_tasks(&user, None).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].list_id, None);
     }
 }

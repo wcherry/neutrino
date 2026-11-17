@@ -1,7 +1,7 @@
 use crate::calendar::tasks::model::{
     NewTaskAttachmentRecord, NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord,
     TaskAttachmentRecord, TaskListMembershipRecord, TaskListRecord, TaskRecord, TaskTagRecord,
-    UpdateTaskRecord,
+    UpdateTaskListRecord, UpdateTaskRecord,
 };
 use crate::schema::{task_attachments, task_list_memberships, task_lists, task_tags, tasks};
 use crate::shared::{ApiError, DbPool};
@@ -77,6 +77,62 @@ impl TasksRepository {
     }
 
     // ── Tasks ─────────────────────────────────────────────────────────────────
+
+    pub fn update_list(
+        &self,
+        id: &str,
+        user_id: &str,
+        changes: UpdateTaskListRecord,
+    ) -> Result<TaskListRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+        let n = diesel::update(
+            task_lists::table.filter(task_lists::id.eq(id).and(task_lists::user_id.eq(user_id))),
+        )
+        .set(&changes)
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB update task list error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+        if n == 0 {
+            return Err(ApiError::not_found("Task list not found"));
+        }
+        drop(conn);
+        self.find_by_id(id, user_id)
+    }
+
+    /// Deletes a list. Its memberships go with it (cascade); its tasks stay, without it.
+    pub fn delete_list(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        let n = diesel::delete(
+            task_lists::table.filter(task_lists::id.eq(id).and(task_lists::user_id.eq(user_id))),
+        )
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB delete task list error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+        if n == 0 {
+            return Err(ApiError::not_found("Task list not found"));
+        }
+        Ok(())
+    }
+
+    /// Deletes a task for good. Its tags, attachments, memberships and reminders go with it
+    /// (all cascade); a scheduled event is the service's to remove.
+    pub fn delete_task(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        let n = diesel::delete(tasks::table.filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB delete task error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        if n == 0 {
+            return Err(ApiError::not_found("Task not found"));
+        }
+        Ok(())
+    }
 
     pub fn insert_task(&self, record: NewTaskRecord) -> Result<TaskRecord, ApiError> {
         let id = record.id.clone();
@@ -408,6 +464,24 @@ impl TasksRepository {
                 tracing::error!("DB query after membership insert error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+
+    /// Removes the task from the list. `false` when it wasn't in it.
+    pub fn delete_membership(&self, task_id: &str, list_id: &str) -> Result<bool, ApiError> {
+        let mut conn = self.get_conn()?;
+        diesel::delete(
+            task_list_memberships::table.filter(
+                task_list_memberships::task_id
+                    .eq(task_id)
+                    .and(task_list_memberships::list_id.eq(list_id)),
+            ),
+        )
+        .execute(&mut conn)
+        .map(|n| n > 0)
+        .map_err(|e| {
+            tracing::error!("DB delete membership error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
     pub fn membership_exists(&self, task_id: &str, list_id: &str) -> Result<bool, ApiError> {

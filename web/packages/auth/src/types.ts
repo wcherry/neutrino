@@ -188,3 +188,18 @@ export interface PublicKeyRingResponse {
   /** The version new work should be sealed to. */
   activeVersion: number | null;
 }
+
+/** A password a calendar or reminders app signs in to CalDAV with (`/dav`). */
+export interface AppPassword {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** When a device last used it, to the minute; `null` until first use. */
+  lastUsedAt: string | null;
+}
+
+export interface CreatedAppPassword {
+  appPassword: AppPassword;
+  /** In the clear. Returned once, by the create call; it can't be read again. */
+  password: string;
+}

@@ -16,6 +16,8 @@ import type {
   PublicKeyResponse,
   PublicKeyRingResponse,
   SetPublicKeyRequest,
+  AppPassword,
+  CreatedAppPassword,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -214,6 +216,26 @@ export const authApi = {
       });
     }
     return profileInFlight;
+  },
+
+  // ── App passwords (CalDAV) ────────────────────────────────────────────────
+
+  async listAppPasswords(): Promise<AppPassword[]> {
+    const res = await request<{ appPasswords: AppPassword[] }>('/api/v1/auth/app-passwords');
+    return res.appPasswords;
+  },
+
+  /** Makes a password for a calendar or reminders app. The response is the only time it is shown. */
+  async createAppPassword(name: string): Promise<CreatedAppPassword> {
+    return request<CreatedAppPassword>('/api/v1/auth/app-passwords', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  /** Revokes a password; the device using it is signed out at once. */
+  async revokeAppPassword(id: string): Promise<void> {
+    return request<void>(`/api/v1/auth/app-passwords/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
 
   async getProfileDetails(): Promise<UserProfileDetails> {

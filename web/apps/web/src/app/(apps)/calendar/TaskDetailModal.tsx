@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MapPin, Plus, X } from 'lucide-react';
-import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
+import { AlertDialog, Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import {
   calendarApi,
   type CreateAttachmentRequest,
@@ -39,6 +39,8 @@ export interface TaskDetailModalProps {
   onClose: () => void;
   /** Applied to the task row itself; scheduling has its own endpoints. */
   onSave: (id: string, req: UpdateTaskRequest) => Promise<TaskResponse>;
+  /** Deletes the task for good (and its event, if it is on the calendar). Omit to offer no Delete. */
+  onDelete?: (id: string) => Promise<void>;
 }
 
 /**
@@ -51,8 +53,13 @@ export interface TaskDetailModalProps {
  * removed the moment the user asks, and Save applies only the fields on the
  * task row plus the schedule.
  */
-export default function TaskDetailModal({ task, knownTags = [], onClose, onSave }: TaskDetailModalProps) {
+export default function TaskDetailModal({ task, knownTags = [], onClose, onSave, onDelete }: TaskDetailModalProps) {
   const qc = useQueryClient();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => (onDelete ? onDelete(task.id) : Promise.resolve()),
+    onSuccess: () => onClose(),
+  });
 
   const [title, setTitle] = useState(task.title);
   const [notes, setNotes] = useState(task.notes ?? '');
@@ -515,12 +522,41 @@ export default function TaskDetailModal({ task, knownTags = [], onClose, onSave 
           </form>
         </ModalBody>
         <ModalFooter>
+          {onDelete && (
+            <Button
+              type="button"
+              variant="danger"
+              className={styles.taskDeleteButton}
+              onClick={() => setConfirmingDelete(true)}
+              disabled={remove.isPending}
+            >
+              Delete
+            </Button>
+          )}
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button form="task-detail-form" type="submit" disabled={save.isPending}>
             {save.isPending ? 'Saving…' : 'Save'}
           </Button>
         </ModalFooter>
       </Modal>
+
+      <AlertDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        variant="error"
+        title={`Delete “${task.title}”?`}
+        description={
+          task.eventId
+            ? 'The task and its event on the calendar are deleted, everywhere it syncs. This can’t be undone.'
+            : 'The task is deleted everywhere it syncs. This can’t be undone.'
+        }
+        confirmLabel="Delete"
+        loading={remove.isPending}
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          remove.mutate();
+        }}
+      />
 
       {pickingPlace && (
         <PlacePicker

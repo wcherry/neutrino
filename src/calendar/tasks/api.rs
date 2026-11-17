@@ -4,7 +4,7 @@ use crate::calendar::tasks::{
         CreateTaskAttachmentRequest, CreateTaskListRequest, CreateTaskRequest,
         ListTaskAttachmentsResponse, ListTaskListsResponse, ListTasksQuery, ReorderTasksRequest,
         ScheduleTaskRequest, TaskAttachmentResponse, TaskListResponse, TaskResponse,
-        UpdateTaskRequest,
+        UpdateTaskListRequest, UpdateTaskRequest,
     },
     service::TasksService,
 };
@@ -216,6 +216,113 @@ pub async fn add_task_to_list(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Remove a task from a list.
+///
+/// Idempotent: a task that isn't in the list is left as it is. The task itself is kept.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/tasks/{id}/lists/{list_id}",
+    params(
+        ("id" = String, Path, description = "Task ID"),
+        ("list_id" = String, Path, description = "Task list ID"),
+    ),
+    responses(
+        (status = 204, description = "Task is not in the list"),
+        (status = 404, description = "Task or list not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "tasks"
+)]
+#[delete("/tasks/{id}/lists/{list_id}")]
+pub async fn remove_task_from_list(
+    state: web::Data<TasksApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, ApiError> {
+    let (task_id, list_id) = path.into_inner();
+    state
+        .tasks_service
+        .remove_task_from_list(&user, &task_id, &list_id)?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// Delete a task.
+///
+/// For good: its tags, attachments and reminders go with it, and a task on the calendar takes
+/// its event with it.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/tasks/{id}",
+    params(("id" = String, Path, description = "Task ID")),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Task not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "tasks"
+)]
+#[delete("/tasks/{id}")]
+pub async fn delete_task(
+    state: web::Data<TasksApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    state.tasks_service.delete_task(&user, &path.into_inner())?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
+/// Rename or recolour a task list.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/tasks/lists/{id}",
+    params(("id" = String, Path, description = "Task list ID")),
+    request_body = UpdateTaskListRequest,
+    responses(
+        (status = 200, description = "The updated list", body = TaskListResponse),
+        (status = 400, description = "An empty name"),
+        (status = 404, description = "Task list not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "tasks"
+)]
+#[patch("/tasks/lists/{id}")]
+pub async fn update_task_list(
+    state: web::Data<TasksApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<UpdateTaskListRequest>,
+) -> Result<web::Json<TaskListResponse>, ApiError> {
+    Ok(web::Json(state.tasks_service.update_task_list(
+        &user,
+        &path.into_inner(),
+        body.into_inner(),
+    )?))
+}
+
+/// Delete a task list.
+///
+/// Its tasks are kept, out of the list.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/tasks/lists/{id}",
+    params(("id" = String, Path, description = "Task list ID")),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Task list not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "tasks"
+)]
+#[delete("/tasks/lists/{id}")]
+pub async fn delete_task_list(
+    state: web::Data<TasksApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    state.tasks_service.delete_task_list(&user, &path.into_inner())?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
 // ── Calendar scheduling ───────────────────────────────────────────────────────
 
 /// Put a task on the calendar.
@@ -373,7 +480,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(list_task_attachments)
         .service(create_task_attachment)
         .service(delete_task_attachment)
-        .service(add_task_to_list);
+        .service(add_task_to_list)
+        .service(remove_task_from_list)
+        .service(update_task_list)
+        .service(delete_task_list)
+        .service(delete_task);
 }
 
 #[derive(OpenApi)]
@@ -391,9 +502,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         create_task_attachment,
         delete_task_attachment,
         add_task_to_list,
+        remove_task_from_list,
+        update_task_list,
+        delete_task_list,
+        delete_task,
     ),
     components(schemas(
         CreateTaskListRequest,
+        UpdateTaskListRequest,
         TaskListResponse,
         ListTaskListsResponse,
         CreateTaskRequest,
