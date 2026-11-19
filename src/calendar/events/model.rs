@@ -32,6 +32,8 @@ pub struct EventRecord {
     /// The calendar the event belongs to; an exception's is its series'. NULL only on a row
     /// deleted with its calendar.
     pub calendar_id: Option<String>,
+    /// `busy`, `free`, `tentative` or `away`; see `availability.rs`.
+    pub availability: String,
 }
 
 impl EventRecord {
@@ -67,6 +69,7 @@ pub struct NewEventRecord {
     pub original_start_time: Option<NaiveDateTime>,
     pub cancelled: bool,
     pub calendar_id: Option<String>,
+    pub availability: String,
 }
 
 #[derive(Debug, Default, AsChangeset)]
@@ -87,4 +90,5 @@ pub struct UpdateEventRecord {
     pub recurring_event_id: Option<Option<String>>,
     pub cancelled: Option<bool>,
     pub calendar_id: Option<Option<String>>,
+    pub availability: Option<String>,
 }

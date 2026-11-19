@@ -1,0 +1,40 @@
+/* Availability shading for event chips, month bars and agenda rows (`availability.ts`).
+ *
+ * Each keeps the event's calendar colour: --event-solid / --event-bg from `eventColorStyle`,
+ * else the primary colour. Busy has no class; it is the solid tint every event already had.
+ * `:not(:hover)` leaves each chip's own hover (the solid colour) as it was. */
+
+/* Tentative: the tint in diagonal stripes. */
+.tentative:not(:hover) {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--event-bg, var(--color-primary-light)) 0 5px,
+    var(--color-surface, #fff) 5px 9px
+  );
+}
+
+/* Free: hollow, outlined in dashes. An outline, not a border, so nothing moves. */
+.free:not(:hover) {
+  background: var(--color-surface, #fff);
+}
+
+.free {
+  outline: 1px dashed var(--event-solid, var(--color-primary));
+  outline-offset: -1px;
+}
+
+/* Away (out of office): a deeper fill, with the body text colour so it stays readable. */
+.away:not(:hover) {
+  background: color-mix(in srgb, var(--event-solid, var(--color-primary)) 45%, var(--color-surface, #fff));
+  color: var(--color-text-primary, #111827);
+}
+
+/* The event detail's key: a small chip shaded like the event. */
+.swatch {
+  display: inline-block;
+  width: 16px;
+  height: 10px;
+  border-radius: calc(3px * var(--radius-scale));
+  background: var(--event-bg, var(--color-primary-light));
+  flex-shrink: 0;
+}

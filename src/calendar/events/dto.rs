@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::availability::Availability;
+
 // ── Request types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -20,6 +22,8 @@ pub struct CreateEventRequest {
     /// The calendar to put the event in. Absent, the user's default calendar. A read-only one is
     /// refused (403).
     pub calendar_id: Option<String>,
+    /// How the event shows the user's time. Absent, busy.
+    pub availability: Option<Availability>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, ToSchema)]
@@ -37,6 +41,7 @@ pub struct UpdateEventRequest {
     /// Moves the event to another calendar; a series takes its exceptions with it. Neither
     /// calendar may be read-only, and one occurrence can't move on its own.
     pub calendar_id: Option<String>,
+    pub availability: Option<Availability>,
 }
 
 /// "This and following": ends the series before the occurrence starting at `original_start_time`
@@ -100,6 +105,8 @@ pub struct EventResponse {
     pub cancelled: bool,
     /// The calendar the event belongs to. See `GET /calendar/calendars`.
     pub calendar_id: Option<String>,
+    /// How the event shows the user's time: busy, free, tentative or away (out of office).
+    pub availability: Availability,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

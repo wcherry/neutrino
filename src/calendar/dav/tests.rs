@@ -242,6 +242,7 @@ async fn sync_collection_reports_changes_from_every_path_and_deletions_by_the_cl
                 attendees: vec![],
                 timezone: None,
                 calendar_id: None,
+                availability: None,
             },
         )
         .unwrap();

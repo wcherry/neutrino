@@ -9,6 +9,7 @@ use crate::calendar::events::{
     repository::EventsRepository,
     series::{self, Shape},
 };
+use crate::calendar::events::availability::Availability;
 use crate::schema::events;
 use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::{NaiveDateTime, Utc};
@@ -94,6 +95,7 @@ impl EventsService {
                     original_start_time: None,
                     cancelled: false,
                     calendar_id: Some(calendar_id),
+                    availability: req.availability.unwrap_or_default().as_str().to_string(),
                 },
             )
         })?;
@@ -350,6 +352,10 @@ impl EventsService {
                     original_start_time: None,
                     cancelled: false,
                     calendar_id,
+                    availability: changes
+                        .availability
+                        .map(|a| a.as_str().to_string())
+                        .unwrap_or_else(|| series.availability.clone()),
                 },
             )?;
             let attendees = changes
@@ -506,6 +512,7 @@ fn changes_from(
         recurrence_rule: req.recurrence_rule.clone().map(Some),
         updated_at: now,
         timezone: req.timezone.clone().map(Some),
+        availability: req.availability.map(|a| a.as_str().to_string()),
         ..Default::default()
     })
 }
@@ -555,6 +562,7 @@ fn event_to_response(r: EventRecord, attendees: Vec<String>) -> EventResponse {
             .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
         cancelled: r.cancelled,
         calendar_id: r.calendar_id,
+        availability: Availability::from_stored(&r.availability),
     }
 }
 
@@ -603,6 +611,7 @@ mod tests {
                 attendees: vec!["ada@example.com".into()],
                 timezone: None,
                 calendar_id: None,
+                availability: None,
             },
         )
         .expect("create")
@@ -771,6 +780,7 @@ mod tests {
             original_start_time: None,
             cancelled: false,
             calendar_id: None,
+            availability: "busy".into(),
         };
         repo.upsert_from_sync("ada", "google", record("Synced"))
             .unwrap();
@@ -798,6 +808,7 @@ mod tests {
                 attendees: vec!["ada@example.com".into()],
                 timezone: None,
                 calendar_id: None,
+                availability: None,
             },
         )
         .expect("create")
@@ -1264,6 +1275,7 @@ mod tests {
                     attendees: vec![],
                     timezone: None,
                     calendar_id: Some(work.clone()),
+                    availability: None,
                 },
             )
             .unwrap();
@@ -1287,6 +1299,7 @@ mod tests {
             attendees: vec![],
             timezone: None,
             calendar_id: Some(calendar_id.into()),
+            availability: None,
         };
         assert_eq!(
             svc.create_event(&ada, into(&holidays)).unwrap_err().status,
@@ -1509,6 +1522,7 @@ mod tests {
             original_start_time: None,
             cancelled: false,
             calendar_id: Some(google.clone()),
+            availability: "busy".into(),
         };
         repo.upsert_from_sync("ada", "google", record("Synced"))
             .unwrap();
@@ -1571,5 +1585,67 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    // ── Availability ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn an_event_is_busy_unless_it_says_otherwise_and_can_change() {
+        let (svc, _) = service();
+        let ada = user("ada");
+        let id = create(&svc, &ada, "Lunch");
+        assert_eq!(svc.get_event(&ada, &id).unwrap().availability, Availability::Busy);
+
+        let changed = svc
+            .update_event(
+                &ada,
+                &id,
+                UpdateEventRequest {
+                    availability: Some(Availability::Away),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(changed.availability, Availability::Away);
+
+        // An update that doesn't mention it, as an older client sends, leaves it alone.
+        let retitled = svc.update_event(&ada, &id, retitle("Long lunch")).unwrap();
+        assert_eq!(retitled.availability, Availability::Away);
+    }
+
+    #[test]
+    fn an_exception_takes_the_series_availability_until_it_sets_its_own() {
+        let (svc, _) = service();
+        let ada = user("ada");
+        let series = standup(&svc, &ada, "FREQ=WEEKLY");
+        let set = |a| UpdateEventRequest {
+            availability: Some(a),
+            ..Default::default()
+        };
+        // One occurrence retitled (inherits), one made tentative (its own).
+        svc.edit_occurrence(&ada, &series, "2026-10-12T09:00:00Z", retitle("Planning"))
+            .unwrap();
+        svc.edit_occurrence(&ada, &series, "2026-10-19T09:00:00Z", set(Availability::Tentative))
+            .unwrap();
+
+        svc.update_event(&ada, &series, set(Availability::Free)).unwrap();
+
+        let by_start = |start: &str| {
+            exceptions_of(&svc, &ada)
+                .into_iter()
+                .find(|e| e.original_start_time.as_deref() == Some(start))
+                .unwrap()
+                .availability
+        };
+        assert_eq!(by_start("2026-10-12T09:00:00Z"), Availability::Free);
+        assert_eq!(by_start("2026-10-19T09:00:00Z"), Availability::Tentative);
+    }
+
+    #[test]
+    fn availability_is_sent_and_read_as_a_lowercase_word() {
+        let req: UpdateEventRequest =
+            serde_json::from_str(r#"{"availability":"tentative"}"#).unwrap();
+        assert_eq!(req.availability, Some(Availability::Tentative));
+        assert!(serde_json::from_str::<UpdateEventRequest>(r#"{"availability":"maybe"}"#).is_err());
     }
 }

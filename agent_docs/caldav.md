@@ -131,8 +131,13 @@ far as it got, and the client's next sync shows what is there.
 - **Attendees** are `event_attendees.email`. The client's `ATTENDEE` lines (with `CN`,
   `PARTSTAT`) are kept and written back for the addresses still on the event. Nobody is sent
   invitations.
-- **Extras**: everything unmodelled (alarms, `SEQUENCE`, `TRANSP`, `X-APPLE-*`) is kept per
-  `VEVENT`, keyed by `RECURRENCE-ID`.
+- **Availability** is `events.availability` (busy, free, tentative, away). It is written as
+  `TRANSP`, plus `X-MICROSOFT-CDO-BUSYSTATUS` for anything `TRANSP` can't say (free, tentative,
+  `OOF`). `TRANSP` wins when the two disagree, because Apple Calendar edits only `TRANSP` and
+  leaves the other behind. See `events/availability.rs`, which also maps Google and Outlook.
+- **Extras**: everything unmodelled (alarms, `SEQUENCE`, `X-APPLE-*`) is kept per `VEVENT`, keyed
+  by `RECURRENCE-ID`. A property that has since become modelled (`TRANSP`, kept as an extra before
+  availability existed) is dropped from the extras when written, so it isn't sent twice.
 
 ### Tasks (`vtodo.rs`)
 

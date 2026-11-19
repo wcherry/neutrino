@@ -6,6 +6,7 @@ import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { eventsForDay, fmtTime } from './calendarHelpers';
 import { eventColorStyle } from './calendars';
+import { availabilityClass, availabilityOf } from './availability';
 import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
 import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
@@ -63,8 +64,9 @@ export default function AgendaView({
                 key={ev.id}
                 className={isTaskEvent(ev)
                   ? `${styles.agendaEvent} ${styles.calendarTask} ${ev.done ? styles.calendarTaskDone : ''}`
-                  : styles.agendaEvent}
+                  : `${styles.agendaEvent} ${availabilityClass(ev)}`}
                 data-testid={isTaskEvent(ev) ? 'agenda-task' : 'agenda-event'}
+                data-availability={isTaskEvent(ev) ? undefined : availabilityOf(ev)}
                 style={isTaskEvent(ev) ? undefined : eventColorStyle(colorOf?.(ev))}
                 onClick={() => onEventClick(ev)}
               >

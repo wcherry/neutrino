@@ -39,6 +39,9 @@ import type { CalendarResponse } from '@neutrino/api-calendar';
 import { fmtTime } from './calendarHelpers';
 import { DriveFilePicker } from './DriveFilePicker';
 import styles from './page.module.css';
+import { HOLIDAY_SOURCE, eventColorStyle } from './calendars';
+import { availabilityClass, availabilityLabel, availabilityOf } from './availability';
+import availabilityStyles from './availability.module.css';
 
 // ── AddAttachmentModal ────────────────────────────────────────────────────────
 
@@ -240,6 +243,21 @@ function CalendarLine({ calendar, readOnly }: { calendar?: CalendarResponse; rea
   );
 }
 
+/** "Busy", "Free"…, beside a swatch shaded the way the calendar shows it. Not for a holiday. */
+function AvailabilityLine({ event, calendar }: { event: EventResponse; calendar?: CalendarResponse }) {
+  if (event.source === HOLIDAY_SOURCE) return null;
+  return (
+    <div className={styles.detailCalendar} data-testid="event-availability">
+      <span
+        className={`${availabilityStyles.swatch} ${availabilityClass(event)}`}
+        style={eventColorStyle(calendar?.color)}
+        aria-hidden
+      />
+      <span>{availabilityLabel(availabilityOf(event))}</span>
+    </div>
+  );
+}
+
 // ── EventViewModal ────────────────────────────────────────────────────────────
 
 export interface EventViewModalProps {
@@ -301,6 +319,7 @@ export function EventViewModal({ event, calendar, readOnly, onClose, onEdit, onD
           </div>
 
           <CalendarLine calendar={calendar} readOnly={readOnly} />
+          <AvailabilityLine event={event} calendar={calendar} />
 
           {/* Location */}
           {event.location && (
@@ -469,6 +488,7 @@ export function EventDetail({
         </div>
 
         <CalendarLine calendar={calendar} readOnly={readOnly} />
+        <AvailabilityLine event={event} calendar={calendar} />
 
         {/* Location */}
         {event.location && (

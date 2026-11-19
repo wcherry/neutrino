@@ -5,7 +5,7 @@
 //! `VEVENT` per edited occurrence carrying `RECURRENCE-ID`, which is exactly the shape of
 //! Neutrino's model (`agent_docs/recurrence-exceptions.md`).
 //!
-//! What the model has no column for, a client's alarms, `SEQUENCE`, `TRANSP`, `X-APPLE-*` and
+//! What the model has no column for, a client's alarms, `SEQUENCE`, `X-APPLE-*` and
 //! attendee parameters, is kept per `VEVENT` (`Extras`) and written back, so a phone's alert
 //! doesn't vanish on the next sync and get put back, forever.
 
@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ical::{self, Component, TimeForm};
 use super::store::Series;
+use crate::calendar::events::availability::Availability;
 use crate::calendar::events::model::EventRecord;
 
 /// The properties the model holds. Everything else is an extra.
@@ -33,6 +34,9 @@ const MODELED: &[&str] = &[
     "RRULE",
     "EXDATE",
     "RECURRENCE-ID",
+    // Availability; see `events/availability.rs`.
+    "TRANSP",
+    "X-MICROSOFT-CDO-BUSYSTATUS",
 ];
 
 pub const PRODID: &str = "-//Neutrino//CalDAV//EN";
@@ -172,6 +176,11 @@ fn vevent(
     if let Some(l) = e.location.as_deref().filter(|l| !l.is_empty()) {
         ev.push_text("LOCATION", l);
     }
+    let (transp, busy_status) = Availability::from_stored(&e.availability).to_ical();
+    ev.push("TRANSP", &[], transp);
+    if let Some(status) = busy_status {
+        ev.push("X-MICROSOFT-CDO-BUSYSTATUS", &[], status);
+    }
     if e.all_day {
         // Stored as the first day's 00:00 to the last day's 23:59:59; iCalendar's DTEND is the
         // day after the last.
@@ -203,7 +212,14 @@ fn vevent(
         }
     }
     if let Some(extra) = extra {
-        ev.props.extend(extra.props.into_iter().filter(|p| p.name != "ATTENDEE"));
+        // Modelled names are dropped too: extras kept before a property was modelled still
+        // hold it, and it has just been written from the row.
+        ev.props.extend(
+            extra
+                .props
+                .into_iter()
+                .filter(|p| p.name != "ATTENDEE" && !MODELED.contains(&p.name.as_str())),
+        );
         ev.children.extend(extra.children);
     }
     ev
@@ -231,6 +247,7 @@ pub struct EventFields {
     pub all_day: bool,
     pub timezone: Option<String>,
     pub attendees: Vec<String>,
+    pub availability: Availability,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -353,6 +370,10 @@ fn fields(v: &Component) -> Result<EventFields, Invalid> {
         all_day,
         timezone: if all_day { None } else { timezone },
         attendees,
+        availability: Availability::from_ical(
+            v.text("TRANSP").as_deref(),
+            v.text("X-MICROSOFT-CDO-BUSYSTATUS").as_deref(),
+        ),
     })
 }
 
@@ -425,6 +446,7 @@ mod tests {
             original_start_time: None,
             cancelled: false,
             calendar_id: Some("cal".into()),
+            availability: "busy".into(),
         }
     }
 
@@ -518,6 +540,37 @@ mod tests {
         assert!(ics.contains("ATTENDEE:mailto:bob@example.com\r\n"));
         // Written once each.
         assert_eq!(ics.matches("jane@example.com").count(), 1);
+    }
+
+    #[test]
+    fn availability_is_written_as_transp_and_busy_status_and_read_back() {
+        let mut e = record("e1", "2026-11-23 19:00:00", "2026-11-23 20:00:00");
+        e.availability = "tentative".into();
+        let s = Series { master: e, exceptions: vec![], attendees: HashMap::new() };
+        let ics = render(&s, "e1", None);
+        assert!(ics.contains("TRANSP:OPAQUE\r\n"));
+        assert!(ics.contains("X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE\r\n"));
+        let back = parse_series(&ics).unwrap();
+        assert_eq!(back.master.availability, Availability::Tentative);
+        assert!(back.extras.by_occurrence.is_empty(), "both are modelled, not extras");
+    }
+
+    #[test]
+    fn a_transp_kept_as_an_extra_before_it_was_modelled_is_not_written_twice() {
+        // What a PUT from Apple Calendar stored before TRANSP was modelled.
+        let mut stored = Component::new("VEVENT");
+        stored.push("TRANSP", &[], "TRANSPARENT");
+        stored.push("SEQUENCE", &[], "3");
+        let mut extras = Extras::default();
+        extras.by_occurrence.insert(String::new(), fragment(&stored, |_| true).unwrap());
+        let old_extras = extras.to_json().unwrap();
+        let mut e = record("e1", "2026-11-23 19:00:00", "2026-11-23 20:00:00");
+        e.availability = "busy".into();
+        let s = Series { master: e, exceptions: vec![], attendees: HashMap::new() };
+        let ics = render(&s, "e1", Some(&old_extras));
+        assert!(ics.contains("SEQUENCE:3\r\n"), "the other extras are still written: {ics}");
+        assert_eq!(ics.matches("TRANSP:").count(), 1, "{ics}");
+        assert!(ics.contains("TRANSP:OPAQUE\r\n"), "the row wins");
     }
 
     #[test]

@@ -845,6 +845,7 @@ fn put_event(
                         attendees: m.attendees.clone(),
                         timezone: m.timezone.clone(),
                         calendar_id: Some(calendar_id.to_string()),
+                        availability: Some(m.availability),
                     },
                 )?
                 .id
@@ -907,6 +908,7 @@ fn whole(f: &vevent::EventFields) -> UpdateEventRequest {
         attendees: Some(f.attendees.clone()),
         timezone: Some(f.timezone.clone().unwrap_or_default()),
         calendar_id: None,
+        availability: Some(f.availability),
     }
 }
 

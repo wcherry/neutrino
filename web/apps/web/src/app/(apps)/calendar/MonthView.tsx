@@ -5,6 +5,7 @@ import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { buildMonthGrid, isSameDay, buildWeekEventSegments, fmtTime } from './calendarHelpers';
 import { eventColorStyle } from './calendars';
+import { availabilityClass, availabilityOf } from './availability';
 import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
 import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
@@ -142,8 +143,9 @@ export default function MonthView({
                 <button
                   key={seg.key}
                   type="button"
-                  className={`${styles.weekEventBar} ${seg.continuesBefore ? styles.weekEventBarContinuesBefore : ''} ${seg.continuesAfter ? styles.weekEventBarContinuesAfter : ''}`}
+                  className={`${styles.weekEventBar} ${seg.continuesBefore ? styles.weekEventBarContinuesBefore : ''} ${seg.continuesAfter ? styles.weekEventBarContinuesAfter : ''} ${availabilityClass(seg.event)}`}
                   data-testid="event-bar"
+                  data-availability={availabilityOf(seg.event)}
                   data-event-span={seg.span}
                   data-event-start-date={isoDate(week[seg.startIndex])}
                   style={{ ...position, ...eventColorStyle(colorOf?.(seg.event)) }}

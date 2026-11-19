@@ -181,3 +181,20 @@ describe('a read-only event', () => {
     expect(calendarApi.listAttachments).not.toHaveBeenCalled();
   });
 });
+
+describe('EventDetail — availability', () => {
+  it('says how the event shows the time', () => {
+    renderDetail({ event: { ...sampleEvent, availability: 'tentative' } });
+    expect(screen.getByTestId('event-availability').textContent).toContain('Tentative');
+  });
+
+  it('reads an event from an older server as busy', () => {
+    renderDetail();
+    expect(screen.getByTestId('event-availability').textContent).toContain('Busy');
+  });
+
+  it('says nothing for a holiday', () => {
+    renderDetail({ event: { ...sampleEvent, source: 'holidays' } });
+    expect(screen.queryByTestId('event-availability')).toBeNull();
+  });
+});

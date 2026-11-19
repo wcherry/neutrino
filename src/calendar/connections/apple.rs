@@ -2,6 +2,7 @@
 //!
 //! Uses HTTP Basic auth against iCloud's CalDAV server.
 //! Stores the base64-encoded "username:password" in the connection's access_token field.
+use crate::calendar::events::availability::Availability;
 use crate::shared::ApiError;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -98,6 +99,7 @@ pub struct CalDavEvent {
     pub recurrence_id: Option<NaiveDateTime>,
     /// The starts of the series' deleted occurrences.
     pub exdates: Vec<NaiveDateTime>,
+    pub availability: Availability,
 }
 
 const PRINCIPAL_PROPFIND: &str = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -443,6 +445,10 @@ fn parse_ical_event(ev: ical::parser::ical::component::IcalEvent) -> Option<CalD
     let rrule = prop("RRULE");
     let status = prop("STATUS");
     let cancelled = status.as_deref() == Some("CANCELLED");
+    let availability = Availability::from_ical(
+        prop("TRANSP").as_deref(),
+        prop("X-MICROSOFT-CDO-BUSYSTATUS").as_deref(),
+    );
 
     let start_tzid = tzid("DTSTART");
     let (start, all_day) = parse_ical_dt(&prop("DTSTART")?, start_tzid.as_deref())?;
@@ -492,6 +498,7 @@ fn parse_ical_event(ev: ical::parser::ical::component::IcalEvent) -> Option<CalD
         timezone,
         recurrence_id,
         exdates,
+        availability,
     })
 }
 
