@@ -277,10 +277,21 @@
 }
 
 .moreEvents {
+  align-self: flex-start;
   font-size: var(--font-size-11);
+  font-family: inherit;
   color: var(--color-text-secondary);
+  background: none;
+  border: none;
   padding: 1px 6px;
   cursor: pointer;
+  text-align: left;
+}
+
+.moreEvents:hover,
+.moreEvents:focus-visible {
+  color: var(--color-primary);
+  text-decoration: underline;
 }
 
 /* ── Multi-day event bars (issue #130) ───────────────────────────────────── */

@@ -149,3 +149,61 @@ describe('MonthView event bars', () => {
     expect(screen.getAllByTestId('day-cell').length).toBeGreaterThan(27);
   });
 });
+
+describe('MonthView — as many events as the row has room for', () => {
+  /** Gives the grid a height, so each week row gets `rowHeight` px (jsdom has no layout). */
+  function withRowHeight(rowHeight: number, run: () => void) {
+    // Defined on Element.prototype; shadowed here, then the shadow is removed.
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (this.dataset.testid !== 'month-grid') return 0;
+        return rowHeight * this.querySelectorAll('[data-testid="month-week"]').length;
+      },
+    });
+    try {
+      run();
+    } finally {
+      delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+    }
+  }
+
+  const sixOnTheTenth = ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map((t, i) =>
+    allDayEvent(`e${i}`, t, '2026-03-10', '2026-03-10'));
+
+  it('shows every event when they fit, leaving room to click to add another', () => {
+    // 220px: 36 for the day number, 20 kept free, 164 for bars → 8 lanes.
+    withRowHeight(220, () => {
+      const { container } = renderMonth(sixOnTheTenth);
+      expect(bars(container)).toHaveLength(6);
+      expect(screen.queryByTestId('more-events')).not.toBeInTheDocument();
+    });
+  });
+
+  it('gives the last lane that fits to "+N more" when they don\'t', () => {
+    // 120px: 64 for bars → 3 lanes; two events and the "+4 more" line.
+    withRowHeight(120, () => {
+      const { container } = renderMonth(sixOnTheTenth);
+      expect(bars(container)).toHaveLength(2);
+      expect(screen.getByTestId('more-events')).toHaveTextContent('+4 more');
+    });
+  });
+
+  it('"+N more" opens that day\'s events rather than a new event', () => {
+    const onShowMore = vi.fn();
+    const onDayClick = vi.fn();
+    render(
+      <MonthView
+        cursor={CURSOR}
+        events={sixOnTheTenth}
+        onDayClick={onDayClick}
+        onEventClick={vi.fn()}
+        onShowMore={onShowMore}
+        startDay={0}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '+3 more' }));
+    expect(onDayClick).not.toHaveBeenCalled();
+    expect((onShowMore.mock.calls[0][0] as Date).getDate()).toBe(10);
+  });
+});
