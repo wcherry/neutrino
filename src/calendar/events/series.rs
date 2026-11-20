@@ -106,6 +106,7 @@ pub struct Shape {
     pub description: Option<String>,
     pub location: Option<String>,
     pub timezone: Option<String>,
+    pub availability: String,
     pub attendees: Vec<String>,
 }
 
@@ -120,6 +121,7 @@ impl Shape {
             description: record.description.clone(),
             location: record.location.clone(),
             timezone: record.timezone.clone(),
+            availability: record.availability.clone(),
             attendees,
         }
     }
@@ -314,6 +316,7 @@ pub fn exception_for(
             original_start_time: Some(original),
             cancelled: false,
             calendar_id: series.calendar_id.clone(),
+            availability: series.availability.clone(),
         },
     )?;
     let attendees = attendees_of(conn, &series.id)?;
@@ -369,6 +372,10 @@ pub fn reconcile(
         }
         if exception.timezone == old.timezone && new.timezone != old.timezone {
             changes.timezone = Some(new.timezone.clone());
+            changed = true;
+        }
+        if exception.availability == old.availability && new.availability != old.availability {
+            changes.availability = Some(new.availability.clone());
             changed = true;
         }
         if retimed {
@@ -454,6 +461,7 @@ mod tests {
             description: None,
             location: None,
             timezone: None,
+            availability: "busy".into(),
             attendees: vec![],
         }
     }

@@ -1,3 +1,4 @@
+use crate::calendar::events::availability::Availability;
 use crate::calendar::events::{
     dto::{
         CreateEventRequest, DeleteEventQuery, EventChangesQuery, EventChangesResponse,
@@ -315,6 +316,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ListEventsQuery,
         EventResponse,
         ListEventsResponse,
+        Availability,
     )),
     tags((
         name = "events",

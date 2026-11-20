@@ -185,6 +185,32 @@ pub struct GoogleEvent {
     pub end: GoogleDateTime,
     pub recurrence: Option<Vec<String>>,
     pub organizer: Option<serde_json::Value>,
+    /// `opaque` (busy, the default) or `transparent` (free).
+    pub transparency: Option<String>,
+    /// `default`, `outOfOffice`, `focusTime`, `workingLocation`…
+    pub event_type: Option<String>,
+    pub attendees: Option<Vec<GoogleAttendee>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleAttendee {
+    /// This attendee is the user whose calendar it is.
+    #[serde(rename = "self", default)]
+    pub is_self: bool,
+    pub response_status: Option<String>,
+}
+
+impl GoogleEvent {
+    /// The user's own reply, when they are an attendee rather than the organiser.
+    pub fn own_response(&self) -> Option<&str> {
+        self.attendees
+            .as_ref()?
+            .iter()
+            .find(|a| a.is_self)?
+            .response_status
+            .as_deref()
+    }
 }
 
 #[derive(Debug, Deserialize)]

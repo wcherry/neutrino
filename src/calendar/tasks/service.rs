@@ -268,6 +268,7 @@ impl TasksService {
                     attendees: None,
                     timezone: None,
                     calendar_id: None,
+                    availability: None,
                 },
             ) {
                 // The task is already saved. An event that has been deleted out
@@ -492,6 +493,7 @@ impl TasksService {
                     attendees: None,
                     timezone: req.timezone.clone(),
                     calendar_id: None,
+                    availability: None,
                 },
             );
             match moved {
@@ -518,6 +520,7 @@ impl TasksService {
                 attendees: Vec::new(),
                 timezone: req.timezone,
                 calendar_id: None,
+                availability: None,
             },
         )?;
         self.repo.set_task_event(

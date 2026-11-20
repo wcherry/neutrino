@@ -121,6 +121,7 @@ diesel::table! {
         original_start_time -> Nullable<Timestamp>,
         cancelled -> Bool,
         calendar_id -> Nullable<Text>,
+        availability -> Text,
     }
 }
 

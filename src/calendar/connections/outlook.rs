@@ -186,6 +186,8 @@ pub struct OutlookEvent {
     pub start: OutlookDateTimeValue,
     pub end: OutlookDateTimeValue,
     pub is_all_day: Option<bool>,
+    /// `free`, `tentative`, `busy`, `oof`, `workingElsewhere` or `unknown`.
+    pub show_as: Option<String>,
     #[serde(rename = "@removed")]
     pub removed: Option<serde_json::Value>,
 }

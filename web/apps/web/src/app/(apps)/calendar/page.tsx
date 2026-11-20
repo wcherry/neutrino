@@ -88,6 +88,8 @@ export default function CalendarPage() {
   const calendarRouter = useNextRouter();
   const [view, setView] = useState<View>('month');
   const [cursor, setCursor] = useState(() => new Date());
+  /** The day the agenda scrolls to, after a month day's "+N more". */
+  const [agendaFocus, setAgendaFocus] = useState<Date | null>(null);
   // Synced preferences (@neutrino/preferences): set in Settings → Calendar, on any device.
   const [startDay] = usePreference('calendar.weekStart');
   const [dayStartHour] = usePreference('calendar.dayStartHour');
@@ -683,6 +685,7 @@ export default function CalendarPage() {
               startDay={startDay}
               colorOf={colorOf}
               onToggleTask={toggleCalendarTask}
+              onShowMore={(day) => { setCursor(day); setAgendaFocus(day); setView('agenda'); }}
             />
           )}
           {view === 'week' && (
@@ -699,7 +702,7 @@ export default function CalendarPage() {
             />
           )}
           {view === 'agenda' && (
-            <AgendaView cursor={cursor} events={events} onEventClick={handleEventClick} colorOf={colorOf} onToggleTask={toggleCalendarTask} />
+            <AgendaView cursor={cursor} events={events} onEventClick={handleEventClick} colorOf={colorOf} onToggleTask={toggleCalendarTask} focusDay={agendaFocus} />
           )}
         </div>
 

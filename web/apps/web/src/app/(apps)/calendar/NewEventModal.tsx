@@ -10,6 +10,8 @@ import { REMINDER_PRESETS } from './calendarConstants';
 import { buildRepeatRule, parseRepeatRule, type RepeatRule } from './repeatRule';
 import RepeatFields from './RepeatFields';
 import { writableCalendars } from './calendars';
+import { AVAILABILITY_OPTIONS } from './availability';
+import type { Availability } from '@/lib/api';
 import { scopeLabel } from './RecurrenceScopeModal';
 import {
   shiftEndWithStart,
@@ -69,6 +71,8 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, sco
   const [repeatTouched, setRepeatTouched] = useState(false);
   const [calendarId, setCalendarId] = useState(initialCalendarId);
   const [location, setLocation] = useState(existingEvent?.location ?? prefill?.location ?? '');
+  const [availability, setAvailability] = useState<Availability>(
+    existingEvent?.availability ?? prefill?.availability ?? 'busy');
   const [attendees, setAttendees] = useState<string[]>(existingEvent?.attendees ?? prefill?.attendees ?? []);
   const [attendeeInput, setAttendeeInput] = useState('');
   const [reminders, setReminders] = useState<ReminderEntry[]>([]);
@@ -169,6 +173,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, sco
       endTime: allDay ? `${end}T23:59:59Z` : new Date(end).toISOString(),
       allDay,
       location: location.trim() || null,
+      availability,
       attendees,
       recurrenceRule: recurrenceRule(),
       timezone: allDay ? null : Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -269,6 +274,21 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, sco
               </select>
             </div>
           )}
+
+          {/* Availability */}
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel} htmlFor="event-availability">Show as</label>
+            <select
+              id="event-availability"
+              className={styles.formInput}
+              value={availability}
+              onChange={(e) => setAvailability(e.target.value as Availability)}
+            >
+              {AVAILABILITY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
 
           {/* Location */}
           <div className={styles.formGroup}>

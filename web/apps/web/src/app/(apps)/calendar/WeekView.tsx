@@ -11,6 +11,7 @@ import {
   getEventDayBounds,
 } from './calendarHelpers';
 import { eventColorStyle } from './calendars';
+import { availabilityClass, availabilityOf } from './availability';
 import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
 import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
@@ -196,7 +197,8 @@ function WeekViewGrid({
             ) : (
               <button
                 key={ev.id}
-                className={gridStyles.eventChipInline}
+                className={`${gridStyles.eventChipInline} ${availabilityClass(ev)}`}
+                data-availability={availabilityOf(ev)}
                 style={eventColorStyle(colorOf?.(ev))}
                 onClick={() => onEventClick(ev)}
                 title={ev.title}
@@ -306,7 +308,8 @@ function WeekViewGrid({
                     return (
                       <button
                         key={`${ev.id}-${ev.startTime}`}
-                        className={gridStyles.eventChip}
+                        className={`${gridStyles.eventChip} ${availabilityClass(ev)}`}
+                        data-availability={availabilityOf(ev)}
                         style={{ top, height, ...eventColorStyle(colorOf?.(ev)) }}
                         onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
                         title={ev.title}

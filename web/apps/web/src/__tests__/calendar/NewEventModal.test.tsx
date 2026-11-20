@@ -516,3 +516,28 @@ describe('NewEventModal — repeat', () => {
     });
   });
 });
+
+describe('NewEventModal — Show as (availability)', () => {
+  it('creates a busy event unless another choice is made', async () => {
+    const { onCreate } = renderCreateModal();
+    expect((screen.getByLabelText('Show as') as HTMLSelectElement).value).toBe('busy');
+    fireEvent.change(screen.getByPlaceholderText('Event title'), { target: { value: 'Offsite' } });
+    fireEvent.change(screen.getByLabelText('Show as'), { target: { value: 'away' } });
+    fireEvent.click(screen.getByRole('button', { name: /create event/i }));
+    await waitFor(() => expect(onCreate.mock.calls[0][0].availability).toBe('away'));
+  });
+
+  it("starts from the event's own availability when editing, and saves a change", async () => {
+    const { onUpdate } = renderEditModal({ existingEvent: { ...existingEvent, availability: 'tentative' } });
+    const select = screen.getByLabelText('Show as') as HTMLSelectElement;
+    expect(select.value).toBe('tentative');
+    fireEvent.change(select, { target: { value: 'free' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => expect(onUpdate.mock.calls[0][0].availability).toBe('free'));
+  });
+
+  it('takes the availability an imported .ics carried', () => {
+    renderCreateModal({ prefill: { title: 'Imported', availability: 'free' } });
+    expect((screen.getByLabelText('Show as') as HTMLSelectElement).value).toBe('free');
+  });
+});

@@ -183,6 +183,7 @@ impl EventsRepository {
                 recurrence_rule: Some(record.recurrence_rule),
                 updated_at: record.updated_at,
                 timezone: Some(record.timezone),
+                availability: Some(record.availability),
                 // The provider says the event exists, so a soft-deleted copy comes back, as a
                 // hard-deleted one used to be inserted again.
                 deleted_at: Some(None),

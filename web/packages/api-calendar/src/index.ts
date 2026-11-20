@@ -4,6 +4,12 @@ import { request } from '@neutrino/api-core';
 // Event types
 // ---------------------------------------------------------------------------
 
+/**
+ * How an event shows the user's time. `away` is out of office. The server always sends it; an
+ * older one may not, and absent reads as `busy`.
+ */
+export type Availability = 'busy' | 'free' | 'tentative' | 'away';
+
 export interface EventResponse {
   id: string;
   title: string;
@@ -29,6 +35,7 @@ export interface EventResponse {
   cancelled?: boolean;
   /** The calendar the event belongs to; see `calendarApi.listCalendars`. */
   calendarId?: string | null;
+  availability?: Availability;
 }
 
 export interface CreateEventRequest {
@@ -43,6 +50,8 @@ export interface CreateEventRequest {
   timezone?: string | null;
   /** Absent, the user's default calendar. A read-only calendar is refused. */
   calendarId?: string | null;
+  /** Absent, busy. */
+  availability?: Availability;
 }
 
 export interface UpdateEventRequest {
@@ -57,6 +66,7 @@ export interface UpdateEventRequest {
   timezone?: string | null;
   /** Moves the event, and a repeating one's exceptions with it. Not for one occurrence. */
   calendarId?: string | null;
+  availability?: Availability;
 }
 
 /** "This and following": the new series' changes from the occurrence it starts at. */

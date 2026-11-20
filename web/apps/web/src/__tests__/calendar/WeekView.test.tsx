@@ -170,3 +170,41 @@ describe('WeekView (hour-grid)', () => {
     expect(onEventClick).toHaveBeenCalledWith(event);
   });
 });
+
+describe('WeekView — availability shading', () => {
+  const props = {
+    cursor: CURSOR,
+    onDayClick: vi.fn(),
+    onEventClick: vi.fn(),
+    startDay: 0,
+    dayStartHour: 8,
+    dayEndHour: 20,
+  };
+
+  it('shades each event by its availability, and an event without one as busy', () => {
+    const at = (h: number) => ({ startTime: localIso(2025, 6, 10, h), endTime: localIso(2025, 6, 10, h, 30) });
+    const events = [
+      makeEvent({ id: 'b', title: 'Old event', ...at(9) }),
+      makeEvent({ id: 'f', title: 'Gym', availability: 'free', ...at(10) }),
+      makeEvent({ id: 't', title: 'Maybe lunch', availability: 'tentative', ...at(12) }),
+      makeEvent({ id: 'a', title: 'Dentist', availability: 'away', ...at(14) }),
+    ];
+    render(<WeekView {...props} events={events} />);
+    const chip = (title: string) => screen.getByText(title).closest('button')!;
+    expect(chip('Old event').dataset.availability).toBe('busy');
+    expect(chip('Gym').dataset.availability).toBe('free');
+    expect(chip('Gym').className).toMatch(/free/);
+    expect(chip('Maybe lunch').className).toMatch(/tentative/);
+    expect(chip('Dentist').className).toMatch(/away/);
+    expect(chip('Old event').className).not.toMatch(/free|tentative|away/);
+  });
+
+  it('shades all-day events too', () => {
+    const ev = makeEvent({
+      id: 'v', title: 'Vacation', allDay: true, availability: 'away',
+      startTime: '2025-06-10T00:00:00Z', endTime: '2025-06-10T23:59:59Z',
+    });
+    render(<WeekView {...props} events={[ev]} />);
+    expect(screen.getByText('Vacation').closest('button')!.dataset.availability).toBe('away');
+  });
+});

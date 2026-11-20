@@ -207,3 +207,25 @@ describe('describeIcsImport', () => {
       .toEqual({ ok: false, message: 'Couldn’t add the event to your calendar' });
   });
 });
+
+describe('availability from an .ics', () => {
+  const one = (...extra: string[]) =>
+    parseIcsEvents(ics(lines('SUMMARY:Lunch', 'DTSTART:20261020T120000Z', 'DTEND:20261020T130000Z', ...extra)), 'UTC')[0];
+
+  it('is busy unless the file says otherwise', () => {
+    expect(one().availability).toBe('busy');
+    expect(one('TRANSP:OPAQUE').availability).toBe('busy');
+  });
+
+  it("reads Apple's TRANSP and Outlook's busy status", () => {
+    expect(one('TRANSP:TRANSPARENT').availability).toBe('free');
+    expect(one('X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE').availability).toBe('tentative');
+    expect(one('X-MICROSOFT-CDO-BUSYSTATUS:OOF').availability).toBe('away');
+    expect(one('X-MICROSOFT-CDO-BUSYSTATUS:FREE').availability).toBe('free');
+  });
+
+  it('lets TRANSP win over a busy status left behind by another client', () => {
+    expect(one('TRANSP:OPAQUE', 'X-MICROSOFT-CDO-BUSYSTATUS:FREE').availability).toBe('busy');
+    expect(one('TRANSP:TRANSPARENT', 'X-MICROSOFT-CDO-BUSYSTATUS:OOF').availability).toBe('free');
+  });
+});

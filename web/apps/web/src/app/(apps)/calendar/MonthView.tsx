@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { buildMonthGrid, isSameDay, buildWeekEventSegments, fmtTime } from './calendarHelpers';
 import { eventColorStyle } from './calendars';
+import { availabilityClass, availabilityOf } from './availability';
 import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
 import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
@@ -18,8 +19,14 @@ function isoDate(day: Date): string {
 
 /** Height of one bar plus the gap under it, in px — mirrors `.weekEventBar` in the CSS. */
 const LANE_HEIGHT = 20;
-/** Bars past this many lanes collapse into the day cell's "+N more". */
-const MAX_LANES = 3;
+/** Lanes shown before the grid has been measured (and where it can't be, as in tests). */
+const UNMEASURED_LANES = 3;
+/** Where the bars start in a row: 6px cell padding + a 26px day number + its 4px margin. */
+const BARS_TOP = 36;
+/** Left empty under the bars so there's always somewhere in the day to click to add an event. */
+const ADD_RESERVE = 20;
+/** Mirrors `.monthWeek { min-height }`: rows never get shorter, the grid scrolls instead. */
+const MIN_ROW_HEIGHT = 100;
 /** Gap between a bar and its cell's edge, in px. */
 const BAR_INSET = 4;
 
@@ -33,6 +40,8 @@ interface MonthViewProps {
   colorOf?: (e: EventResponse) => string | undefined;
   /** Ticks or unticks a task drawn on the calendar (`calendarTasks.ts`). */
   onToggleTask?: (task: TaskOccurrence) => void;
+  /** A day's "+N more": show every event of that day (the agenda). */
+  onShowMore?: (day: Date) => void;
 }
 
 export default function MonthView({
@@ -43,6 +52,7 @@ export default function MonthView({
   startDay,
   colorOf,
   onToggleTask,
+  onShowMore,
 }: MonthViewProps) {
   const today = new Date();
   const grid = useMemo(() => buildMonthGrid(cursor, startDay), [cursor, startDay]);
@@ -58,17 +68,44 @@ export default function MonthView({
     [grid, events],
   );
 
+  // How many lanes of bars a week row has room for. Measured from the grid, not the rows: a row
+  // grows to fit its bars (`flex: 1 0 auto`), so its own height would only ever say "more".
+  const gridRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [rowHeight, setRowHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const available = el.clientHeight - (headerRef.current?.offsetHeight ?? 0);
+      setRowHeight(available > 0 ? Math.max(MIN_ROW_HEIGHT, available / grid.length) : 0);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [grid.length]);
+  /** How many lanes a week with `lanes` of them shows; the rest go into each day's "+N more". */
+  const lanesShown = (lanes: number) => {
+    if (rowHeight <= 0) return Math.min(lanes, UNMEASURED_LANES);
+    const fit = Math.max(1, Math.floor((rowHeight - BARS_TOP - ADD_RESERVE) / LANE_HEIGHT));
+    // Every lane when they all fit; otherwise the last lane that fits holds the "+N more".
+    return lanes <= fit ? lanes : Math.max(1, fit - 1);
+  };
+
   return (
-    <div className={styles.monthGrid} data-testid="month-grid">
-      <div className={styles.weekHeader} data-testid="month-week-header">
+    <div ref={gridRef} className={styles.monthGrid} data-testid="month-grid">
+      <div ref={headerRef} className={styles.weekHeader} data-testid="month-week-header">
         {orderedDays.map((d) => (
           <div key={d} className={styles.weekHeaderCell}>{d}</div>
         ))}
       </div>
       {grid.map((week, wi) => {
         const segments = weekSegments[wi];
-        const visible = segments.filter((s) => s.lane < MAX_LANES);
-        const overflow = segments.filter((s) => s.lane >= MAX_LANES);
+        const shown = lanesShown(segments.reduce((n, s) => Math.max(n, s.lane + 1), 0));
+        const visible = segments.filter((s) => s.lane < shown);
+        const overflow = segments.filter((s) => s.lane >= shown);
         const laneCount = visible.reduce((n, s) => Math.max(n, s.lane + 1), 0);
 
         return (
@@ -96,7 +133,14 @@ export default function MonthView({
                         reserves their height instead of holding them. */}
                     <div className={styles.dayEventsSpacer} style={{ height: laneCount * LANE_HEIGHT }} />
                     {hiddenCount > 0 && (
-                      <div className={styles.moreEvents}>+{hiddenCount} more</div>
+                      <button
+                        type="button"
+                        className={styles.moreEvents}
+                        data-testid="more-events"
+                        onClick={(e) => { e.stopPropagation(); onShowMore?.(new Date(day)); }}
+                      >
+                        +{hiddenCount} more
+                      </button>
                     )}
                   </div>
                 </div>
@@ -142,8 +186,9 @@ export default function MonthView({
                 <button
                   key={seg.key}
                   type="button"
-                  className={`${styles.weekEventBar} ${seg.continuesBefore ? styles.weekEventBarContinuesBefore : ''} ${seg.continuesAfter ? styles.weekEventBarContinuesAfter : ''}`}
+                  className={`${styles.weekEventBar} ${seg.continuesBefore ? styles.weekEventBarContinuesBefore : ''} ${seg.continuesAfter ? styles.weekEventBarContinuesAfter : ''} ${availabilityClass(seg.event)}`}
                   data-testid="event-bar"
+                  data-availability={availabilityOf(seg.event)}
                   data-event-span={seg.span}
                   data-event-start-date={isoDate(week[seg.startIndex])}
                   style={{ ...position, ...eventColorStyle(colorOf?.(seg.event)) }}

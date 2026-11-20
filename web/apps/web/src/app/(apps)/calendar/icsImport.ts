@@ -9,7 +9,7 @@
  * exclusive, so the last day is the one before it), and a repeat rule goes through
  * `parseRepeatRule`/`buildRepeatRule` so its UNTIL is written the way every expander reads it.
  */
-import { calendarApi, type CreateEventRequest, type EventResponse } from '@neutrino/api-calendar';
+import { calendarApi, type Availability, type CreateEventRequest, type EventResponse } from '@neutrino/api-calendar';
 import { buildRepeatRule, parseRepeatRule, zonedTimeToUtc } from './repeatRule';
 
 interface Property {
@@ -28,6 +28,8 @@ interface RawEvent {
   rrule?: string;
   recurrenceId?: string;
   status?: string;
+  transp?: string;
+  busyStatus?: string;
   attendees: string[];
 }
 
@@ -171,6 +173,8 @@ function readEvents(text: string): RawEvent[] {
       case 'RRULE': current.rrule = value; break;
       case 'RECURRENCE-ID': current.recurrenceId = value; break;
       case 'STATUS': current.status = value.toUpperCase(); break;
+      case 'TRANSP': current.transp = value.toUpperCase(); break;
+      case 'X-MICROSOFT-CDO-BUSYSTATUS': current.busyStatus = value.toUpperCase(); break;
       case 'ATTENDEE': {
         const mailto = /^mailto:(.+)$/i.exec(value);
         if (mailto) current.attendees.push(mailto[1]);
@@ -214,6 +218,21 @@ function addDays(date: string, n: number): string {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
+/**
+ * TRANSP says busy or free (Apple Calendar writes only this); Outlook's
+ * X-MICROSOFT-CDO-BUSYSTATUS adds tentative and out of office. TRANSP wins when they disagree.
+ * Must match `Availability::from_ical` in the server's `events/availability.rs`.
+ */
+export function icsAvailability(transp?: string, busyStatus?: string): Availability {
+  if (transp === 'TRANSPARENT') return 'free';
+  switch (busyStatus) {
+    case 'TENTATIVE': return 'tentative';
+    case 'OOF': return 'away';
+    case 'FREE': return transp ? 'busy' : 'free';
+    default: return 'busy';
+  }
+}
+
 function toRequest(ev: RawEvent, zone: string): CreateEventRequest | null {
   if (!ev.dtstart) return null;
   const start = readTime(ev.dtstart, zone);
@@ -226,6 +245,7 @@ function toRequest(ev: RawEvent, zone: string): CreateEventRequest | null {
     description: ev.description || null,
     location: ev.location || null,
     attendees: ev.attendees,
+    availability: icsAvailability(ev.transp, ev.busyStatus),
   };
 
   if (start.kind === 'date') {

@@ -5,6 +5,7 @@ use crate::calendar::connections::dto::{
 use crate::calendar::connections::model::{ConnectionRecord, NewConnectionRecord};
 use crate::calendar::connections::repository::ConnectionsRepository;
 use crate::calendar::connections::{apple, google, outlook};
+use crate::calendar::events::availability::Availability;
 use crate::calendar::events::model::NewEventRecord;
 use crate::calendar::events::repository::EventsRepository;
 use crate::config::OAuthConfig;
@@ -326,6 +327,11 @@ impl ConnectionsService {
                 continue;
             };
 
+            let availability = Availability::from_google(
+                ev.transparency.as_deref(),
+                ev.event_type.as_deref(),
+                ev.own_response(),
+            );
             let rrule = ev.recurrence.and_then(|rules| {
                 rules
                     .into_iter()
@@ -352,6 +358,7 @@ impl ConnectionsService {
                 original_start_time: None,
                 cancelled: false,
                 calendar_id: Some(calendar_id.clone()),
+                availability: availability.as_str().to_string(),
             };
 
             self.events_repo
@@ -414,6 +421,7 @@ impl ConnectionsService {
                 continue;
             };
 
+            let availability = Availability::from_outlook(ev.show_as.as_deref());
             let record = NewEventRecord {
                 id: Uuid::new_v4().to_string(),
                 user_id: conn.user_id.clone(),
@@ -433,6 +441,7 @@ impl ConnectionsService {
                 original_start_time: None,
                 cancelled: false,
                 calendar_id: Some(calendar_id.clone()),
+                availability: availability.as_str().to_string(),
             };
 
             self.events_repo
@@ -551,6 +560,7 @@ fn apple_records(
         original_start_time: None,
         cancelled: false,
         calendar_id: Some(calendar_id.to_string()),
+        availability: ev.availability.as_str().to_string(),
     };
 
     let mut out = SyncedSeries {
@@ -736,6 +746,7 @@ mod tests {
             timezone: Some("America/Los_Angeles".into()),
             recurrence_id: None,
             exdates: Vec::new(),
+            availability: Default::default(),
         }
     }
 

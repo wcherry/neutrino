@@ -1,5 +1,5 @@
 import type { CalendarResponse } from '@neutrino/api-calendar';
-import type { CreateEventRequest, UpdateEventRequest, EventResponse, ReminderResponse, CreateReminderRequest, UpdateReminderRequest, CreateAttachmentRequest } from '@/lib/api';
+import type { Availability, CreateEventRequest, UpdateEventRequest, EventResponse, ReminderResponse, CreateReminderRequest, UpdateReminderRequest, CreateAttachmentRequest } from '@/lib/api';
 
 export type View = 'month' | 'week' | 'agenda';
 
@@ -11,6 +11,7 @@ export interface ParsedIcsEvent {
   endTime?: string;
   allDay?: boolean;
   attendees?: string[];
+  availability?: Availability;
 }
 
 export interface ReminderEntry {
