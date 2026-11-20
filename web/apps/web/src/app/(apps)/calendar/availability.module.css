@@ -9,13 +9,13 @@
   background: repeating-linear-gradient(
     135deg,
     var(--event-bg, var(--color-primary-light)) 0 5px,
-    var(--color-surface, #fff) 5px 9px
+    var(--color-surface) 5px 9px
   );
 }
 
 /* Free: hollow, outlined in dashes. An outline, not a border, so nothing moves. */
 .free:not(:hover) {
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 .free {
@@ -25,8 +25,8 @@
 
 /* Away (out of office): a deeper fill, with the body text colour so it stays readable. */
 .away:not(:hover) {
-  background: color-mix(in srgb, var(--event-solid, var(--color-primary)) 45%, var(--color-surface, #fff));
-  color: var(--color-text-primary, #111827);
+  background: color-mix(in srgb, var(--event-solid, var(--color-primary)) 45%, var(--color-surface));
+  color: var(--color-text-primary);
 }
 
 /* The event detail's key: a small chip shaded like the event. */
