@@ -36,9 +36,10 @@ export interface DriveChangedSignal {
  *
  * Grouped by the surface that renders them rather than sorted, because the question asked of this
  * list is always "is my view covered?". Most of these render `FileGrid`, directly or through
- * `DocumentLibrary`; `notes`, `diagrams` and the photo keys are the hand-written pages that
- * predate that component (see `web/CLAUDE.md`) and are listed here so they behave the same until
- * they are folded into it.
+ * `FileLibrary` (every app library, under one root). The per-app roots (`docs`, `sheets`, …,
+ * `notes`) are no longer landing pages: they are the lists the editors' pickers and the note
+ * editor's wiki-link source read, and they still go stale behind an upload. The photo keys are the
+ * Photos library, which keeps a grid of its own.
  *
  * Anything not a listing is deliberately absent: a file's own versions, tags, comments or
  * permissions are read when that file is opened and are not what goes stale behind an upload.
@@ -59,14 +60,16 @@ export const LISTING_QUERY_KEYS: readonly string[] = [
   // Team Spaces
   'team-library',
   'team-shares',
-  // Office suite landing pages, via DocumentLibrary
+  // Every app library (/docs, /sheets, /slides, /drawing, /diagrams, /notes), via FileLibrary
+  'file-library',
+  // Per-app lists behind the editors' pickers (Insert sheet, Insert diagram, wiki links)
   'docs',
   'sheets',
   'slides',
   'drawings',
-  // Hand-written listings
   'notes',
   'diagrams',
+  // Photos library
   'photos',
   'photo-motion',
   'albums',

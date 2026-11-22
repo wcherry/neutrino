@@ -361,6 +361,35 @@ export async function request<T>(
   return res.json() as Promise<T>;
 }
 
+/** Files asked for per request by `listEveryDriveFile`. */
+const LIST_EVERY_PAGE_SIZE = 200;
+/** A ceiling so a runaway drive cannot keep a caller paging forever (10,000 files). */
+const LIST_EVERY_MAX_PAGES = 50;
+
+/**
+ * Every file of the given MIME types the caller owns, across all folders, from
+ * `GET /api/v1/drive/files` — paged until the server's `total` is reached.
+ *
+ * The per-app list calls (`listDocs`, `listSheets`, …) used to ask for one page
+ * of 200 and stop, so the 201st spreadsheet was missing from the editors'
+ * pickers and was never indexed for search.
+ */
+export async function listEveryDriveFile<T>(mimeTypes: readonly string[]): Promise<T[]> {
+  const files: T[] = [];
+  for (let page = 0; page < LIST_EVERY_MAX_PAGES; page++) {
+    const qs = buildQuery({
+      mimeType: mimeTypes.join(','),
+      limit: LIST_EVERY_PAGE_SIZE,
+      offset: page * LIST_EVERY_PAGE_SIZE,
+    });
+    const raw = await request<{ files?: T[]; total?: number }>(`/api/v1/drive/files${qs}`);
+    const batch = raw.files ?? [];
+    files.push(...batch);
+    if (batch.length < LIST_EVERY_PAGE_SIZE || (raw.total !== undefined && files.length >= raw.total)) break;
+  }
+  return files;
+}
+
 export function buildQuery(params: Record<string, string | number | boolean | undefined>): string {
   const entries = Object.entries(params).filter(
     ([, v]) => v !== undefined && v !== null && v !== ''

@@ -20,7 +20,7 @@ import {
 } from '@neutrino/ui';
 import { ArrowLeft, Check, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react';
 import { tagsApi, type FileItem } from '@/lib/api';
-import { fileToGridItem } from '../gridItems';
+import { fileToGridItem, sortEntries } from '../gridItems';
 import { routeForFile } from '../routeForFile';
 import { PreviewModal } from '../PreviewModal';
 import styles from '../tags/tags.module.css';
@@ -69,7 +69,12 @@ function TagDetail() {
   });
 
   const files = useMemo(() => filesData?.files ?? [], [filesData]);
-  const items: GridItem[] = useMemo(() => files.map(fileToGridItem), [files]);
+  // The tag endpoint takes no sort parameters, so the listing is ordered here, as Starred and
+  // Shared order theirs.
+  const items: GridItem[] = useMemo(
+    () => sortEntries(files, sortBy, sortDir).map(fileToGridItem),
+    [files, sortBy, sortDir],
+  );
 
   const renameMutation = useMutation({
     mutationFn: (name: string) => tagsApi.rename(tagId, name),

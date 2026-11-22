@@ -5,16 +5,15 @@ import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { useToast } from '@neutrino/ui';
 import { diagramsApi } from '@neutrino/api-diagrams';
-import { GitBranch } from 'lucide-react';
-import { DocumentLibrary } from '../DocumentLibrary';
+import { FileLibrary } from '../FileLibrary';
 import { TemplatePickerModal } from './TemplatePickerModal';
 import type { DiagramTemplate } from './editor/templates/diagramTemplates';
 
 const TEMPLATE_SESSION_KEY_PREFIX = 'neutrino:diagram-template:';
 
 /**
- * The Diagrams library — the shared `DocumentLibrary` (FileGrid, views, sort, rename, delete) since
- * Stage 4, where it had been a grid of its own. New diagrams still start from the template picker.
+ * The Diagrams library — the shared `FileLibrary`. New diagrams start from the template picker,
+ * which creates the diagram itself.
  */
 export default function DiagramsPage() {
   const router = useRouter();
@@ -44,30 +43,7 @@ export default function DiagramsPage() {
 
   return (
     <>
-      <DocumentLibrary
-        title="Diagrams"
-        noun="diagram"
-        typeText="Diagram"
-        icon={GitBranch}
-        iconColor="var(--file-color-diagram)"
-        editorPath="/diagrams/editor"
-        queryKey="diagrams"
-        previewKind="diagram"
-        // Only the one that is not the default says so: what a reader needs to know is which of
-        // these files is also a picture anything can open.
-        fetchItems={async () =>
-          (await diagramsApi.listDiagrams()).diagrams.map((d) => ({
-            id: d.id,
-            title: d.title,
-            updatedAt: d.updatedAt,
-            typeText: d.format === 'svg' ? 'Diagram (SVG)' : undefined,
-          }))
-        }
-        createItem={() => diagramsApi.createDiagram({ title: 'Untitled diagram' })}
-        onCreate={() => setShowTemplatePicker(true)}
-        renameItem={(id, title) => diagramsApi.saveDiagram(id, { title })}
-        deleteItem={(id) => diagramsApi.deleteDiagram(id)}
-      />
+      <FileLibrary library="diagrams" onCreate={() => setShowTemplatePicker(true)} />
       <TemplatePickerModal
         open={showTemplatePicker}
         onClose={() => setShowTemplatePicker(false)}

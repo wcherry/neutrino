@@ -5,8 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Bell, CalendarPlus, FileText, FolderPlus, FolderUp, GitBranch, NotebookPen, Plus, Presentation, Table2, Upload, Paintbrush } from 'lucide-react';
 import { useToast } from '@neutrino/ui';
 import { usePreference } from '@neutrino/preferences';
-import { docsApi, sheetsApi, slidesApi, diagramsApi, drawingApi } from '@/lib/api';
-import { createNote } from '@/lib/noteFiles';
+import { createNewItem } from '@/lib/newItems';
 import styles from './NewItemFAB.module.css';
 
 // `app` is the `apps.enabled` key an action belongs to: an app an administrator has hidden has no
@@ -65,44 +64,9 @@ export function NewItemFAB({ variant = 'topbar', compact = false }: NewItemFABPr
     }
     setPending(true);
     try {
-      switch (id) {
-        case 'doc': {
-          const doc = await docsApi.createDoc({ title: 'Untitled document' });
-          router.push(`/docs/editor?id=${doc.id}`);
-          break;
-        }
-        case 'sheet': {
-          const sheet = await sheetsApi.createSheet({ title: 'Untitled spreadsheet' });
-          router.push(`/sheets/editor?id=${sheet.id}`);
-          break;
-        }
-        case 'slide': {
-          const slide = await slidesApi.createSlide({ title: 'Untitled presentation' });
-          router.push(`/slides/editor?id=${slide.id}`);
-          break;
-        }
-        case 'note': {
-          const note = await createNote('Untitled note');
-          router.push(`/notes/editor?id=${note.id}`);
-          break;
-        }
-        case 'diagram': {
-          const diagram = await diagramsApi.createDiagram({ title: 'Untitled diagram' });
-          router.push(`/diagrams/editor?id=${diagram.id}`);
-          break;
-        }
-        case 'drawing': {
-          const drawing = await drawingApi.createDrawing({ title: 'Untitled drawing' });
-          router.push(`/drawing/editor?id=${drawing.id}`);
-          break;
-        }
-        case 'event':
-          router.push('/calendar?new=event');
-          break;
-        case 'reminder':
-          router.push('/calendar?new=reminder');
-          break;
-      }
+      if (id === 'event') router.push('/calendar?new=event');
+      else if (id === 'reminder') router.push('/calendar?new=reminder');
+      else router.push(await createNewItem(id));
     } catch {
       toast.error('Failed to create item');
     } finally {

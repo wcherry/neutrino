@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { copyNoteLink } from '../../app/(apps)/notes/copyNoteLink';
 import { appLinkUrl } from '../../app/(apps)/open/appLink';
+import { appLinkKindForMime, copyAppLink } from '../../app/(apps)/open/copyAppLink';
 
 class FakeClipboardItem {
   constructor(public readonly items: Record<string, Blob>) {}
@@ -65,5 +66,28 @@ describe('copyNoteLink', () => {
     const { writeText } = stubClipboard();
     await copyNoteLink('n1', 'Plan', 'https://x.y');
     expect(writeText).toHaveBeenCalledWith('https://x.y/open/note/n1');
+  });
+});
+
+describe('appLinkKindForMime', () => {
+  it('links an app’s own format to that app, so a phone opens it there', () => {
+    expect(appLinkKindForMime('text/markdown')).toBe('note');
+    expect(appLinkKindForMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe('sheet');
+    expect(appLinkKindForMime('application/x-neutrino-diagram')).toBe('diagram');
+  });
+
+  it('links anything else as a plain file', () => {
+    expect(appLinkKindForMime('image/jpeg')).toBe('file');
+    expect(appLinkKindForMime('application/pdf')).toBe('file');
+  });
+});
+
+describe('copyAppLink', () => {
+  it('copies an /open link, never a download URL carrying the session token', async () => {
+    const { writeText } = stubClipboard();
+    const url = await copyAppLink('sheet', 's1', 'Budget.xlsx', 'https://x.y');
+    expect(url).toBe('https://x.y/open/sheet/s1');
+    expect(writeText).toHaveBeenCalledWith('https://x.y/open/sheet/s1');
+    expect(url).not.toContain('token');
   });
 });

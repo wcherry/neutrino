@@ -1,4 +1,4 @@
-import { request, contentVersionQuery, ApiClientError, type ContentVersionCheck } from '@neutrino/api-core';
+import { request, contentVersionQuery, ApiClientError, type ContentVersionCheck, listEveryDriveFile } from '@neutrino/api-core';
 
 /**
  * A file is a native Neutrino drawing because it carries this mime type.
@@ -166,9 +166,7 @@ function toDrawing(file: DriveFileDto): DrawingResponse {
 
 export const drawingApi = {
   async listDrawings(): Promise<ListDrawingsResponse> {
-    const params = new URLSearchParams({ mimeType: DRAWING_MIME_TYPE, limit: '200' });
-    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
-    return { drawings: (raw.files ?? []).map(toDrawingMeta) };
+    return { drawings: (await listEveryDriveFile<DriveFileDto>([DRAWING_MIME_TYPE])).map(toDrawingMeta) };
   },
 
   async createDrawing(body: CreateDrawingRequest): Promise<DrawingResponse> {

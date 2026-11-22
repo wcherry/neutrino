@@ -16,6 +16,10 @@ vi.mock('@neutrino/api-core', async (importOriginal) => ({
   // being tested on. Only the HTTP call is stubbed.
   ...(await importOriginal<typeof import('@neutrino/api-core')>()),
   request: (...args: unknown[]) => mockRequest(...args),
+  // The pager has its own test (listEveryDriveFile.test.ts); here one page is enough to see what
+  // each adapter asks for and how it maps the answer.
+  listEveryDriveFile: async (mimeTypes: readonly string[]) =>
+    ((await mockRequest(`/api/v1/drive/files?mimeType=${mimeTypes.join(',')}`)) as { files?: unknown[] }).files ?? [],
 }));
 
 import { docsApi, DOCX_MIME_TYPE } from '@neutrino/api-docs';

@@ -5,6 +5,7 @@ import {
   ooxmlMimeFor,
   withOoxmlExtension,
   stripOoxmlExtension,
+  listEveryDriveFile,
 } from '@neutrino/api-core';
 
 /**
@@ -208,9 +209,7 @@ function toSlide(file: DriveFileDto): SlideResponse {
 
 export const slidesApi = {
   async listSlides(): Promise<ListSlidesResponse> {
-    const params = new URLSearchParams({ mimeType: SLIDE_MIME_TYPES.join(','), limit: '200' });
-    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
-    return { slides: (raw.files ?? []).map(toSlideMeta) };
+    return { slides: (await listEveryDriveFile<DriveFileDto>(SLIDE_MIME_TYPES)).map(toSlideMeta) };
   },
 
   async createSlide(body: CreateSlideRequest): Promise<SlideResponse> {

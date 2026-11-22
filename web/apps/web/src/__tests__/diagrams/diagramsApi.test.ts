@@ -11,6 +11,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@neutrino/api-core', () => ({
   request: vi.fn(),
+  // The pager has its own test (listEveryDriveFile.test.ts); one page through `request` is enough here.
+  listEveryDriveFile: async (mimeTypes: readonly string[]) => {
+    const { request } = await import('@neutrino/api-core');
+    const raw = (await (request as (path: string) => Promise<{ files?: unknown[] }>)(
+      `/api/v1/drive/files?mimeType=${mimeTypes.join(',')}`,
+    )) ?? {};
+    return raw.files ?? [];
+  },
   contentVersionQuery: () => '',
   ApiClientError: class ApiClientError extends Error {
     statusCode: number;
