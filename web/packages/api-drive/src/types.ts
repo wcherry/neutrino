@@ -131,6 +131,12 @@ export interface FileListQuery {
    * across the whole drive rather than one folder.
    */
   type?: DriveFileType;
+  /**
+   * Narrow to these exact MIME types. ANDs with `type` server-side; on its own
+   * it is how a listing asks for a set no single `type` names — the Diagrams
+   * library's native diagrams *and* SVG-stored ones.
+   */
+  mimeType?: readonly string[];
 }
 
 export interface QuotaInfo {

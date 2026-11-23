@@ -5,7 +5,7 @@
 
 import dynamic from 'next/dynamic';
 import React, { Suspense, useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Heading,
   Text,
@@ -13,50 +13,31 @@ import {
   Breadcrumbs,
   EmptyState,
   useToast,
-  PanelRail,
-  type RailPanel,
-  type RailSide,
-  type RailSpec,
 } from '@neutrino/ui';
-import { useRailState } from '@/lib/panelLayouts';
 import {
   Folder,
   Upload,
   Search,
   SearchX,
   X,
-  Info,
 } from 'lucide-react';
 import { getCurrentUserId } from '@neutrino/api-core';
-import { storageApi, filesystemApi, teamsApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
-import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
-import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
+import { storageApi, filesystemApi, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
+import { invalidateDriveListings } from '@/lib/driveLiveUpdates';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { DRIVE_SEARCH_PARAM, DRIVE_PREVIEW_PARAM } from './searchParams';
-import { UploadZone } from './UploadZone';
-import { PreviewModal } from './PreviewModal';
 import { useDriveLivePhotos } from './useDriveLivePhotos';
 
 // Only a folder with a Live Photo in it needs the hold gesture; it stays out of
 // the route's first load (see `route-budgets.json`).
 const LivePhotoMedia = dynamic(() => import('./LivePhotoMedia').then((m) => m.LivePhotoMedia), { ssr: false });
-import { FileContextMenu } from './FileContextMenu';
-import { FolderContextMenu } from './FolderContextMenu';
-import { FileInfoPanel } from './FileInfoPanel';
-import { ShareDialog } from './ShareDialog';
-import { MoveFolderDialog } from './MoveFolderDialog';
 import { LocalImportDialog } from '@/components/LocalImport';
-import { FileGrid, type GridItem, type SortField, type SortDir, type FilterType } from '@neutrino/ui';
-import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
-import { routeForFile, previewKindForMime } from './routeForFile';
-import {
-  fileToGridItem,
-  folderToGridItem,
-  formatFileSize,
-} from './gridItems';
-import { useDismiss } from '@neutrino/commands';
+import { FileGrid, type GridItem, type FilterType } from '@neutrino/ui';
+import { fileToGridItem, folderToGridItem } from './gridItems';
+import { useFileActions, FileRail, NameDialog, fileActionStyles } from './useFileActions';
+import { useLoadMore } from './useLoadMore';
 import { usePreference } from '@neutrino/preferences';
 import { QuickAccess } from './QuickAccess';
 import { useQuickAccess } from '@/hooks/useQuickAccess';
@@ -75,27 +56,6 @@ const CONTENTS_PAGE_SIZE = 200;
 function fileTypeParam(filter: FilterType): DriveFileType | undefined {
   return filter === 'all' || filter === 'starred' ? undefined : filter;
 }
-
-function triggerBlobDownload(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
-
-interface ContextMenuState {
-  file: FileItem;
-  x: number;
-  y: number;
-}
-
-/** My Drive's panels: file info, in a right rail. */
-const DRIVE_SIDES: RailSide[] = ['right'];
-const DRIVE_PANEL_SPEC: RailSpec = { sides: DRIVE_SIDES, panels: [{ id: 'info', side: 'right' }] };
 
 export default function DrivePage() {
   // `useSearchParams` needs a Suspense boundary above it during prerender.
@@ -125,34 +85,6 @@ function DriveContent() {
   const sortBy = listing.sort;
   const sortDir = listing.dir;
   const [filter, setFilter] = useState<FilterType>('all');
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-  // Track drag depth to handle dragLeave correctly across child elements.
-  const dragDepthRef = useRef(0);
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  // `focusTags` opens the panel with the tag picker already expanded, so
-  // "Manage tags" lands on the tag UI in one click instead of two.
-  const [infoFile, setInfoFile] = useState<{ file: FileItem; focusTags: boolean } | null>(null);
-  // File info is a tab in a right rail (lib/panelLayouts.ts), and follows the file it shows.
-  const panels = useRailState('drive', DRIVE_PANEL_SPEC);
-  useEffect(() => {
-    if (infoFile) panels.open('info');
-    else panels.close('info');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [infoFile?.file.id, infoFile?.focusTags]);
-  const [shareFile, setShareFile] = useState<FileItem | null>(null);
-  const [shareFolder, setShareFolder] = useState<FolderItem | null>(null);
-  const [moveFile, setMoveFile] = useState<FileItem | null>(null);
-  const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
-  const [renaming, setRenaming] = useState<FileItem | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const [folderContextMenu, setFolderContextMenu] = useState<{ folder: FolderItem; x: number; y: number } | null>(null);
-  const [renamingFolder, setRenamingFolder] = useState<FolderItem | null>(null);
-  const [renameFolderValue, setRenameFolderValue] = useState('');
-  const [movingFolder, setMovingFolder] = useState<FolderItem | null>(null);
   // The open folder lives in the URL (`?folder=<id>`) so a refresh, a shared
   // link and the browser's back button all land on the same folder.
   const currentFolderId = searchParams.get('folder') || null;
@@ -195,51 +127,6 @@ function DriveContent() {
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   // New › Import folders: the local folder import, aimed at the open folder.
   const [importOpen, setImportOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
-  const [bulkMovePending, setBulkMovePending] = useState(false);
-
-  useEffect(() => {
-    if (renaming && renameInputRef.current) {
-      renameInputRef.current.focus();
-      renameInputRef.current.select();
-    }
-  }, [renaming]);
-
-  // ── Deep-linked preview (`/drive?preview=<file id>`) ─────────────────────
-  // Where an `/open/file/<id>` Universal Link lands when the file has no editor of its own — see
-  // `open/appLink.ts`. Fetched by id rather than looked up in `files`, because the link routinely
-  // names a file in a folder this session has never listed.
-  const previewParam = searchParams.get(DRIVE_PREVIEW_PARAM);
-  useEffect(() => {
-    if (!previewParam) return;
-    let cancelled = false;
-    storageApi
-      .getFileMetadata(previewParam)
-      .then((file) => { if (!cancelled) setPreviewFile(file); })
-      .catch(() => { if (!cancelled) toast.error('That file could not be opened'); });
-    return () => { cancelled = true; };
-    // `toast` is deliberately not a dependency: it is recreated on every render, and re-running
-    // this would refetch the file each time anything on the page changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewParam]);
-
-  useEffect(() => {
-    function onNewFolder() { setNewFolderName('New folder'); setNewFolderDialogOpen(true); }
-    function onUpload() { setUploadOpen(true); }
-    function onImportFolders() { setImportOpen(true); }
-    window.addEventListener('drive:new-folder', onNewFolder);
-    window.addEventListener('drive:upload', onUpload);
-    window.addEventListener('drive:import-folders', onImportFolders);
-    return () => {
-      window.removeEventListener('drive:new-folder', onNewFolder);
-      window.removeEventListener('drive:upload', onUpload);
-      window.removeEventListener('drive:import-folders', onImportFolders);
-    };
-  }, []);
-
-  useDismiss(() => setSelectedIds(new Set()), selectedIds.size > 0);
 
   // ── Search view (`/drive?q=…`) ───────────────────────────────────────────
   // Runs against the same client-side index the topbar drop-down uses, so the
@@ -364,24 +251,7 @@ function DriveContent() {
   const files: FileItem[] = useMemo(() => pages?.flatMap((p) => p.files) ?? [], [pages]);
 
   // ── Infinite scroll ──────────────────────────────────────────────────────
-  // The sentinel sits after the last item inside the grid, so it works in the
-  // detailed list (which scrolls itself) as well as the card views (where the
-  // page scrolls). Held in state rather than a ref so the observer is attached
-  // as soon as the node mounts.
-  const [loadMoreEl, setLoadMoreEl] = useState<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!loadMoreEl || !hasNextPage || isFetchingNextPage) return;
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries.some((e) => e.isIntersecting)) fetchNextPage(); },
-      { rootMargin: '400px' }
-    );
-    observer.observe(loadMoreEl);
-    return () => observer.disconnect();
-  }, [loadMoreEl, hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  // Build lookup maps for context menu callbacks (need original objects)
-  const fileMap = useMemo(() => new Map(files.map((f) => [f.id, f])), [files]);
-  const folderMap = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
+  const setLoadMoreEl = useLoadMore(!!hasNextPage, isFetchingNextPage, fetchNextPage);
 
   // Live Photos (issue #316): a still whose clip is found gets a tile that
   // loops the clip while held. The video file stays in the listing as itself.
@@ -429,365 +299,57 @@ function DriveContent() {
     }
   }
 
+  // Open, menu, star, share, move, rename, delete, download, bulk select and
+  // drag-in upload — the same set every listing of Drive files offers.
+  const actions = useFileActions({
+    files,
+    folders,
+    onOpenFolder: openFolder,
+    uploadFolderId: currentFolderId,
+    currentFolderId,
+  });
+  const { openUpload } = actions;
+
+  // ── Deep-linked preview (`/drive?preview=<file id>`) ─────────────────────
+  // Where an `/open/file/<id>` Universal Link lands when the file has no editor of its own — see
+  // `open/appLink.ts`. Fetched by id rather than looked up in `files`, because the link routinely
+  // names a file in a folder this session has never listed.
+  const previewParam = searchParams.get(DRIVE_PREVIEW_PARAM);
+  useEffect(() => {
+    if (!previewParam) return;
+    let cancelled = false;
+    storageApi
+      .getFileMetadata(previewParam)
+      .then((file) => { if (!cancelled) actions.showPreview(file); })
+      .catch(() => { if (!cancelled) toast.error('That file could not be opened'); });
+    return () => { cancelled = true; };
+    // `toast` is deliberately not a dependency: it is recreated on every render, and re-running
+    // this would refetch the file each time anything on the page changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewParam]);
+
+  useEffect(() => {
+    function onNewFolder() { setNewFolderDialogOpen(true); }
+    function onUpload() { openUpload(); }
+    function onImportFolders() { setImportOpen(true); }
+    window.addEventListener('drive:new-folder', onNewFolder);
+    window.addEventListener('drive:upload', onUpload);
+    window.addEventListener('drive:import-folders', onImportFolders);
+    return () => {
+      window.removeEventListener('drive:new-folder', onNewFolder);
+      window.removeEventListener('drive:upload', onUpload);
+      window.removeEventListener('drive:import-folders', onImportFolders);
+    };
+  }, [openUpload]);
+
   const createFolderMutation = useMutation({
     mutationFn: (name: string) => filesystemApi.createFolder({ name, parentId: currentFolderId ?? undefined }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      invalidateDriveListings(queryClient);
+      setNewFolderDialogOpen(false);
     },
     onError: () => toast.error('Failed to create folder'),
   });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { name?: string; folderId?: string | null; isStarred?: boolean } }) =>
-      filesystemApi.updateFile(id, body),
-    onSuccess: (_, { body }) => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      if (body.isStarred !== undefined) {
-        queryClient.invalidateQueries({ queryKey: ['starred'] });
-        queryClient.invalidateQueries({ queryKey: ['recent'] });
-      }
-    },
-  });
-
-  const updateFolderMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: { name?: string; isStarred?: boolean } }) =>
-      filesystemApi.updateFolder(id, body),
-    onSuccess: (_, { body }) => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      if (body.isStarred !== undefined) {
-        queryClient.invalidateQueries({ queryKey: ['starred'] });
-        queryClient.invalidateQueries({ queryKey: ['recent'] });
-      }
-    },
-  });
-
-  const moveMutation = useMutation({
-    mutationFn: ({ id, targetFolderId }: { id: string; targetFolderId: string | null }) =>
-      filesystemApi.updateFile(id, { folderId: targetFolderId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['starred'] });
-      queryClient.invalidateQueries({ queryKey: ['recent'] });
-      toast.success('File moved');
-      setMoveFile(null);
-    },
-    onError: () => toast.error('Failed to move file'),
-  });
-
-  // Teams the caller may add content to. A Viewer's teams are listed nowhere: the server refuses
-  // the move with a 403, and a destination that fails is worse than a shorter list.
-  const { data: teamsData } = useQuery({
-    queryKey: ['teams'],
-    queryFn: () => teamsApi.list(),
-  });
-  const eligibleTeams = useMemo(
-    () =>
-      (teamsData?.teams ?? []).filter(
-        (t) => !t.archived && ['owner', 'admin', 'editor', 'contributor'].includes(t.userRole)
-      ),
-    [teamsData]
-  );
-
-  /**
-   * Move a file out of My Drive and into a team's library, then hand the members its key.
-   *
-   * Two calls, in this order: `POST /encryption/files/{id}/share` refuses a recipient with no
-   * access yet, so the reseal has to follow the move. Nothing in the handover is fatal — see
-   * `lib/teamTransfer.ts` — and what could not be sealed is named in the toast rather than left to
-   * be discovered as a file the team can see and cannot open.
-   */
-  const moveIntoTeamMutation = useMutation({
-    mutationFn: async ({
-      file,
-      teamId,
-      folderId,
-    }: {
-      file: FileItem;
-      teamId: string;
-      folderId: string | null;
-    }) => {
-      const moved = await teamsApi.moveFileIntoTeam(teamId, file.id, folderId ?? undefined);
-      const keys = await handFileKeyToTeam(teamId, file.id, currentUser?.id);
-      const team = eligibleTeams.find((t) => t.id === teamId);
-      return { file, moved, keys, teamName: team?.name ?? 'the team' };
-    },
-    onSuccess: ({ file, moved, keys, teamName }) => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['starred'] });
-      queryClient.invalidateQueries({ queryKey: ['recent'] });
-      queryClient.invalidateQueries({ queryKey: ['team-library'] });
-      queryClient.invalidateQueries({ queryKey: ['team-shares'] });
-      setMoveFile(null);
-
-      const lost =
-        moved.sharesNoLongerApplied > 0
-          ? ` ${moved.sharesNoLongerApplied} existing ${
-              moved.sharesNoLongerApplied === 1 ? 'share' : 'shares'
-            } no longer apply.`
-          : '';
-      const headline = `"${file.name}" now belongs to ${teamName}.${lost}`;
-      const keyNote = describeKeyHandover(keys);
-      if (keyNote) toast.error(`${headline} ${keyNote}`);
-      else toast.success(headline);
-    },
-    onError: (e: unknown) =>
-      toast.error(e instanceof Error ? e.message : 'Failed to move the file into the team'),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => storageApi.deleteFile(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['starred'] });
-      queryClient.invalidateQueries({ queryKey: ['recent'] });
-      toast.success('File deleted');
-    },
-    onError: () => toast.error('Failed to delete file'),
-  });
-
-  const deleteFolderMutation = useMutation({
-    mutationFn: (id: string) => filesystemApi.deleteFolder(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['starred'] });
-      queryClient.invalidateQueries({ queryKey: ['recent'] });
-      toast.success('Folder deleted');
-    },
-    onError: () => toast.error('Failed to delete folder'),
-  });
-
-  const moveFolderMutation = useMutation({
-    mutationFn: ({ id, parentId }: { id: string; parentId: string | null }) =>
-      filesystemApi.updateFolder(id, { parentId: parentId ?? undefined }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      toast.success('Folder moved');
-      setMovingFolder(null);
-    },
-    onError: () => toast.error('Failed to move folder'),
-  });
-
-  const handleGridItemClick = useCallback((item: GridItem) => {
-    if (item.kind === 'folder') {
-      const folder = folderMap.get(item.id);
-      if (folder) openFolder(folder);
-      return;
-    }
-    const file = fileMap.get(item.id);
-    if (!file) return;
-    routeForFile(file, router, {
-      onPreviewFallback: () => setPreviewFile(file),
-    });
-  }, [fileMap, folderMap, openFolder, router]);
-
-  const handleGridItemMenuOpen = useCallback((item: GridItem, e: React.MouseEvent) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = Math.min(rect.right, window.innerWidth - 200);
-    const y = Math.min(rect.bottom, window.innerHeight - 300);
-    if (item.kind === 'folder') {
-      const folder = folderMap.get(item.id);
-      if (folder) setFolderContextMenu({ folder, x, y });
-      return;
-    }
-    const file = fileMap.get(item.id);
-    if (!file) return;
-    setContextMenu({ file, x, y });
-  }, [fileMap, folderMap]);
-
-  const handleStar = useCallback((file: FileItem) => {
-    updateMutation.mutate(
-      { id: file.id, body: { isStarred: !file.isStarred } },
-      {
-        onSuccess: () => toast.success(file.isStarred ? 'Removed from starred' : 'Added to starred'),
-        onError: () => toast.error('Failed to update file'),
-      }
-    );
-  }, [updateMutation, toast]);
-
-  const handleToggleStar = useCallback((item: GridItem) => {
-    if (item.kind === 'folder') {
-      const folder = folderMap.get(item.id);
-      if (!folder) return;
-      updateFolderMutation.mutate(
-        { id: folder.id, body: { isStarred: !folder.isStarred } },
-        {
-          onSuccess: () => toast.success(folder.isStarred ? 'Removed from starred' : 'Added to starred'),
-          onError: () => toast.error('Failed to update folder'),
-        }
-      );
-    } else {
-      const file = fileMap.get(item.id);
-      if (file) handleStar(file);
-    }
-  }, [fileMap, folderMap, updateFolderMutation, toast, handleStar]);
-
-  const handleItemSelect = useCallback((item: GridItem) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(item.id)) next.delete(item.id);
-      else next.add(item.id);
-      return next;
-    });
-  }, []);
-
-  async function handleBulkMove(targetFolderId: string | null) {
-    setBulkMovePending(true);
-    const ids = Array.from(selectedIds);
-    try {
-      await Promise.all(
-        ids.map((id) => {
-          if (fileMap.has(id)) return filesystemApi.updateFile(id, { folderId: targetFolderId });
-          if (folderMap.has(id)) return filesystemApi.updateFolder(id, { parentId: targetFolderId ?? undefined });
-          return Promise.resolve();
-        })
-      );
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['starred'] });
-      queryClient.invalidateQueries({ queryKey: ['recent'] });
-      toast.success(`${ids.length} ${ids.length === 1 ? 'item' : 'items'} moved`);
-      setSelectedIds(new Set());
-      setBulkMoveOpen(false);
-    } catch {
-      toast.error('Failed to move some items');
-    } finally {
-      setBulkMovePending(false);
-    }
-  }
-
-  async function handleBulkDownload() {
-    const ids = Array.from(selectedIds).filter((id) => fileMap.has(id));
-    for (const id of ids) {
-      const file = fileMap.get(id)!;
-      await handleDownload(file);
-    }
-    setSelectedIds(new Set());
-  }
-
-  async function handleBulkDelete() {
-    const ids = Array.from(selectedIds);
-    const count = ids.length;
-    try {
-      await Promise.all(
-        ids.map((id) => {
-          if (fileMap.has(id)) return storageApi.deleteFile(id);
-          if (folderMap.has(id)) return filesystemApi.deleteFolder(id);
-          return Promise.resolve();
-        })
-      );
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['starred'] });
-      queryClient.invalidateQueries({ queryKey: ['recent'] });
-      toast.success(`${count} ${count === 1 ? 'item' : 'items'} deleted`);
-      setSelectedIds(new Set());
-    } catch {
-      toast.error('Failed to delete some items');
-    }
-  }
-
-  async function handleDownload(file: FileItem) {
-    try {
-      if (file.encryptedMetadata) {
-        const userId = currentUser?.id;
-        if (!userId) { toast.error('Failed to download file'); return; }
-        await initSodium();
-        const kp = loadKeyPair(userId);
-        if (!kp) { toast.error('Encryption keys not found'); return; }
-        const plaintext = await downloadAndDecryptFile(file.id, userId);
-        if (!plaintext) { toast.error('Failed to decrypt file'); return; }
-        triggerBlobDownload(new Blob([plaintext.slice(0)]), file.name);
-      } else {
-        const blob = await storageApi.downloadFile(file.id);
-        triggerBlobDownload(blob, file.name);
-      }
-    } catch {
-      toast.error('Failed to download file');
-    }
-  }
-
-  function handleCopyLink(file: FileItem) {
-    const url = storageApi.getFileDownloadUrl(file.id);
-    navigator.clipboard.writeText(url).then(
-      () => toast.success('Link copied to clipboard'),
-      () => toast.error('Failed to copy link')
-    );
-  }
-
-  function openRename(file: FileItem) {
-    setRenameValue(file.name);
-    setRenaming(file);
-  }
-
-  function handleFolderRenameSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!renamingFolder) return;
-    const trimmed = renameFolderValue.trim();
-    if (!trimmed || trimmed === renamingFolder.name) { setRenamingFolder(null); return; }
-    updateFolderMutation.mutate(
-      { id: renamingFolder.id, body: { name: trimmed } },
-      {
-        onSuccess: () => { toast.success('Folder renamed'); setRenamingFolder(null); },
-        onError: () => toast.error('Failed to rename folder'),
-      }
-    );
-  }
-
-  function handleNewFolderSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = newFolderName.trim();
-    if (!trimmed) return;
-    createFolderMutation.mutate(trimmed, {
-      onSuccess: () => setNewFolderDialogOpen(false),
-    });
-  }
-
-  function handleRenameSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!renaming) return;
-    const trimmed = renameValue.trim();
-    if (!trimmed || trimmed === renaming.name) { setRenaming(null); return; }
-    updateMutation.mutate(
-      { id: renaming.id, body: { name: trimmed } },
-      {
-        onSuccess: () => { toast.success('File renamed'); setRenaming(null); },
-        onError: () => toast.error('Failed to rename file'),
-      }
-    );
-  }
-
-  // ── Area-wide drag-and-drop ──────────────────────────────────────────────────
-  const handleAreaDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Only react to file drags, not text/link drags.
-    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
-    dragDepthRef.current += 1;
-    if (dragDepthRef.current === 1) {
-      e.preventDefault();
-      setIsDraggingOver(true);
-    }
-  }, []);
-
-  const handleAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
-
-  const handleAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    dragDepthRef.current -= 1;
-    if (dragDepthRef.current === 0) {
-      setIsDraggingOver(false);
-    }
-  }, []);
-
-  const handleAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragDepthRef.current = 0;
-    setIsDraggingOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      setDroppedFiles(files);
-      setUploadOpen(true);
-    }
-  }, []);
 
   // The folder trail, and the search term when there is one — above everything in classic, as
   // part of the title of the Files region in the new looks.
@@ -822,36 +384,8 @@ function DriveContent() {
   );
 
 
-  const railPanels: RailPanel[] = [
-    {
-      id: 'info',
-      title: 'File info',
-      icon: <Info size={14} />,
-      side: 'right',
-      content: infoFile ? (
-        <FileInfoPanel
-          key={`${infoFile.file.id}:${infoFile.focusTags}`}
-          file={infoFile.file}
-          focusTags={infoFile.focusTags}
-        />
-      ) : (
-        <p className={styles.panelEmpty}>Choose Info on a file to see its details and tags here.</p>
-      ),
-    },
-  ];
   return (
-    <PanelRail
-      panels={railPanels}
-      sides={DRIVE_SIDES}
-      layout={panels.layout}
-      onLayoutChange={(next) => {
-        panels.setLayout(next);
-        // Collapsing file info clears it, as closing the panel did.
-        if (infoFile && !next.floating.info && next.rails.right?.expanded !== 'info') setInfoFile(null);
-      }}
-      className={styles.panelHost}
-    >
-    <div className={styles.scroller}>
+    <FileRail actions={actions}>
     <div className={styles.page} data-own-regions={flow || undefined}>
       {!flow && header}
 
@@ -860,7 +394,7 @@ function DriveContent() {
         <QuickAccess
           entries={quickAccess.entries}
           loading={quickAccess.loading}
-          onOpen={(file) => routeForFile(file, router, { onPreviewFallback: () => setPreviewFile(file) })}
+          onOpen={actions.openFile}
         />
       )}
 
@@ -906,29 +440,18 @@ function DriveContent() {
                 title="No files yet"
                 description="Upload files to get started. Your files will appear here."
                 action={
-                  <Button variant="primary" size="sm" icon={<Upload size={16} />} onClick={() => setUploadOpen(true)}>
+                  <Button variant="primary" size="sm" icon={<Upload size={16} />} onClick={() => openUpload()}>
                     Upload your first file
                   </Button>
                 }
               />
             )
           }
-          onItemClick={searchTerm ? handleSearchItemClick : handleGridItemClick}
           {...(searchTerm
             // Search hits are not all Drive files, so the Drive-only affordances
             // (context menu, starring, bulk select, upload drop target) are off.
-            ? {}
-            : {
-                onItemMenuOpen: handleGridItemMenuOpen,
-                onToggleStar: handleToggleStar,
-                selectedIds,
-                onItemSelect: handleItemSelect,
-                onDragEnter: handleAreaDragEnter,
-                onDragOver: handleAreaDragOver,
-                onDragLeave: handleAreaDragLeave,
-                onDrop: handleAreaDrop,
-                isDraggingOver,
-              })}
+            ? { onItemClick: handleSearchItemClick }
+            : actions.gridProps)}
           showFilter
           filter={filter}
           onFilterChange={setFilter}
@@ -945,7 +468,7 @@ function DriveContent() {
           }
           footer={
             !searchTerm && hasNextPage ? (
-              <div ref={setLoadMoreEl} className={styles['load-more']} aria-live="polite">
+              <div ref={setLoadMoreEl} className={fileActionStyles['load-more']} aria-live="polite">
                 {isFetchingNextPage && <Text size="sm" color="muted">Loading more…</Text>}
               </div>
             ) : undefined
@@ -954,13 +477,7 @@ function DriveContent() {
       </section>
 
       {/* Overlays */}
-      {uploadOpen && (
-        <UploadZone
-          onClose={() => { setUploadOpen(false); setDroppedFiles(null); }}
-          folderId={currentFolderId}
-          initialFiles={droppedFiles ?? undefined}
-        />
-      )}
+      {actions.overlays}
       {importOpen && (
         <LocalImportDialog
           open
@@ -971,198 +488,18 @@ function DriveContent() {
           }
         />
       )}
-      {previewFile && <PreviewModal file={previewFile} siblings={files} onClose={() => setPreviewFile(null)} />}
-      {docPreview && (
-        <DocumentPreviewModal id={docPreview.id} kind={docPreview.kind} onClose={() => setDocPreview(null)} />
-      )}
-
-      {contextMenu && (
-        <FileContextMenu
-          file={contextMenu.file}
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-          onPreview={(() => {
-            const f = contextMenu.file;
-            // Docs/sheets/slides/notes/diagrams/drawings each have a
-            // lightweight read-only preview renderer (distinct from "open to
-            // edit"); images use the generic PreviewModal directly. Everything
-            // else (raw Office files when the office-editing flag is on, and
-            // the generic fallback) is delegated to routeForFile, which is
-            // built for click-to-open and would otherwise navigate straight
-            // into the editor for these same native mimetypes (issue #68).
-            const kind = previewKindForMime(f.mimeType);
-            if (kind === 'image')
-              return () => { setPreviewFile(f); setContextMenu(null); };
-            if (kind)
-              return () => { setDocPreview({ id: f.id, kind }); setContextMenu(null); };
-            return () => {
-              routeForFile(f, router, {
-                          onPreviewFallback: () => setPreviewFile(f),
-              });
-              setContextMenu(null);
-            };
-          })()}
-          onInfo={() => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); }}
-          onManageTags={() => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); }}
-          onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
-          onRename={() => { openRename(contextMenu.file); setContextMenu(null); }}
-          onStarToggle={() => { handleStar(contextMenu.file); setContextMenu(null); }}
-          onDownload={() => { handleDownload(contextMenu.file); setContextMenu(null); }}
-          onDelete={() => { deleteMutation.mutate(contextMenu.file.id); setContextMenu(null); }}
-          onCopyLink={() => { handleCopyLink(contextMenu.file); setContextMenu(null); }}
-          onMove={() => { setMoveFile(contextMenu.file); setContextMenu(null); }}
-        />
-      )}
-
-      {folderContextMenu && (
-        <FolderContextMenu
-          folder={folderContextMenu.folder}
-          x={folderContextMenu.x}
-          y={folderContextMenu.y}
-          onClose={() => setFolderContextMenu(null)}
-          onRename={() => { setRenameFolderValue(folderContextMenu.folder.name); setRenamingFolder(folderContextMenu.folder); setFolderContextMenu(null); }}
-          onStarToggle={() => {
-            const folder = folderContextMenu.folder;
-            updateFolderMutation.mutate(
-              { id: folder.id, body: { isStarred: !folder.isStarred } },
-              {
-                onSuccess: () => toast.success(folder.isStarred ? 'Removed from starred' : 'Added to starred'),
-                onError: () => toast.error('Failed to update folder'),
-              }
-            );
-            setFolderContextMenu(null);
-          }}
-          onMove={() => { setMovingFolder(folderContextMenu.folder); setFolderContextMenu(null); }}
-          onDelete={() => { deleteFolderMutation.mutate(folderContextMenu.folder.id); setFolderContextMenu(null); }}
-          onShare={() => { setShareFolder(folderContextMenu.folder); setFolderContextMenu(null); }}
-        />
-      )}
-
-      {movingFolder && (
-        <MoveFolderDialog
-          itemName={movingFolder.name}
-          currentFolderId={movingFolder.parentId}
-          onMove={(targetFolderId) => moveFolderMutation.mutate({ id: movingFolder.id, parentId: targetFolderId })}
-          onClose={() => setMovingFolder(null)}
-          isPending={moveFolderMutation.isPending}
-        />
-      )}
-
-      {renamingFolder && (
-        <div className={styles['rename-overlay']} onClick={() => setRenamingFolder(null)}>
-          <div className={styles['rename-dialog']} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="rename-folder-title">
-            <Heading level={2} size="sm" id="rename-folder-title">Rename folder</Heading>
-            <form className={styles['rename-form']} onSubmit={handleFolderRenameSubmit}>
-              <input
-                className={styles['rename-input']}
-                type="text"
-                value={renameFolderValue}
-                onChange={(e) => setRenameFolderValue(e.target.value)}
-                aria-label="New folder name"
-                autoFocus
-                onFocus={(e) => e.target.select()}
-              />
-              <div className={styles['rename-actions']}>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setRenamingFolder(null)}>Cancel</Button>
-                <Button type="submit" variant="primary" size="sm" disabled={!renameFolderValue.trim()}>Rename</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {shareFile && (
-        <ShareDialog resource={shareFile} resourceType="file" onClose={() => setShareFile(null)} />
-      )}
-
-      {shareFolder && (
-        <ShareDialog resource={shareFolder} resourceType="folder" onClose={() => setShareFolder(null)} />
-      )}
-
-      {moveFile && (
-        <MoveFolderDialog
-          itemName={moveFile.name}
-          currentFolderId={moveFile.folderId}
-          teams={eligibleTeams}
-          onMove={(targetFolderId) => moveMutation.mutate({ id: moveFile.id, targetFolderId })}
-          onMoveIntoTeam={(teamId, folderId) =>
-            moveIntoTeamMutation.mutate({ file: moveFile, teamId, folderId })
-          }
-          onClose={() => setMoveFile(null)}
-          isPending={moveMutation.isPending || moveIntoTeamMutation.isPending}
-        />
-      )}
-
-
-      {bulkMoveOpen && (
-        <MoveFolderDialog
-          itemName={`${selectedIds.size} ${selectedIds.size === 1 ? 'item' : 'items'}`}
-          currentFolderId={currentFolderId}
-          onMove={handleBulkMove}
-          onClose={() => setBulkMoveOpen(false)}
-          isPending={bulkMovePending}
-        />
-      )}
-
-      {selectedIds.size > 0 && (
-        <div className={styles['bulk-toolbar']}>
-          <span className={styles['bulk-count']}>{selectedIds.size} selected</span>
-          <div className={styles['bulk-actions']}>
-            <Button variant="secondary" size="sm" onClick={() => setBulkMoveOpen(true)}>Move to</Button>
-            <Button variant="secondary" size="sm" onClick={handleBulkDownload}>Download</Button>
-            <Button variant="secondary" size="sm" onClick={handleBulkDelete}>Delete</Button>
-            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Cancel</Button>
-          </div>
-        </div>
-      )}
-
       {newFolderDialogOpen && (
-        <div className={styles['rename-overlay']} onClick={() => setNewFolderDialogOpen(false)}>
-          <div className={styles['rename-dialog']} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="new-folder-title">
-            <Heading level={2} size="sm" id="new-folder-title">New folder</Heading>
-            <form className={styles['rename-form']} onSubmit={handleNewFolderSubmit}>
-              <input
-                className={styles['rename-input']}
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                aria-label="Folder name"
-                autoFocus
-                onFocus={(e) => e.target.select()}
-              />
-              <div className={styles['rename-actions']}>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setNewFolderDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" variant="primary" size="sm" disabled={!newFolderName.trim() || createFolderMutation.isPending}>Create</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {renaming && (
-        <div className={styles['rename-overlay']} onClick={() => setRenaming(null)}>
-          <div className={styles['rename-dialog']} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="rename-title">
-            <Heading level={2} size="sm" id="rename-title">Rename file</Heading>
-            <form className={styles['rename-form']} onSubmit={handleRenameSubmit}>
-              <input
-                ref={renameInputRef}
-                className={styles['rename-input']}
-                type="text"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                aria-label="New file name"
-              />
-              <div className={styles['rename-actions']}>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setRenaming(null)}>Cancel</Button>
-                <Button type="submit" variant="primary" size="sm" disabled={!renameValue.trim()}>Rename</Button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <NameDialog
+          title="New folder"
+          label="Folder name"
+          initialValue="New folder"
+          submitLabel="Create"
+          pending={createFolderMutation.isPending}
+          onClose={() => setNewFolderDialogOpen(false)}
+          onSubmit={(name) => createFolderMutation.mutate(name)}
+        />
       )}
     </div>
-    </div>
-    </PanelRail>
+    </FileRail>
   );
 }

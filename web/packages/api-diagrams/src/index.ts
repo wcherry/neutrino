@@ -1,4 +1,4 @@
-import { aiCredentials, request, contentVersionQuery, ApiClientError, type ContentVersionCheck } from '@neutrino/api-core';
+import { aiCredentials, request, contentVersionQuery, ApiClientError, type ContentVersionCheck, listEveryDriveFile } from '@neutrino/api-core';
 
 /**
  * A file is a native Neutrino diagram because it carries this mime type.
@@ -316,12 +316,8 @@ export const diagramsApi = {
    * here: a picture opens on a canvas that can draw on it.
    */
   async listDiagrams(): Promise<ListDiagramsResponse> {
-    const params = new URLSearchParams({
-      mimeType: `${DIAGRAM_MIME_TYPE},${DIAGRAM_SVG_MIME_TYPE}`,
-      limit: '200',
-    });
-    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
-    return { diagrams: (raw.files ?? []).map((file) => toDiagramMeta(file)) };
+    const files = await listEveryDriveFile<DriveFileDto>([DIAGRAM_MIME_TYPE, DIAGRAM_SVG_MIME_TYPE]);
+    return { diagrams: files.map((file) => toDiagramMeta(file)) };
   },
 
   async createDiagram(body: CreateDiagramRequest): Promise<DiagramResponse> {

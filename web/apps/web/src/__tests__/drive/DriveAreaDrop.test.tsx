@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -242,7 +242,8 @@ describe('Drive area drag-and-drop', () => {
     fireEvent.dragEnter(grid(), makeDragEvent([new File([''], 'test.txt')]));
     fireEvent.drop(grid(), makeDragEvent([new File([''], 'test.txt')]));
 
-    expect(screen.getByTestId('upload-zone')).toBeInTheDocument();
+    // The upload dialog is loaded on first use (`next/dynamic` in useFileActions).
+    expect(await screen.findByTestId('upload-zone')).toBeInTheDocument();
   });
 
   it('passes dropped files to UploadZone via initialFiles', async () => {
@@ -252,7 +253,7 @@ describe('Drive area drag-and-drop', () => {
     fireEvent.dragEnter(grid(), makeDragEvent([file]));
     fireEvent.drop(grid(), makeDragEvent([file]));
 
-    expect(uploadZoneInitialFiles.length).toBeGreaterThan(0);
+    await waitFor(() => expect(uploadZoneInitialFiles.length).toBeGreaterThan(0));
     expect(uploadZoneInitialFiles[0]).toEqual([file]);
   });
 

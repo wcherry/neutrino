@@ -1,0 +1,112 @@
+/* A file listing inside its panel rail: the rail fills the main area and the page scrolls within it. */
+.panelHost {
+  flex: 1;
+  min-height: 0;
+}
+
+.scroller {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.panelEmpty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted);
+}
+
+/* Bulk-selection toolbar */
+.bulk-toolbar {
+  position: fixed;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 9999px);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  white-space: nowrap;
+}
+
+.bulk-count {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--color-border);
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Name dialog — rename a file or folder, name a new folder */
+.name-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-popover);
+}
+
+.name-dialog {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6);
+  width: 360px;
+  max-width: calc(100vw - var(--space-8));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.name-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.name-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-default);
+  box-sizing: border-box;
+}
+
+.name-input:focus {
+  border-color: var(--color-accent);
+}
+
+.name-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* Infinite-scroll sentinel. Tall enough that the next page starts loading
+   before the user reaches the very bottom of the list. */
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: var(--space-3);
+}

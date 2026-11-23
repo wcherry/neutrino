@@ -7,6 +7,7 @@ import {
   withOoxmlExtension,
   stripOoxmlExtension,
   type ContentVersionCheck,
+  listEveryDriveFile,
 } from '@neutrino/api-core';
 
 /**
@@ -220,9 +221,7 @@ function toSheet(file: DriveFileDto): SheetResponse {
 
 export const sheetsApi = {
   async listSheets(): Promise<ListSheetsResponse> {
-    const params = new URLSearchParams({ mimeType: SHEET_MIME_TYPES.join(','), limit: '200' });
-    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
-    return { sheets: (raw.files ?? []).map(toSheetMeta) };
+    return { sheets: (await listEveryDriveFile<DriveFileDto>(SHEET_MIME_TYPES)).map(toSheetMeta) };
   },
 
   async createSheet(body: CreateSheetRequest): Promise<SheetResponse> {

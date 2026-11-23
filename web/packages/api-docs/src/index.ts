@@ -6,6 +6,7 @@ import {
   stripOoxmlExtension,
   isOoxmlTemplateMime,
   OOXML_TEMPLATE_MIME,
+  listEveryDriveFile,
 } from '@neutrino/api-core';
 
 /**
@@ -210,16 +211,12 @@ function toDoc(file: DriveFileDto): DocResponse {
 
 export const docsApi = {
   async listDocs(): Promise<ListDocsResponse> {
-    const params = new URLSearchParams({ mimeType: DOC_MIME_TYPES.join(','), limit: '200' });
-    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
-    return { docs: (raw.files ?? []).map(toDocMeta) };
+    return { docs: (await listEveryDriveFile<DriveFileDto>(DOC_MIME_TYPES)).map(toDocMeta) };
   },
 
   /** The caller's document templates — every `.dotx` in their Drive. */
   async listTemplates(): Promise<ListDocsResponse> {
-    const params = new URLSearchParams({ mimeType: DOTX_MIME_TYPE, limit: '200' });
-    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
-    return { docs: (raw.files ?? []).map(toDocMeta) };
+    return { docs: (await listEveryDriveFile<DriveFileDto>([DOTX_MIME_TYPE])).map(toDocMeta) };
   },
 
   async createDoc(body: CreateDocRequest): Promise<DocResponse> {

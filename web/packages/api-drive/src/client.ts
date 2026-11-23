@@ -164,8 +164,8 @@ export const storageApi = {
   async listFiles(
     query: FileListQuery = {}
   ): Promise<PaginatedResponse<FileItem>> {
-    const { limit = 50, offset = 0, orderBy, direction, type } = query;
-    const qs = buildQuery({ limit, offset, orderBy, direction, type });
+    const { limit = 50, offset = 0, orderBy, direction, type, mimeType } = query;
+    const qs = buildQuery({ limit, offset, orderBy, direction, type, mimeType: mimeType?.join(',') });
     const raw = await request<BackendFileListResponse>(`/api/v1/drive/files${qs}`);
     return {
       items: raw.files,
