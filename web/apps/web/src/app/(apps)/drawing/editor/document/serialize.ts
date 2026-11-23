@@ -27,7 +27,7 @@ import {
 } from './factory';
 import { normalizeTree, refreshBounds, symbolTable } from './tree';
 import { ADJUSTMENT_KINDS, createAdjustment, type AdjustmentKind, type AdjustmentSpec } from './adjustments';
-import { isReloadableUri, type LinkedAsset } from './assets';
+import { isReloadableUri, storableAssetUri, type LinkedAsset } from './assets';
 import {
   DEFAULT_HDR,
   isColorSpaceName,
@@ -572,12 +572,16 @@ function hdrSettings(v: Raw): HdrSettings {
  */
 function linkedAsset(v: unknown): LinkedAsset | null {
   if (!isRecord(v)) return null;
-  const uri = str(v.uri, '');
+  const name = str(v.name, 'Asset');
+  // Repaired on the way in: drawings saved before `storableAssetUri` existed can
+  // hold a Drive download URL with its writer's access token in it, and the next
+  // save writes back whatever this returns.
+  const uri = storableAssetUri(str(v.uri, ''), name);
   if (!uri) return null;
   return {
     id: str(v.id, newId()),
     uri,
-    name: str(v.name, 'Asset'),
+    name,
     hash: str(v.hash, ''),
     width: Math.max(1, Math.round(num(v.width, 1))),
     height: Math.max(1, Math.round(num(v.height, 1))),
