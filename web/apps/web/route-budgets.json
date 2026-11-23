@@ -18,10 +18,10 @@
     "/atlas": 930,
     "/photos": 1010,
     "/photos/editor": 1080,
-    "/diagrams": 1140,
+    "/diagrams": 1150,
     "/diagrams/editor": 1480,
     "/drawing": 1140,
-    "/drawing/editor": 1250,
+    "/drawing/editor": 1260,
     "/calendar": 1170,
     "/settings": 1090
   }

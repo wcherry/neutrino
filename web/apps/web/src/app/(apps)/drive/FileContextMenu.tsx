@@ -11,17 +11,25 @@ interface Props {
   x: number;
   y: number;
   onClose: () => void;
+  /*
+   * Every action but Copy link and Download is optional, and an item whose
+   * handler is absent is left off the menu: a file somebody else owns (Shared
+   * with me) can be opened, copied and downloaded, and the server refuses the
+   * rest — offering them would be a menu of errors.
+   */
   onPreview?: () => void;
-  onInfo: () => void;
-  onRename: () => void;
-  onStarToggle: () => void;
+  onInfo?: () => void;
+  onRename?: () => void;
+  onStarToggle?: () => void;
   onDownload: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   onCopyLink: () => void;
-  onShare: () => void;
-  onMove: () => void;
-  onManageTags: () => void;
+  onShare?: () => void;
+  onMove?: () => void;
+  onManageTags?: () => void;
 }
+
+type MenuItem = { icon: React.ReactNode; label: string; action?: () => void; danger?: boolean } | null;
 
 export function FileContextMenu({
   file,
@@ -63,8 +71,8 @@ export function FileContextMenu({
     setPos({ x: Math.max(4, clampedX), y: Math.max(4, clampedY) });
   }, [x, y]);
 
-  const items = [
-    ...(onPreview ? [{ icon: <Eye size={14} />, label: 'Preview', action: onPreview }] : []),
+  const all: MenuItem[] = [
+    { icon: <Eye size={14} />, label: 'Preview', action: onPreview },
     { icon: <Info size={14} />, label: 'File info', action: onInfo },
     // Teams have no entry of their own. Lending a file to a team is sharing and lives in Share;
     // giving one to a team is a destination and lives in Move to. A third entry beside them was
@@ -80,9 +88,11 @@ export function FileContextMenu({
     { icon: <Link size={14} />, label: 'Copy link', action: onCopyLink },
     { icon: <FolderInput size={14} />, label: 'Move to', action: onMove },
     { icon: <Download size={14} />, label: 'Download', action: onDownload },
-    null,
-    { icon: <Trash2 size={14} />, label: 'Move to trash', action: onDelete, danger: true },
-  ] as const;
+    ...(onDelete
+      ? [null, { icon: <Trash2 size={14} />, label: 'Move to trash', action: onDelete, danger: true }]
+      : []),
+  ];
+  const items = all.filter((item) => item === null || item.action);
 
   return (
     <div
@@ -99,12 +109,12 @@ export function FileContextMenu({
           <button
             key={i}
             type="button"
-            className={[styles.item, 'danger' in item && item.danger ? styles.danger : '']
+            className={[styles.item, item.danger ? styles.danger : '']
               .filter(Boolean)
               .join(' ')}
             role="menuitem"
             onClick={() => {
-              item.action();
+              item.action?.();
               onClose();
             }}
           >
