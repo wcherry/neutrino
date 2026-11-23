@@ -1048,11 +1048,15 @@ export function DrawingEditor() {
     }
     const name = result.name ?? 'Image';
     const layer = createRasterLayer(source, name);
+    // Loaded here rather than with the editor, like the picker that calls this.
+    const { driveImageRef } = await import('@/lib/driveImages');
     // The asset records *where* these pixels came from; the pixels themselves
     // are the layer's, which is what keeps the drawing viewable when the source
     // is not (`document/assets.ts`).
     const asset = createAsset({
-      uri: result.src,
+      // A Drive image is recorded as the file it is, not the URL this session
+      // happened to load it from — that URL carries the session's access token.
+      uri: result.driveFileId ? driveImageRef(result.driveFileId) : result.src,
       name,
       dataUrl: source.dataUrl,
       width: source.width,
@@ -1079,7 +1083,10 @@ export function DrawingEditor() {
     const asset = findAsset(document_.assets, assetId);
     if (!asset?.linked) return;
 
-    const source = await rasterSourceFromImage(asset.uri, document_.canvas);
+    // A Drive reference is resolved with this reader's own session (and
+    // decrypted, for an encrypted file); anything else is fetched as it stands.
+    const { resolveImageSrc } = await import('@/lib/driveImages');
+    const source = await rasterSourceFromImage(await resolveImageSrc(asset.uri), document_.canvas);
     if (!source) {
       toast.error('That image could not be reloaded from its source.');
       return;

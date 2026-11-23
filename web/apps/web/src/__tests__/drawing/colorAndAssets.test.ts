@@ -32,6 +32,7 @@ import {
 import { iccBytesFromDataUrl, iccDataUrl, parseIccProfile } from '../../app/(apps)/drawing/editor/io/icc';
 import {
   createAsset,
+  storableAssetUri,
   describeAssetSource,
   hashDataUrl,
   hashString,
@@ -320,6 +321,43 @@ describe('linked assets', () => {
   it('drops an asset row with no source at all', () => {
     const raw = JSON.stringify({ ...createDocument(), assets: [{ id: 'a', name: 'x' }] });
     expect(parseDocument(raw)!.assets).toBeUndefined();
+  });
+
+  it('records a Drive download URL as the file it names, never with the session token in it', () => {
+    // `storageApi.getFileDownloadUrl` appends `?token=<access token>`. The
+    // document is shared and exported, so keeping that URL handed the token to
+    // everyone it reached.
+    const asset = createAsset({
+      uri: 'https://www.getneutrino.app/api/v1/drive/files/file-123?token=eyJ.secret.sig',
+      name: 'Photo.jpg', dataUrl: PIXELS, width: 4, height: 4,
+    });
+    expect(asset.uri).toBe('neutrino-drive:file-123');
+    expect(asset.uri).not.toContain('token');
+    expect(asset.linked).toBe(true);
+  });
+
+  it('never stores a tab-local blob: URL as the source', () => {
+    const asset = createAsset({ uri: 'blob:https://x.y/0b1c-22', name: 'Secret.png', dataUrl: PIXELS, width: 4, height: 4 });
+    expect(asset.uri).toBe('Secret.png');
+    expect(asset.linked).toBe(false);
+  });
+
+  it('repairs a token URL already saved in a drawing when it is opened', () => {
+    const raw = JSON.stringify({
+      ...createDocument(),
+      assets: [{
+        id: 'a', name: 'Photo.jpg', hash: 'x', width: 2, height: 2, linked: true,
+        uri: 'http://localhost:9880/api/v1/drive/files/abc/thumbnail?v=2&token=eyJ.secret.sig',
+      }],
+    });
+    const [asset] = parseDocument(raw)!.assets!;
+    expect(asset.uri).toBe('neutrino-drive:abc');
+    expect(asset.linked).toBe(true);
+    expect(serializeDocument(parseDocument(raw)!)).not.toContain('eyJ.secret.sig');
+  });
+
+  it('leaves an ordinary web link alone', () => {
+    expect(storableAssetUri('https://images.example.com/a.png?w=200', 'a.png')).toBe('https://images.example.com/a.png?w=200');
   });
 
   it('records a 16-bit source on the layer that carried one', () => {

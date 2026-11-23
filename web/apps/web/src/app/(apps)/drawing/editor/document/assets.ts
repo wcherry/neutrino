@@ -85,12 +85,42 @@ export interface CreateAssetOptions {
   linked?: boolean;
 }
 
+/** A Drive file named by id rather than by URL — see `lib/driveImages.ts`. */
+const DRIVE_REF_SCHEME = 'neutrino-drive:';
+
+/** Any URL that points at one Drive file's bytes or thumbnail, on any origin. */
+const DRIVE_FILE_URL = /^https?:\/\/[^/]+\/api\/v1\/drive\/files\/([^/?#]+)/i;
+
+/**
+ * A source as it is safe to keep in the document.
+ *
+ * The document is shared and exported, so what it records has to mean the
+ * same thing to every reader and carry nothing of the session that wrote it.
+ * Three kinds of source fail that:
+ *
+ * - **A Drive download URL** carries the writer's access token in its query
+ *   string (`storageApi.getFileDownloadUrl`). Saved as-is it handed that token
+ *   to everyone the drawing reached, and stopped reloading once the token
+ *   expired. It becomes the `neutrino-drive:<id>` reference the URL stood for,
+ *   which every reader resolves with their own session.
+ * - **A `blob:` URL** — the decrypted copy of an encrypted Drive image — is
+ *   only valid in the tab that made it. The name stands in for it.
+ * - **A `data:` URI** *is* the image, and storing it here would put a second
+ *   copy of every embedded picture in the document — the exact duplication
+ *   this module exists to avoid. The name stands in for it, too.
+ *
+ * Applied when an asset is made *and* when a stored one is read, so a drawing
+ * saved before this is repaired the next time it is opened and saved.
+ */
+export function storableAssetUri(uri: string, name: string): string {
+  if (/^(data|blob):/i.test(uri)) return name;
+  const driveFile = DRIVE_FILE_URL.exec(uri);
+  if (driveFile) return `${DRIVE_REF_SCHEME}${decodeURIComponent(driveFile[1])}`;
+  return uri;
+}
+
 export function createAsset(options: CreateAssetOptions): LinkedAsset {
-  // A `data:` URI *is* the image, and storing it here would put a second copy
-  // of every embedded picture in the document — the exact duplication this
-  // module exists to avoid. The name stands in for it, which is all a `data:`
-  // source could ever have told anybody anyway.
-  const uri = /^data:/i.test(options.uri) ? options.name : options.uri;
+  const uri = storableAssetUri(options.uri, options.name);
   return {
     id: newId(),
     uri,
