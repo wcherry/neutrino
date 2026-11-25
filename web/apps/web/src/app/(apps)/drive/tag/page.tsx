@@ -15,14 +15,11 @@ import {
   TextInput,
   useToast,
   type GridItem,
-  type SortDir,
-  type SortField,
 } from '@neutrino/ui';
 import { ArrowLeft, Check, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react';
-import { tagsApi, type FileItem } from '@/lib/api';
+import { tagsApi } from '@/lib/api';
 import { fileToGridItem, sortEntries } from '../gridItems';
-import { routeForFile } from '../routeForFile';
-import { PreviewModal } from '../PreviewModal';
+import { useFileActions, FileRail } from '../useFileActions';
 import styles from '../tags/tags.module.css';
 import { useListingView } from '@/lib/listingViews';
 
@@ -50,7 +47,6 @@ function TagDetail() {
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
   const listing = useListingView('tag', { view: 'large', sort: 'name', dir: 'asc', flowView: 'list' });
   const sortBy = listing.sort;
@@ -104,13 +100,8 @@ function TagDetail() {
     onError: () => toast.error('Could not delete tag'),
   });
 
-  function openFile(item: GridItem) {
-    const file = files.find((f) => f.id === item.id);
-    if (!file) return;
-    routeForFile(file, router, {
-      onPreviewFallback: () => setPreviewFile(file),
-    });
-  }
+  // Drive's own actions — a tagged file is one of the caller's own, so all of them apply.
+  const actions = useFileActions({ files });
 
   if (tagError || !tagId) {
     return (
@@ -126,6 +117,7 @@ function TagDetail() {
   }
 
   return (
+    <FileRail actions={actions}>
     <div className={styles.page}>
       <div className={styles.header}>
         <button type="button" className={styles.backBtn} onClick={() => router.back()}>
@@ -195,7 +187,7 @@ function TagDetail() {
       <FileGrid
         items={items}
         isLoading={filesLoading}
-        onItemClick={openFile}
+        {...actions.gridProps}
         viewMode={listing.view}
         onViewModeChange={listing.setView}
         sortBy={sortBy}
@@ -211,7 +203,7 @@ function TagDetail() {
         }
       />
 
-      {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
+      {actions.overlays}
 
       <Modal
         open={confirmDelete}
@@ -239,5 +231,6 @@ function TagDetail() {
         </ModalFooter>
       </Modal>
     </div>
+    </FileRail>
   );
 }

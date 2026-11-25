@@ -1,8 +1,10 @@
 /**
- * The four secondary Drive views — Recent, Starred, Shared with me and Trash
- * (issue #67). They used to hand-roll their own listings; they now render the
- * same `FileGrid` as My Drive, which is what gives them the Large grid / Small
- * grid / Detailed list selector these tests assert on.
+ * The secondary Drive views — Recent, Starred, Shared with me, Trash and a tag's
+ * page (issue #67). They used to hand-roll their own listings; they now render
+ * the same `FileGrid` as My Drive, which is what gives them the Large grid /
+ * Small grid / Detailed list selector these tests assert on — and, apart from
+ * Trash, the same actions (`useFileActions`): read-only on Shared with me,
+ * whose files belong to somebody else.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -23,15 +25,23 @@ const { pushMock, api } = vi.hoisted(() => ({
       restoreFolder: vi.fn(),
       deleteFilePermanently: vi.fn(),
       deleteFolderPermanently: vi.fn(),
+      updateFile: vi.fn(),
+      updateFolder: vi.fn(),
+      deleteFolder: vi.fn(),
     },
     sharedWithMeApi: { list: vi.fn() },
+    tagsApi: { get: vi.fn(), filesForTag: vi.fn(), rename: vi.fn(), remove: vi.fn() },
+    teamsApi: { list: vi.fn(() => Promise.resolve({ teams: [] })) },
     // `fileToGridItem` builds the thumbnail's <img src> from this.
-    storageApi: { getThumbnailUrl: vi.fn(() => null) },
+    storageApi: { getThumbnailUrl: vi.fn(() => null), deleteFile: vi.fn(), downloadFile: vi.fn() },
+    downloadAndDecryptFile: vi.fn(),
+    useUser: () => null,
   },
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, back: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams('id=tag-1'),
 }));
 
 vi.mock('@/lib/api', () => api);
@@ -48,6 +58,7 @@ import RecentPage from '../../app/(apps)/drive/recent/page';
 import StarredPage from '../../app/(apps)/drive/starred/page';
 import SharedWithMePage from '../../app/(apps)/drive/shared/page';
 import TrashPage from '../../app/(apps)/drive/trash/page';
+import TagDetailPage from '../../app/(apps)/drive/tag/page';
 import { sortEntries } from '../../app/(apps)/drive/gridItems';
 
 function file(overrides: Partial<Record<string, unknown>> = {}) {
@@ -151,7 +162,21 @@ describe('Recent page', () => {
     renderPage(<RecentPage />);
 
     fireEvent.click(await screen.findByRole('listitem', { name: 'report.pdf' }));
-    expect(screen.getByTestId('preview-modal').textContent).toBe('report.pdf');
+    // The preview is loaded on first use (`next/dynamic` in useFileActions).
+    expect((await screen.findByTestId('preview-modal')).textContent).toBe('report.pdf');
+  });
+
+  it('offers Drive’s actions on its files: the star badge and the full menu', async () => {
+    renderPage(<RecentPage />);
+
+    await screen.findByRole('listitem', { name: 'report.pdf' });
+    // The badge is on the large card; the detailed list marks a star without one.
+    fireEvent.click(screen.getByRole('button', { name: 'Large grid' }));
+    expect(screen.getByRole('button', { name: 'Add to starred' })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('More options for report.pdf'));
+    for (const item of ['Share', 'Rename', 'Move to', 'Move to trash']) {
+      expect(await screen.findByRole('menuitem', { name: item })).toBeTruthy();
+    }
   });
 });
 
@@ -162,6 +187,66 @@ describe('Starred page', () => {
     await screen.findByRole('listitem', { name: 'report.pdf' });
     const names = screen.getAllByRole('listitem').map((el) => el.getAttribute('aria-label'));
     expect(names).toEqual(['Invoices', 'report.pdf']);
+  });
+
+  it('takes the star off a file from its badge', async () => {
+    api.filesystemApi.getStarred.mockResolvedValue({ files: [file({ isStarred: true })], folders: [] });
+    api.filesystemApi.updateFile.mockResolvedValue(file());
+    renderPage(<StarredPage />);
+
+    await screen.findByRole('listitem', { name: 'report.pdf' });
+    fireEvent.click(screen.getByRole('button', { name: 'Large grid' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from starred' }));
+
+    await waitFor(() => expect(api.filesystemApi.updateFile).toHaveBeenCalledWith('f1', { isStarred: false }));
+  });
+
+  it('opens a starred folder in My Drive', async () => {
+    renderPage(<StarredPage />);
+
+    fireEvent.click(await screen.findByRole('listitem', { name: 'Invoices' }));
+    expect(pushMock).toHaveBeenCalledWith('/drive?folder=d1');
+  });
+});
+
+describe('Shared with me page', () => {
+  it('offers only what a non-owner can do: no star, and Preview / Copy link / Download', async () => {
+    renderPage(<SharedWithMePage />);
+
+    await screen.findByRole('listitem', { name: 'report.pdf' });
+    fireEvent.click(screen.getByRole('button', { name: 'Large grid' }));
+    expect(screen.queryByRole('button', { name: 'Add to starred' })).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('More options for report.pdf'));
+    const labels = (await screen.findAllByRole('menuitem')).map((el) => el.textContent);
+    expect(labels).toEqual(['Preview', 'Copy link', 'Download']);
+  });
+
+  it('leaves a shared folder unopenable, since My Drive lists only the caller’s own', async () => {
+    renderPage(<SharedWithMePage />);
+
+    fireEvent.click(await screen.findByRole('listitem', { name: 'Invoices' }));
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Tag page', () => {
+  it('lists the tagged files in the order the sort bar asks for', async () => {
+    // The tag endpoint takes no sort parameters, so the page orders the files itself.
+    api.tagsApi.get.mockResolvedValue({ id: 'tag-1', name: 'Taxes' });
+    api.tagsApi.filesForTag.mockResolvedValue({
+      files: [file({ id: 'b', name: 'b.pdf' }), file({ id: 'c', name: 'c.pdf' }), file({ id: 'a', name: 'a.pdf' })],
+      total: 3,
+    });
+    renderPage(<TagDetailPage />);
+
+    await screen.findByRole('listitem', { name: 'a.pdf' });
+    const names = () => screen.getAllByRole('listitem').map((el) => el.getAttribute('aria-label'));
+    // The tag page's default order is by name, ascending.
+    expect(names()).toEqual(['a.pdf', 'b.pdf', 'c.pdf']);
+
+    fireEvent.click(screen.getByRole('button', { name: /^Name/ }));
+    await waitFor(() => expect(names()).toEqual(['c.pdf', 'b.pdf', 'a.pdf']));
   });
 });
 

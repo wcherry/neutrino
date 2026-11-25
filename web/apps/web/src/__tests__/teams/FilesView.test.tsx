@@ -9,10 +9,11 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@neutrino/ui';
+import { preferences } from '@neutrino/preferences';
 
 const listLibrary = vi.fn();
 const listSharedFiles = vi.fn();
@@ -108,6 +109,27 @@ describe('FilesView', () => {
     expect(screen.getByRole('group', { name: 'Filter files' })).toBeTruthy();
     expect(screen.getByText('Sort:')).toBeTruthy();
     expect(screen.getByText('2 items')).toBeTruthy();
+  });
+
+  it('follows the remembered view when it changes after the page has mounted', async () => {
+    // Stored preferences load after the first render (and a member's pick on another device
+    // arrives later still), so the grid has to follow the preference, not copy it once.
+    renderView();
+    await screen.findByText('Roadmap.pdf');
+    const listButtons = () => screen.getAllByRole('button', { name: 'Detailed list' });
+    const next = listButtons()[0].getAttribute('aria-pressed') === 'true' ? 'large' : 'list';
+
+    const before = preferences.get('teamSpace.view');
+    try {
+      act(() => preferences.set('teamSpace.view', next));
+
+      await waitFor(() =>
+        expect(listButtons()[0].getAttribute('aria-pressed')).toBe(next === 'list' ? 'true' : 'false'),
+      );
+    } finally {
+      // The store is shared by every test in the file.
+      act(() => preferences.set('teamSpace.view', before));
+    }
   });
 
   it('opens a folder into the trail and lists it from the server', async () => {

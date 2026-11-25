@@ -12,7 +12,7 @@
  *   - A short page ends the listing (no sentinel, no further requests)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -194,6 +194,14 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+// The page is imported lazily inside each render, after the mocks are in place.
+// Its first import compiles the whole Drive route and takes seconds; doing it
+// here, with its own allowance, keeps that cost off whichever test runs first —
+// which otherwise ran within a second of its 5 s limit and failed on a busy machine.
+beforeAll(async () => {
+  await import('../../app/(apps)/drive/page');
+}, 30_000);
 
 // ---------------------------------------------------------------------------
 // Tests

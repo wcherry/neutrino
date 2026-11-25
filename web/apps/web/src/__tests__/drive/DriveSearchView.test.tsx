@@ -6,7 +6,7 @@
  * FileGrid Drive uses for its own listing, so the two look identical.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -113,6 +113,15 @@ beforeEach(() => {
   query = 'budget';
   search.mockResolvedValue([HIT]);
 });
+
+
+// The page is imported lazily inside each render, after the mocks are in place.
+// Its first import compiles the whole Drive route and takes seconds; doing it
+// here, with its own allowance, keeps that cost off whichever test runs first —
+// which otherwise ran within a second of its 5 s limit and failed on a busy machine.
+beforeAll(async () => {
+  await import('../../app/(apps)/drive/page');
+}, 30_000);
 
 describe('Drive search view', () => {
   it('shows the search term as a dismissible filter chip', async () => {

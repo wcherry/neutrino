@@ -1,28 +1,22 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import {
   Heading,
   Text,
   EmptyState,
   FileGrid,
   type GridItem,
-  type SortDir,
-  type SortField,
 } from '@neutrino/ui';
 import { Share2 } from 'lucide-react';
-import { sharedWithMeApi, type FileItem } from '@/lib/api';
+import { sharedWithMeApi } from '@/lib/api';
 import { fileToGridItem, folderToGridItem, sortEntries } from '../gridItems';
-import { routeForFile } from '../routeForFile';
-import { PreviewModal } from '../PreviewModal';
+import { useFileActions, FileRail } from '../useFileActions';
 import styles from './page.module.css';
 import { useListingView } from '@/lib/listingViews';
 
 export default function SharedWithMePage() {
-  const router = useRouter();
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
   const listing = useListingView('shared', { view: 'large', sort: 'name', dir: 'asc', flowView: 'list' });
   const sortBy = listing.sort;
@@ -46,18 +40,13 @@ export default function SharedWithMePage() {
     [files, folders, sortBy, sortDir],
   );
 
-  function openItem(item: GridItem) {
-    // Folders are not addressable by URL — My Drive tracks the open folder in
-    // component state — so a shared folder has nowhere to navigate to.
-    if (item.kind === 'folder') return;
-    const file = files.find((f) => f.id === item.id);
-    if (!file) return;
-    routeForFile(file, router, {
-      onPreviewFallback: () => setPreviewFile(file),
-    });
-  }
+  // Other people's files: the server lets only an owner rename, move, star, tag,
+  // share or trash one, so the read-only set — open, preview, copy link, download.
+  // A shared folder stays unopenable: My Drive can only list folders the caller owns.
+  const actions = useFileActions({ files, folders, readOnly: true });
 
   return (
+    <FileRail actions={actions}>
     <div className={styles.page}>
       <div className={styles.header}>
         <Heading level={1} size="xl">Shared with me</Heading>
@@ -70,7 +59,7 @@ export default function SharedWithMePage() {
         items={items}
         isLoading={isLoading}
         isError={isError}
-        onItemClick={openItem}
+        {...actions.gridProps}
         viewMode={listing.view}
         onViewModeChange={listing.setView}
         sortBy={sortBy}
@@ -93,7 +82,8 @@ export default function SharedWithMePage() {
         }
       />
 
-      {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
     </div>
+      {actions.overlays}
+    </FileRail>
   );
 }

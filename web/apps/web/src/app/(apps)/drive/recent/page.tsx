@@ -1,20 +1,16 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { Heading, EmptyState, FileGrid, type GridItem, type SortDir, type SortField } from '@neutrino/ui';
+import { Heading, EmptyState, FileGrid, type GridItem } from '@neutrino/ui';
 import { Clock } from 'lucide-react';
-import { filesystemApi, type FileItem } from '@/lib/api';
+import { filesystemApi } from '@/lib/api';
 import { fileToGridItem, sortEntries } from '../gridItems';
-import { routeForFile } from '../routeForFile';
-import { PreviewModal } from '../PreviewModal';
+import { useFileActions, FileRail } from '../useFileActions';
 import styles from '../shared/page.module.css';
 import { useListingView } from '@/lib/listingViews';
 
 export default function RecentPage() {
-  const router = useRouter();
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
   const listing = useListingView('recent', { view: 'large', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
   const sortBy = listing.sort;
@@ -31,15 +27,12 @@ export default function RecentPage() {
     [files, sortBy, sortDir],
   );
 
-  function openItem(item: GridItem) {
-    const file = files.find((f) => f.id === item.id);
-    if (!file) return;
-    routeForFile(file, router, {
-      onPreviewFallback: () => setPreviewFile(file),
-    });
-  }
+  // Drive's own actions — menu, star, share, move, rename, delete, bulk select, drag-in upload.
+  // Recent lists only the caller's own files, so every one of them applies.
+  const actions = useFileActions({ files });
 
   return (
+    <FileRail actions={actions}>
     <div className={styles.page}>
       <div className={styles.header}>
         <Heading level={1} size="xl">Recent</Heading>
@@ -49,7 +42,7 @@ export default function RecentPage() {
         items={items}
         isLoading={isLoading}
         isError={isError}
-        onItemClick={openItem}
+        {...actions.gridProps}
         viewMode={listing.view}
         onViewModeChange={listing.setView}
         sortBy={sortBy}
@@ -72,7 +65,8 @@ export default function RecentPage() {
         }
       />
 
-      {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
     </div>
+      {actions.overlays}
+    </FileRail>
   );
 }

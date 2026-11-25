@@ -181,10 +181,13 @@ export function FilesView({ team }: { team: Team }) {
   const [preferredView, setPreferredView] = usePreference('teamSpace.view');
   const [preferredSort, setPreferredSort] = usePreference('teamSpace.sort');
   const [preferredDir, setPreferredDir] = usePreference('teamSpace.sortDirection');
-  const [sortBy, setSortByState] = useState<SortField>(preferredSort);
-  const [sortDir, setSortDirState] = useState<SortDir>(preferredDir);
-  const setSortBy = (field: SortField) => { setSortByState(field); setPreferredSort(field); };
-  const setSortDir = (dir: SortDir) => { setSortDirState(dir); setPreferredDir(dir); };
+  // Read straight from the preferences rather than copied into state: a copy is
+  // taken on the first render, before the stored preferences have loaded, and
+  // then never sees them — so a member's pick on another device never arrived.
+  const sortBy: SortField = preferredSort;
+  const sortDir: SortDir = preferredDir;
+  const setSortBy = setPreferredSort;
+  const setSortDir = setPreferredDir;
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['team-library', team.id, folderId ?? null],
@@ -503,7 +506,7 @@ export function FilesView({ team }: { team: Team }) {
         onItemClick={openLibraryItem}
         onItemMenuOpen={canDelete ? (item, e) => openMenu('library', item, e) : undefined}
         sortBy={sortBy}
-        defaultViewMode={preferredView}
+        viewMode={preferredView}
         onViewModeChange={setPreferredView}
         sortDir={sortDir}
         onSortChange={(field, dir) => {
@@ -545,7 +548,7 @@ export function FilesView({ team }: { team: Team }) {
             onItemMenuOpen={(item, e) => openMenu('shared', item, e)}
             showSizeColumn
             sortBy={sortBy}
-            defaultViewMode={preferredView}
+            viewMode={preferredView}
             onViewModeChange={setPreferredView}
             sortDir={sortDir}
             onSortChange={(field, dir) => {

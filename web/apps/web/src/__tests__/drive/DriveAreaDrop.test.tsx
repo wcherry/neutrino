@@ -10,7 +10,7 @@
  *   - UploadZone receives the dropped files via initialFiles prop
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -202,6 +202,14 @@ function makeDragEvent(files: File[]): Partial<React.DragEvent<HTMLDivElement>> 
     dataTransfer: dataTransfer as unknown as DataTransfer,
   };
 }
+
+// The page is imported lazily inside each render, after the mocks are in place.
+// Its first import compiles the whole Drive route and takes seconds; doing it
+// here, with its own allowance, keeps that cost off whichever test runs first —
+// which otherwise ran within a second of its 5 s limit and failed on a busy machine.
+beforeAll(async () => {
+  await import('../../app/(apps)/drive/page');
+}, 30_000);
 
 // ---------------------------------------------------------------------------
 // Tests

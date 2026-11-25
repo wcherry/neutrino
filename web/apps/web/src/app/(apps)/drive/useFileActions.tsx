@@ -157,6 +157,13 @@ export interface UseFileActionsOptions {
   uploadFolderId?: string | null;
   /** The folder the bulk Move dialog starts in. */
   currentFolderId?: string | null;
+  /**
+   * The listing is of files somebody else owns (Shared with me). The server lets
+   * only an owner rename, move, star, tag, share or trash a file, so those are
+   * left out entirely — no star badge, no bulk select, no drag-in upload, no
+   * folder menu, and a file menu of Preview, Copy link and Download.
+   */
+  readOnly?: boolean;
 }
 
 type GridActionProps = Pick<
@@ -198,6 +205,7 @@ export function useFileActions({
   onOpenFolder,
   uploadFolderId = null,
   currentFolderId = null,
+  readOnly = false,
 }: UseFileActionsOptions): FileActions {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -429,12 +437,12 @@ export function useFileActions({
     const y = Math.min(rect.bottom, window.innerHeight - 300);
     if (item.kind === 'folder') {
       const folder = folderMap.get(item.id);
-      if (folder) setFolderContextMenu({ folder, x, y });
+      if (folder && !readOnly) setFolderContextMenu({ folder, x, y });
       return;
     }
     const file = fileMap.get(item.id);
     if (file) setContextMenu({ file, x, y });
-  }, [fileMap, folderMap]);
+  }, [fileMap, folderMap, readOnly]);
 
   const onToggleStar = useCallback((item: GridItem) => {
     if (item.kind === 'folder') {
@@ -591,15 +599,17 @@ export function useFileActions({
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
           onPreview={() => { previewFileAction(contextMenu.file); setContextMenu(null); }}
-          onInfo={() => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); }}
-          onManageTags={() => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); }}
-          onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
-          onRename={() => { setRenaming(contextMenu.file); setContextMenu(null); }}
-          onStarToggle={() => { handleStar(contextMenu.file); setContextMenu(null); }}
+          {...(readOnly ? {} : {
+            onInfo: () => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); },
+            onManageTags: () => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); },
+            onShare: () => { setShareFile(contextMenu.file); setContextMenu(null); },
+            onRename: () => { setRenaming(contextMenu.file); setContextMenu(null); },
+            onStarToggle: () => { handleStar(contextMenu.file); setContextMenu(null); },
+            onDelete: () => { deleteMutation.mutate(contextMenu.file.id); setContextMenu(null); },
+            onMove: () => { setMoveFile(contextMenu.file); setContextMenu(null); },
+          })}
           onDownload={() => { handleDownload(contextMenu.file); setContextMenu(null); }}
-          onDelete={() => { deleteMutation.mutate(contextMenu.file.id); setContextMenu(null); }}
           onCopyLink={() => { handleCopyLink(contextMenu.file); setContextMenu(null); }}
-          onMove={() => { setMoveFile(contextMenu.file); setContextMenu(null); }}
         />
       )}
 
@@ -707,18 +717,20 @@ export function useFileActions({
   );
 
   return {
-    gridProps: {
-      onItemClick,
-      onItemMenuOpen,
-      onToggleStar,
-      selectedIds,
-      onItemSelect,
-      onDragEnter,
-      onDragOver,
-      onDragLeave,
-      onDrop,
-      isDraggingOver,
-    },
+    gridProps: readOnly
+      ? { onItemClick, onItemMenuOpen }
+      : {
+          onItemClick,
+          onItemMenuOpen,
+          onToggleStar,
+          selectedIds,
+          onItemSelect,
+          onDragEnter,
+          onDragOver,
+          onDragLeave,
+          onDrop,
+          isDraggingOver,
+        },
     openFile,
     showPreview: setPreviewFile,
     openUpload,
